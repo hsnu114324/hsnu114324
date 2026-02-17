@@ -280,45 +280,30 @@ function placeActiveBlock() {
   if (running) spawnBlock();
 }
 
-// 將文字拆成多行，讓每行都塞得進格子寬度
+// 將文字拆成多行，只依空白換行，不拆字
 function wrapText(text, maxWidth, fontSize) {
   ctx.font = `bold ${fontSize}px sans-serif`;
 
-  // 先試一行塞得下就不拆
+  // 一行塞得下就不拆
   if (ctx.measureText(text).width <= maxWidth) return [text];
 
-  // 嘗試依空白切（例如 "ice cream"）
+  // 沒有空白 → 不換行，靠縮小字體處理
   const spaceWords = text.split(/\s+/);
-  if (spaceWords.length > 1) {
-    const lines = [];
-    let current = "";
-    for (const w of spaceWords) {
-      const test = current ? current + " " + w : w;
-      if (ctx.measureText(test).width <= maxWidth) {
-        current = test;
-      } else {
-        if (current) lines.push(current);
-        current = w;
-      }
-    }
-    if (current) lines.push(current);
-    if (lines.length <= 3) return lines;
-  }
+  if (spaceWords.length <= 1) return [text];
 
-  // 沒有空白或拆完仍太長 → 按字元強制斷行
+  // 依空白切行
   const lines = [];
   let current = "";
-  for (const ch of text) {
-    const test = current + ch;
-    if (ctx.measureText(test).width > maxWidth && current) {
-      lines.push(current);
-      current = ch;
-    } else {
+  for (const w of spaceWords) {
+    const test = current ? current + " " + w : w;
+    if (ctx.measureText(test).width <= maxWidth) {
       current = test;
+    } else {
+      if (current) lines.push(current);
+      current = w;
     }
-    if (lines.length >= 3) break; // 最多 3 行
   }
-  if (current && lines.length < 3) lines.push(current);
+  if (current) lines.push(current);
   return lines;
 }
 
