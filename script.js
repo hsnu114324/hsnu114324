@@ -1,5 +1,5 @@
 const COLS = 6;
-const ROWS = 5;
+const ROWS = 8;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 
@@ -289,9 +289,19 @@ function drawCell(row, col, cellData) {
   ctx.strokeRect(x + 1.5, y + 1.5, cellSize - 3, cellSize - 3);
 
   ctx.fillStyle = "#111";
-  ctx.font = `bold ${Math.max(10, Math.floor(cellSize * 0.2))}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
+
+  // 自動縮小字體直到文字能塞進格子
+  const maxWidth = cellSize - 6;
+  let fontSize = Math.max(10, Math.floor(cellSize * 0.28));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+
+  while (ctx.measureText(cellData.word).width > maxWidth && fontSize > 6) {
+    fontSize -= 1;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+  }
+
   ctx.fillText(cellData.word, x + cellSize / 2, y + cellSize / 2);
 }
 
