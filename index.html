@@ -491,6 +491,239 @@ canvas {
   .mobile-pad { display: flex; }
   .right-sidebar { width: 100%; max-width: 360px; }
 }
+
+/* ── CSV DROP ZONE ── */
+.csv-drop {
+  border: 1px dashed var(--border-hi);
+  border-radius: var(--radius);
+  padding: 14px 10px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+.csv-drop:hover, .csv-drop.drag-over {
+  border-color: var(--cyan);
+  background: rgba(0,245,255,0.04);
+  box-shadow: 0 0 0 1px rgba(0,245,255,0.2);
+}
+.csv-drop-icon { font-size: 22px; margin-bottom: 4px; }
+.csv-drop-label { font-size: 11px; color: var(--dim); line-height: 1.6; }
+.csv-drop-label b { color: var(--cyan); font-weight: 500; }
+.csv-drop input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+.csv-status {
+  font-family: var(--mono);
+  font-size: 9px;
+  margin-top: 6px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  text-align: center;
+  display: none;
+}
+.csv-status.ok  { background: rgba(0,255,136,0.1); color: var(--green); display: block; }
+.csv-status.err { background: rgba(255,45,120,0.1); color: var(--pink);  display: block; }
+
+.csv-hint {
+  font-size: 10px;
+  color: var(--dim);
+  margin-top: 6px;
+  line-height: 1.5;
+}
+.csv-hint code {
+  font-family: var(--mono);
+  font-size: 9px;
+  background: rgba(255,255,255,0.05);
+  padding: 1px 4px;
+  border-radius: 2px;
+  color: var(--gold);
+}
+.csv-dl {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--cyan);
+  text-decoration: none;
+  letter-spacing: 1px;
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  display: inline;
+}
+.csv-dl:hover { text-decoration: underline; }
+
+/* ── CSV PREVIEW MODAL ── */
+.modal-bg {
+  position: fixed; inset: 0;
+  background: rgba(7,8,15,0.88);
+  backdrop-filter: blur(10px);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  border-radius: 10px;
+  width: 100%;
+  max-width: 620px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 0 60px rgba(0,245,255,0.1);
+}
+.modal-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.modal-title {
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--cyan);
+  text-shadow: var(--glow-cyan);
+}
+.modal-close {
+  background: none; border: none;
+  color: var(--dim); font-size: 18px;
+  cursor: pointer; line-height: 1;
+  transition: color 0.1s;
+}
+.modal-close:hover { color: var(--text); }
+
+.modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; }
+
+.preview-meta {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.preview-chip {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 3px 8px;
+  border-radius: 2px;
+  border: 1px solid;
+  letter-spacing: 1px;
+}
+
+.preview-fields { margin-bottom: 14px; }
+.preview-field-row {
+  display: grid;
+  grid-template-columns: 60px 1fr 80px 64px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 11px;
+}
+.pf-label { font-family: var(--mono); font-size: 9px; color: var(--dim); letter-spacing: 1px; }
+
+.pf-input {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 11px;
+  padding: 4px 7px;
+  outline: none;
+  width: 100%;
+}
+.pf-input:focus { border-color: var(--cyan); }
+
+.pf-color { width: 28px; height: 28px; border-radius: 4px; border: 1px solid var(--border); cursor: pointer; padding: 1px; background: none; }
+
+.preview-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 14px;
+}
+.preview-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.preview-table th {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 1px;
+  color: var(--dim);
+  padding: 6px 10px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.preview-table td {
+  padding: 5px 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  white-space: nowrap;
+}
+.preview-table tr:last-child td { border-bottom: none; }
+.preview-table tr:hover td { background: rgba(255,255,255,0.02); }
+.preview-more {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  padding: 6px 10px;
+  text-align: center;
+}
+
+.set-name-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 14px;
+}
+.set-name-row label { font-size: 11px; color: var(--dim); white-space: nowrap; }
+.set-name-input {
+  flex: 1;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 5px 8px;
+  outline: none;
+}
+.set-name-input:focus { border-color: var(--cyan); }
+
+.modal-footer {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.modal-btn {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  padding: 8px 20px;
+  border-radius: var(--radius);
+  border: 1px solid;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: transparent;
+}
+.modal-btn-cancel { border-color: var(--border-hi); color: var(--dim); }
+.modal-btn-cancel:hover { color: var(--text); }
+.modal-btn-confirm {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  background: rgba(0,245,255,0.06);
+}
+.modal-btn-confirm:hover { background: rgba(0,245,255,0.14); box-shadow: var(--glow-cyan); }
 </style>
 </head>
 <body>
@@ -536,6 +769,21 @@ canvas {
       <select id="setSelect" style="margin-bottom:8px"></select>
 
       <div class="field-legend" id="fieldLegend"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Import CSV</div>
+      <div class="csv-drop" id="csvDrop">
+        <input type="file" accept=".csv,text/csv" id="csvFileInput" onchange="handleCsvFile(this.files[0])">
+        <div class="csv-drop-icon">📄</div>
+        <div class="csv-drop-label">拖曳或點擊上傳 <b>.csv</b></div>
+      </div>
+      <div class="csv-status" id="csvStatus"></div>
+      <div class="csv-hint">
+        第一行為欄位名稱，之後每行一個單字<br>
+        <code>德文,中文,陰陽性</code><br>
+        <button class="csv-dl" onclick="downloadSampleCsv()">⬇ 下載範例 CSV</button>
+      </div>
     </div>
 
     <div id="tableProgressCard" class="card" style="display:none">
@@ -605,6 +853,52 @@ canvas {
     <button class="m-btn" onclick="rotatePiece()">↻</button>
     <button class="m-btn" onclick="hardDrop()">⬇</button>
     <button class="m-btn" onclick="togglePause()">⏸</button>
+  </div>
+</div>
+
+<!-- ── CSV PREVIEW MODAL ── -->
+<div class="modal-bg" id="csvModal" style="display:none" onclick="if(event.target===this)closeCsvModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">CSV IMPORT</div>
+      <button class="modal-close" onclick="closeCsvModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="preview-meta">
+        <span class="preview-chip" id="pvRows" style="border-color:rgba(0,245,255,0.3);color:var(--cyan)"></span>
+        <span class="preview-chip" id="pvCols" style="border-color:rgba(255,230,0,0.3);color:var(--gold)"></span>
+      </div>
+
+      <!-- Set name -->
+      <div class="set-name-row">
+        <label>單字集名稱</label>
+        <input class="set-name-input" id="pvSetName" type="text" placeholder="My Vocabulary">
+      </div>
+
+      <!-- Field config table -->
+      <div class="preview-fields">
+        <div class="preview-field-row" style="margin-bottom:8px">
+          <span class="pf-label">COLUMN</span>
+          <span class="pf-label">LABEL</span>
+          <span class="pf-label">COLOR</span>
+          <span class="pf-label">ABBR</span>
+        </div>
+        <div id="pvFields"></div>
+      </div>
+
+      <!-- Data preview -->
+      <div class="preview-table-wrap">
+        <table class="preview-table">
+          <thead><tr id="pvTableHead"></tr></thead>
+          <tbody id="pvTableBody"></tbody>
+        </table>
+        <div class="preview-more" id="pvMore" style="display:none"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="modal-btn modal-btn-cancel" onclick="closeCsvModal()">CANCEL</button>
+      <button class="modal-btn modal-btn-confirm" onclick="confirmCsvImport()">✓ IMPORT</button>
+    </div>
   </div>
 </div>
 
@@ -1324,6 +1618,221 @@ function mStop(dir) {
 
 // ── BOOT ─────────────────────────────────────────────────────
 init();
+
+// ═══════════════════════════════════════════════════════════════
+//  CSV IMPORT
+// ═══════════════════════════════════════════════════════════════
+
+// Neon colors to auto-assign to imported columns
+const CSV_NEON = ['#00f5ff','#ff2d78','#ffe600','#00ff88','#bf5fff','#ff8c42','#4dffb4'];
+const CSV_ABBR_FALLBACK = ['A','B','C','D','E','F','G'];
+
+let csvParsed = null; // { headers, rows }
+
+// ── Drag-and-drop wiring ──
+(function() {
+  const drop = document.getElementById('csvDrop');
+  drop.addEventListener('dragover',  e => { e.preventDefault(); drop.classList.add('drag-over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleCsvFile(file);
+  });
+})();
+
+// ── Parse & open modal ──
+function handleCsvFile(file) {
+  if (!file) return;
+  const status = document.getElementById('csvStatus');
+
+  // Reset file input so same file can be re-selected
+  document.getElementById('csvFileInput').value = '';
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const result = parseCsv(e.target.result);
+      if (result.headers.length < 2) throw new Error('至少需要 2 個欄位');
+      if (result.rows.length === 0)  throw new Error('沒有資料列');
+      csvParsed = result;
+      status.className = 'csv-status ok';
+      status.textContent = `✓ ${file.name}  (${result.rows.length} 筆)`;
+      openCsvModal(result, file.name.replace(/\.csv$/i,''));
+    } catch(err) {
+      status.className = 'csv-status err';
+      status.textContent = '✕ ' + err.message;
+    }
+  };
+  reader.onerror = () => {
+    const status = document.getElementById('csvStatus');
+    status.className = 'csv-status err';
+    status.textContent = '✕ 讀取失敗';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+// ── CSV parser (handles quoted fields & CRLF) ──
+function parseCsv(text) {
+  // Normalize line endings
+  const lines = text.replace(/\r\n/g,'\n').replace(/\r/g,'\n').split('\n').filter(l => l.trim());
+  if (lines.length < 2) throw new Error('CSV 至少需要 2 行（標題 + 資料）');
+
+  const parse = line => {
+    const result = [];
+    let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') {
+        if (inQ && line[i+1] === '"') { cur += '"'; i++; }
+        else inQ = !inQ;
+      } else if (ch === ',' && !inQ) {
+        result.push(cur.trim()); cur = '';
+      } else {
+        cur += ch;
+      }
+    }
+    result.push(cur.trim());
+    return result;
+  };
+
+  const headers = parse(lines[0]);
+  const rows = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = parse(lines[i]);
+    if (cols.every(c => !c)) continue; // skip blank rows
+    const obj = {};
+    headers.forEach((h, idx) => { obj[h] = cols[idx] || ''; });
+    rows.push(obj);
+  }
+  return { headers, rows };
+}
+
+// ── Open preview modal ──
+function openCsvModal({ headers, rows }, suggestedName) {
+  document.getElementById('pvSetName').value = suggestedName || 'My Vocabulary';
+  document.getElementById('pvRows').textContent = `${rows.length} WORDS`;
+  document.getElementById('pvCols').textContent = `${headers.length} FIELDS`;
+
+  // Field config rows
+  const pvFields = document.getElementById('pvFields');
+  pvFields.innerHTML = '';
+  headers.forEach((h, i) => {
+    const color = CSV_NEON[i % CSV_NEON.length];
+    const abbr  = h.slice(0, 2).toUpperCase() || CSV_ABBR_FALLBACK[i];
+    const row   = document.createElement('div');
+    row.className = 'preview-field-row';
+    row.innerHTML = `
+      <span style="font-family:var(--mono);font-size:10px;color:var(--dim)">${h}</span>
+      <input class="pf-input" id="pf-label-${i}" value="${h}" placeholder="欄位名稱">
+      <input type="color" class="pf-color" id="pf-color-${i}" value="${color}"
+        style="background:${color}22;border-color:${color}88"
+        oninput="this.style.background=this.value+'22';this.style.borderColor=this.value+'88'">
+      <input class="pf-input" id="pf-abbr-${i}" value="${abbr}" maxlength="3" placeholder="縮寫"
+        style="max-width:54px">
+    `;
+    pvFields.appendChild(row);
+  });
+
+  // Table preview (first 8 rows)
+  const thead = document.getElementById('pvTableHead');
+  thead.innerHTML = '';
+  headers.forEach(h => {
+    const th = document.createElement('th');
+    th.textContent = h;
+    thead.appendChild(th);
+  });
+
+  const tbody = document.getElementById('pvTableBody');
+  tbody.innerHTML = '';
+  const PREVIEW_LIMIT = 8;
+  rows.slice(0, PREVIEW_LIMIT).forEach(row => {
+    const tr = document.createElement('tr');
+    headers.forEach(h => {
+      const td = document.createElement('td');
+      td.textContent = row[h] || '';
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+
+  const pvMore = document.getElementById('pvMore');
+  if (rows.length > PREVIEW_LIMIT) {
+    pvMore.style.display = 'block';
+    pvMore.textContent = `… 還有 ${rows.length - PREVIEW_LIMIT} 筆`;
+  } else {
+    pvMore.style.display = 'none';
+  }
+
+  document.getElementById('csvModal').style.display = 'flex';
+}
+
+function closeCsvModal() {
+  document.getElementById('csvModal').style.display = 'none';
+}
+
+// ── Confirm import ──
+function confirmCsvImport() {
+  if (!csvParsed) return;
+  const { headers, rows } = csvParsed;
+  const setName = document.getElementById('pvSetName').value.trim() || 'Imported';
+
+  // Build fields from modal inputs
+  const newFields = headers.map((h, i) => ({
+    key:   h,
+    label: document.getElementById(`pf-label-${i}`).value.trim() || h,
+    color: document.getElementById(`pf-color-${i}`).value,
+    abbr:  document.getElementById(`pf-abbr-${i}`).value.trim().slice(0,3) || h.slice(0,2).toUpperCase(),
+  }));
+
+  // Update global fields
+  fields = newFields;
+
+  // Add word set
+  if (!wordSets[setName]) {
+    wordSets[setName] = rows;
+    // Add option to selector
+    const sel = document.getElementById('setSelect');
+    const opt = document.createElement('option');
+    opt.value = opt.textContent = setName;
+    sel.appendChild(opt);
+    sel.value = setName;
+  } else {
+    // Overwrite
+    wordSets[setName] = rows;
+    document.getElementById('setSelect').value = setName;
+  }
+
+  // Rebuild UI for new fields
+  buildFieldLegend();
+  loadSet(setName);
+  closeCsvModal();
+
+  // Status badge
+  const status = document.getElementById('csvStatus');
+  status.className = 'csv-status ok';
+  status.textContent = `✓ 已匯入「${setName}」(${rows.length} 筆)`;
+}
+
+// ── Download sample CSV ──
+function downloadSampleCsv() {
+  // Build sample from current fields
+  const hdrs = fields.map(f => f.label).join(',');
+  const samples = (currentWords.slice(0, 5)).map(w =>
+    fields.map(f => {
+      const v = String(w[f.key] || '');
+      return v.includes(',') ? `"${v}"` : v;
+    }).join(',')
+  );
+  const csv = [hdrs, ...samples].join('\n');
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'wordtris_sample.csv';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 </script>
 </body>
 </html>
