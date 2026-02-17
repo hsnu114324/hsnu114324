@@ -40,6 +40,8 @@ let score = 0;
 let lastTick = 0;
 let gameLoopId = null;
 let running = true;
+let animating = false; // 消除動畫播放中
+let particles = [];    // 爆散粒子
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -182,7 +184,7 @@ function canMoveTo(row, col) {
 }
 
 function moveHorizontal(dir) {
-  if (!running || !activeBlock) return;
+  if (!running || !activeBlock || animating) return;
   const nextCol = activeBlock.col + dir;
   if (canMoveTo(activeBlock.row, nextCol)) {
     activeBlock.col = nextCol;
@@ -191,7 +193,7 @@ function moveHorizontal(dir) {
 }
 
 function hardDrop() {
-  if (!running || !activeBlock) return;
+  if (!running || !activeBlock || animating) return;
   while (canMoveTo(activeBlock.row + 1, activeBlock.col)) {
     activeBlock.row += 1;
   }
@@ -199,7 +201,7 @@ function hardDrop() {
 }
 
 function softDrop() {
-  if (!running || !activeBlock) return;
+  if (!running || !activeBlock || animating) return;
   const nextRow = activeBlock.row + 1;
   if (canMoveTo(nextRow, activeBlock.col)) {
     activeBlock.row = nextRow;
@@ -244,8 +246,106 @@ function findMatchedGroups() {
   return groups;
 }
 
-function clearMatches() {
+// ── 消除特效相關 ──
+
+function spawnParticles(row, col, color) {
+  const cx = col * cellSize + cellSize / 2;
+  const cy = row * cellSize + cellSize / 2;
+  const count = 8;
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.4;
+    const speed = 1.5 + Math.random() * 2.5;
+    particles.push({
+      x: cx,
+      y: cy,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 3 + Math.random() * 3,
+      color,
+      life: 1.0, // 1.0 → 0
+    });
+  }
+}
+
+function updateParticles() {
+  for (const p of particles) {
+    p.x += p.vx;
+    p.y += p.vy;
+    p.vy += 0.08; // 微重力
+    p.life -= 0.03;
+    p.r *= 0.97;
+  }
+  particles = particles.filter((p) => p.life > 0 && p.r > 0.3);
+}
+
+function drawParticles() {
+  for (const p of particles) {
+    ctx.globalAlpha = Math.max(0, p.life);
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// 閃爍 + 縮小動畫（Promise，播完才繼續）
+function playClearAnimation(markedPositions) {
+  return new Promise((resolve) => {
+    const duration = 420; // ms
+    const start = performance.now();
+
+    // 記錄每格的顏色以便畫粒子
+    const cellInfos = markedPositions.map(({ row, col }) => ({
+      row,
+      col,
+      color: board[row][col]?.color || "#fff",
+    }));
+
+    // 產生粒子
+    cellInfos.forEach(({ row, col, color }) => spawnParticles(row, col, color));
+
+    function tick(now) {
+      const elapsed = now - start;
+      const t = Math.min(elapsed / duration, 1); // 0→1
+
+      drawGrid();
+
+      // 在被消除的格子上疊加特效
+      for (const { row, col, color } of cellInfos) {
+        const x = col * cellSize;
+        const y = row * cellSize;
+        const shrink = t * (cellSize / 2);
+
+        // 白色閃爍（前半段亮，後半段淡出）
+        const flash = t < 0.5 ? 0.7 : 0.7 * (1 - (t - 0.5) * 2);
+        ctx.fillStyle = `rgba(255,255,255,${flash})`;
+        ctx.fillRect(
+          x + 1.5 + shrink,
+          y + 1.5 + shrink,
+          cellSize - 3 - shrink * 2,
+          cellSize - 3 - shrink * 2,
+        );
+      }
+
+      // 更新並畫粒子
+      updateParticles();
+      drawParticles();
+
+      if (t < 1) {
+        requestAnimationFrame(tick);
+      } else {
+        resolve();
+      }
+    }
+
+    requestAnimationFrame(tick);
+  });
+}
+
+async function clearMatches() {
   let totalCleared = 0;
+
   while (true) {
     const groups = findMatchedGroups();
     if (!groups.length) break;
@@ -255,12 +355,22 @@ function clearMatches() {
       cells.forEach(({ row, col }) => marked.add(`${row}-${col}`));
     });
 
-    marked.forEach((key) => {
+    const positions = [...marked].map((key) => {
       const [row, col] = key.split("-").map(Number);
+      return { row, col };
+    });
+
+    // 播放消除動畫
+    animating = true;
+    await playClearAnimation(positions);
+    animating = false;
+
+    // 動畫結束後才真正清除
+    positions.forEach(({ row, col }) => {
       board[row][col] = null;
     });
 
-    totalCleared += marked.size;
+    totalCleared += positions.length;
     settleBoardGravity();
   }
 
@@ -271,12 +381,12 @@ function clearMatches() {
   }
 }
 
-function placeActiveBlock() {
+async function placeActiveBlock() {
   if (!activeBlock) return;
   const { row, col, word, color } = activeBlock;
   board[row][col] = { word, color };
   activeBlock = null;
-  clearMatches();
+  await clearMatches();
   if (running) spawnBlock();
 }
 
@@ -352,6 +462,12 @@ function drawGrid() {
     }
   }
   if (activeBlock) drawCell(activeBlock.row, activeBlock.col, activeBlock);
+
+  // 持續畫殘留粒子
+  if (particles.length) {
+    updateParticles();
+    drawParticles();
+  }
 }
 
 function gameLoop(ts) {
@@ -360,10 +476,15 @@ function gameLoop(ts) {
     return;
   }
 
-  if (!lastTick) lastTick = ts;
-  if (ts - lastTick >= FALL_MS) {
-    softDrop();
-    lastTick = ts;
+  // 動畫播放中暫停掉落
+  if (!animating) {
+    if (!lastTick) lastTick = ts;
+    if (ts - lastTick >= FALL_MS) {
+      softDrop();
+      lastTick = ts;
+    }
+  } else {
+    lastTick = ts; // 重置計時，避免動畫結束後瞬間掉一大段
   }
 
   drawGrid();
