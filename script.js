@@ -3,7 +3,7 @@ const ROWS = 5;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 
-const DEFAULT_WORD_ROWS = [
+/*const DEFAULT_WORD_ROWS = [
   "der -e,ice cream",
   "1,2,3,4,5",
   "-,所有格 第一格(Nominativ),所有格 第二格(Genitiv),所有格 第三格(Dativ),所有格 第四格(Akkusativ)",
@@ -78,6 +78,7 @@ const DEFAULT_WORD_ROWS = [
   "複數 keine,keine -en,keiner -en,keinen -en n,keine -en"
 
 ];
+*/
 
 const COLORS = [
   "#ff7a7a",
