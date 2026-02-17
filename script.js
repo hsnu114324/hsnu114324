@@ -3,11 +3,12 @@ const ROWS = 5;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 
+/*
 const DEFAULT_WORD_ROWS = [
   "der -e,ice cream",
   "1,2,3,4,5",
 ];
-
+*/
 
 const COLORS = [
   "#ff7a7a",
