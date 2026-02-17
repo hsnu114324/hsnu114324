@@ -208,6 +208,34 @@ button {
   font-size: 0.9rem;
 }
 
+.pick-section {
+  margin: 14px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid #5261a6;
+  border-radius: 10px;
+  background: #111735;
+}
+
+.pick-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: #dbe2ff;
+  flex-wrap: wrap;
+}
+
+.pick-label input {
+  width: 60px;
+  border: 1px solid #5261a6;
+  background: #1a1f3d;
+  color: #fff;
+  border-radius: 8px;
+  padding: 6px 8px;
+  text-align: center;
+  font-size: 0.95rem;
+}
+
 .danger {
   border-color: #b65a76;
   background: #7a2d46;

@@ -1,4 +1,5 @@
 const STORAGE_KEY = "word_tetris_rows_v1";
+const PICK_KEY = "word_tetris_pick_count_v1";
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
@@ -84,8 +85,11 @@ const newRowInput = document.getElementById("newRowInput");
 const addBtn = document.getElementById("addBtn");
 const saveBtn = document.getElementById("saveBtn");
 const resetBtn = document.getElementById("resetBtn");
+const pickCountInput = document.getElementById("pickCount");
+const totalCountEl = document.getElementById("totalCount");
 
 let rows = loadRows();
+let pickCount = loadPickCount();
 
 function preventDoubleTapZoom() {
   let lastTouchEnd = 0;
@@ -151,6 +155,24 @@ function loadRows() {
   }
 }
 
+function loadPickCount() {
+  try {
+    const val = parseInt(localStorage.getItem(PICK_KEY), 10);
+    return isNaN(val) || val < 0 ? 0 : val;
+  } catch {
+    return 0;
+  }
+}
+
+function updateTotalCount() {
+  totalCountEl.textContent = String(rows.length);
+  pickCountInput.max = rows.length;
+  if (pickCount > rows.length) {
+    pickCount = rows.length;
+    pickCountInput.value = pickCount;
+  }
+}
+
 function setMessage(text, ok = false) {
   messageEl.textContent = text;
   messageEl.classList.toggle("ok", ok);
@@ -187,6 +209,8 @@ function renderRows() {
     item.appendChild(removeBtn);
     rowListEl.appendChild(item);
   });
+
+  updateTotalCount();
 }
 
 function addRow() {
@@ -213,13 +237,27 @@ function saveRows() {
     setMessage("至少要保留 1 列才能儲存。");
     return;
   }
+  // 讀取並驗證抽取組數
+  pickCount = parseInt(pickCountInput.value, 10) || 0;
+  if (pickCount < 0) pickCount = 0;
+  if (pickCount > rows.length) pickCount = rows.length;
+  pickCountInput.value = pickCount;
+
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
-  setMessage("已儲存，回遊戲頁重新開始即可套用。", true);
+  localStorage.setItem(PICK_KEY, String(pickCount));
+
+  const pickText = pickCount === 0
+    ? "全部"
+    : `隨機 ${pickCount}/${rows.length} 組`;
+  setMessage(`已儲存（${pickText}），回遊戲頁重新開始即可套用。`, true);
 }
 
 function resetDefault() {
   rows = [...DEFAULT_WORD_ROWS];
+  pickCount = 0;
+  pickCountInput.value = 0;
   renderRows();
+  updateTotalCount();
   setMessage("已還原預設，按「儲存」即可覆蓋。");
 }
 
@@ -231,5 +269,6 @@ newRowInput.addEventListener("keydown", (event) => {
 });
 
 preventDoubleTapZoom();
+pickCountInput.value = pickCount;
 renderRows();
 

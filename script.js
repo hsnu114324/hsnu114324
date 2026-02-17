@@ -30,9 +30,12 @@ const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
 
-const WORD_ROWS = loadWordRows();
-const comboList = buildComboList(WORD_ROWS);
-const wordPool = [...new Set(comboList.flat())];
+const PICK_KEY = "word_tetris_pick_count_v1";
+const ALL_WORD_ROWS = loadWordRows();
+const allComboList = buildComboList(ALL_WORD_ROWS);
+
+let comboList = [];
+let wordPool = [];
 
 let cellSize = 44;
 let board = createEmptyBoard();
@@ -133,6 +136,30 @@ function loadWordRows() {
   } catch (error) {
     return [...DEFAULT_WORD_ROWS];
   }
+}
+
+function loadPickCount() {
+  try {
+    const val = parseInt(localStorage.getItem(PICK_KEY), 10);
+    return isNaN(val) || val < 0 ? 0 : val;
+  } catch {
+    return 0;
+  }
+}
+
+// 從全部 combo 中隨機抽 n 組（0 = 全部）
+function pickRandomCombos() {
+  const n = loadPickCount();
+  if (n <= 0 || n >= allComboList.length) {
+    return [...allComboList];
+  }
+  // Fisher-Yates 取前 n 個
+  const indices = Array.from({ length: allComboList.length }, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+  return indices.slice(0, n).sort((a, b) => a - b).map((i) => allComboList[i]);
 }
 
 function setMessage(text, isOk = false) {
@@ -565,6 +592,10 @@ function gameLoop(ts) {
 }
 
 function restartGame() {
+  // 每次重新開始都重新抽取
+  comboList = pickRandomCombos();
+  wordPool = [...new Set(comboList.flat())];
+
   board = createEmptyBoard();
   activeBlock = null;
   score = 0;
@@ -575,7 +606,13 @@ function restartGame() {
   wordQueue = [];
   scoreEl.textContent = "0";
   updateProgress();
-  setMessage("遊戲開始，左/右移動，下鍵直接落地", true);
+
+  const pickN = loadPickCount();
+  const pickInfo = (pickN > 0 && pickN < allComboList.length)
+    ? `（已抽 ${comboList.length}/${allComboList.length} 組）`
+    : "";
+  setMessage(`遊戲開始${pickInfo}，左/右移動，下鍵直接落地`, true);
+
   spawnBlock();
   cancelAnimationFrame(gameLoopId);
   gameLoopId = requestAnimationFrame(gameLoop);
