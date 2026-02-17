@@ -1,5 +1,5 @@
 const COLS = 6;
-const ROWS = 12;
+const ROWS = 10;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 
