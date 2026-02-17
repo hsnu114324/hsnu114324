@@ -1,5 +1,5 @@
 const STORAGE_KEY = "word_tetris_rows_v1";
-#const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
+//const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const rowListEl = document.getElementById("rowList");
 const messageEl = document.getElementById("message");
