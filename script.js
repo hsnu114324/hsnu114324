@@ -75,7 +75,7 @@ const DEFAULT_WORD_ROWS = [
   "陰性 keine,keine -e,keiner -en,keiner -en,keine -e",
   "複數 die,die -en,der -en,den -en n,die -en",
   "複數 -,-e,-er,-en n,-e",
-  "複數 keine,keine -en,keiner -en,keinen -en n,keine -en",
+  "複數 keine,keine -en,keiner -en,keinen -en n,keine -en"
 
 ];
 
