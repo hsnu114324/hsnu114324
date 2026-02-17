@@ -1,1248 +1,1087 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>字塊學堂 WordTetris</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      --bg: #0a0a1a;
-      --panel: #111128;
-      --border: #2a2a5a;
-      --accent: #00ffcc;
-      --accent2: #ff6b6b;
-      --accent3: #ffd93d;
-      --accent4: #6bcb77;
-      --text: #e0e0ff;
-      --dim: #5a5a8a;
-      --grid-line: rgba(255,255,255,0.04);
-      --glow: 0 0 20px rgba(0,255,204,0.4);
-      --glow2: 0 0 20px rgba(255,107,107,0.4);
-
-      /* Block Colors */
-      --c1: #ff6b6b;
-      --c2: #ffd93d;
-      --c3: #6bcb77;
-      --c4: #00ffcc;
-      --c5: #a78bfa;
-      --c6: #fb923c;
-      --c7: #60a5fa;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      background: var(--bg);
-      color: var(--text);
-      font-family: 'Noto Sans TC', sans-serif;
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      overflow-x: hidden;
-    }
-
-    /* Scanline effect */
-    body::before {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background: repeating-linear-gradient(
-        0deg,
-        transparent,
-        transparent 2px,
-        rgba(0,0,0,0.08) 2px,
-        rgba(0,0,0,0.08) 4px
-      );
-      pointer-events: none;
-      z-index: 1000;
-    }
-
-    /* Grid background */
-    body::after {
-      content: '';
-      position: fixed;
-      inset: 0;
-      background-image:
-        linear-gradient(var(--grid-line) 1px, transparent 1px),
-        linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-      background-size: 40px 40px;
-      pointer-events: none;
-    }
-
-    /* TITLE */
-    .title-bar {
-      width: 100%;
-      text-align: center;
-      padding: 20px 0 10px;
-      position: relative;
-    }
-
-    .title-bar h1 {
-      font-family: 'Press Start 2P', monospace;
-      font-size: clamp(14px, 3vw, 22px);
-      color: var(--accent);
-      text-shadow: 0 0 10px var(--accent), 0 0 30px var(--accent), 2px 2px 0 #004433;
-      letter-spacing: 2px;
-      animation: titlePulse 3s ease-in-out infinite;
-    }
-
-    .title-sub {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 8px;
-      color: var(--dim);
-      margin-top: 6px;
-      letter-spacing: 3px;
-    }
-
-    @keyframes titlePulse {
-      0%, 100% { text-shadow: 0 0 10px var(--accent), 0 0 30px var(--accent), 2px 2px 0 #004433; }
-      50% { text-shadow: 0 0 20px var(--accent), 0 0 60px var(--accent), 0 0 80px rgba(0,255,204,0.3), 2px 2px 0 #004433; }
-    }
-
-    /* MAIN LAYOUT */
-    .game-wrapper {
-      display: flex;
-      gap: 16px;
-      align-items: flex-start;
-      padding: 10px 20px 30px;
-      position: relative;
-      z-index: 1;
-    }
-
-    /* PANELS */
-    .panel {
-      background: var(--panel);
-      border: 2px solid var(--border);
-      border-radius: 4px;
-      padding: 14px;
-      position: relative;
-    }
-
-    .panel::before {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: 4px;
-      background: linear-gradient(135deg, rgba(255,255,255,0.03) 0%, transparent 50%);
-      pointer-events: none;
-    }
-
-    .panel-title {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 7px;
-      color: var(--dim);
-      letter-spacing: 2px;
-      margin-bottom: 10px;
-      text-transform: uppercase;
-    }
-
-    /* LEFT PANEL */
-    .left-panel { width: 180px; }
-
-    /* SCORE */
-    .score-block {
-      margin-bottom: 14px;
-    }
-
-    .score-value {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 20px;
-      color: var(--accent3);
-      text-shadow: 0 0 10px rgba(255,217,61,0.6);
-      line-height: 1;
-    }
-
-    .score-label { margin-top: 4px; }
-
-    .mini-stats {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-bottom: 14px;
-    }
-
-    .stat-item {
-      background: rgba(0,0,0,0.3);
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      padding: 8px;
-    }
-
-    .stat-num {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 12px;
-      color: var(--accent);
-    }
-
-    .stat-lbl {
-      font-size: 10px;
-      color: var(--dim);
-      margin-top: 2px;
-    }
-
-    /* NEXT PIECE */
-    .next-display {
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border);
-      border-radius: 3px;
-      padding: 10px;
-      margin-bottom: 14px;
-      min-height: 80px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .next-piece-word {
-      font-size: 16px;
-      font-weight: 900;
-      color: var(--text);
-      text-align: center;
-      word-break: break-all;
-    }
-
-    .next-piece-trans {
-      font-size: 11px;
-      color: var(--dim);
-      text-align: center;
-      margin-top: 4px;
-    }
-
-    /* WORD SET SELECTOR */
-    .set-selector {
-      margin-bottom: 14px;
-    }
-
-    select {
-      width: 100%;
-      background: rgba(0,0,0,0.5);
-      border: 1px solid var(--border);
-      color: var(--text);
-      font-family: 'Noto Sans TC', sans-serif;
-      font-size: 12px;
-      padding: 6px 8px;
-      border-radius: 3px;
-      cursor: pointer;
-      outline: none;
-      appearance: none;
-    }
-
-    select:focus { border-color: var(--accent); }
-
-    /* MODE TOGGLE */
-    .mode-toggle {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 14px;
-    }
-
-    .mode-btn {
-      flex: 1;
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border);
-      color: var(--dim);
-      font-family: 'Press Start 2P', monospace;
-      font-size: 6px;
-      padding: 8px 4px;
-      cursor: pointer;
-      border-radius: 3px;
-      text-align: center;
-      transition: all 0.15s;
-      line-height: 1.6;
-    }
-
-    .mode-btn.active {
-      background: rgba(0,255,204,0.1);
-      border-color: var(--accent);
-      color: var(--accent);
-      box-shadow: var(--glow);
-    }
-
-    .mode-btn:hover:not(.active) {
-      border-color: var(--dim);
-      color: var(--text);
-    }
-
-    /* CONTROL BUTTONS */
-    .ctrl-btn {
-      width: 100%;
-      background: transparent;
-      border: 2px solid var(--accent);
-      color: var(--accent);
-      font-family: 'Press Start 2P', monospace;
-      font-size: 8px;
-      padding: 10px;
-      cursor: pointer;
-      border-radius: 3px;
-      margin-bottom: 8px;
-      transition: all 0.15s;
-      letter-spacing: 1px;
-    }
-
-    .ctrl-btn:hover {
-      background: var(--accent);
-      color: var(--bg);
-      box-shadow: var(--glow);
-    }
-
-    .ctrl-btn.danger {
-      border-color: var(--accent2);
-      color: var(--accent2);
-    }
-
-    .ctrl-btn.danger:hover {
-      background: var(--accent2);
-      color: var(--bg);
-      box-shadow: var(--glow2);
-    }
-
-    /* GAME CANVAS AREA */
-    .game-area {
-      position: relative;
-    }
-
-    canvas {
-      display: block;
-      border: 2px solid var(--border);
-      border-radius: 4px;
-      box-shadow: 0 0 40px rgba(0,255,204,0.1), inset 0 0 60px rgba(0,0,0,0.8);
-    }
-
-    /* OVERLAY */
-    .game-overlay {
-      position: absolute;
-      inset: 0;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      background: rgba(0,0,0,0.85);
-      border-radius: 4px;
-      z-index: 10;
-      backdrop-filter: blur(4px);
-    }
-
-    .overlay-title {
-      font-family: 'Press Start 2P', monospace;
-      font-size: clamp(12px, 2.5vw, 18px);
-      color: var(--accent);
-      text-shadow: var(--glow);
-      margin-bottom: 20px;
-      text-align: center;
-      line-height: 1.8;
-    }
-
-    .overlay-sub {
-      font-size: 13px;
-      color: var(--dim);
-      margin-bottom: 24px;
-      text-align: center;
-      line-height: 1.8;
-    }
-
-    .overlay-btn {
-      background: var(--accent);
-      border: none;
-      color: var(--bg);
-      font-family: 'Press Start 2P', monospace;
-      font-size: 10px;
-      padding: 14px 28px;
-      cursor: pointer;
-      border-radius: 3px;
-      box-shadow: var(--glow);
-      transition: all 0.15s;
-      margin: 4px;
-    }
-
-    .overlay-btn:hover {
-      transform: scale(1.05);
-      box-shadow: 0 0 30px rgba(0,255,204,0.7);
-    }
-
-    /* RIGHT PANEL */
-    .right-panel { width: 180px; }
-
-    /* VOCAB LIST */
-    .vocab-list {
-      max-height: 300px;
-      overflow-y: auto;
-      scrollbar-width: thin;
-      scrollbar-color: var(--border) transparent;
-    }
-
-    .vocab-list::-webkit-scrollbar { width: 4px; }
-    .vocab-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
-
-    .vocab-item {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      padding: 5px 8px;
-      border-radius: 3px;
-      margin-bottom: 3px;
-      font-size: 12px;
-      border: 1px solid transparent;
-      transition: all 0.3s;
-    }
-
-    .vocab-item.matched {
-      background: rgba(107,203,119,0.15);
-      border-color: rgba(107,203,119,0.3);
-      color: var(--accent4);
-    }
-
-    .vocab-item.matched .v-check { color: var(--accent4); }
-
-    .vocab-item .v-word { font-weight: 700; }
-    .vocab-item .v-trans { color: var(--dim); font-size: 10px; }
-    .vocab-item .v-check { color: transparent; font-size: 10px; }
-
-    /* TABLE MODE progress */
-    .table-progress {
-      margin-bottom: 14px;
-    }
-
-    .progress-bar-wrap {
-      background: rgba(0,0,0,0.4);
-      border: 1px solid var(--border);
-      border-radius: 2px;
-      height: 8px;
-      overflow: hidden;
-      margin-top: 6px;
-    }
-
-    .progress-bar-fill {
-      height: 100%;
-      background: linear-gradient(90deg, var(--accent4), var(--accent));
-      border-radius: 2px;
-      transition: width 0.5s ease;
-      box-shadow: 0 0 8px rgba(0,255,204,0.5);
-    }
-
-    .progress-text {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 7px;
-      color: var(--accent);
-      text-align: right;
-      margin-top: 4px;
-    }
-
-    /* KEYS HELP */
-    .keys-grid {
-      display: grid;
-      gap: 5px;
-    }
-
-    .key-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      font-size: 10px;
-      color: var(--dim);
-    }
-
-    .key-badge {
-      background: rgba(255,255,255,0.07);
-      border: 1px solid var(--border);
-      border-bottom: 2px solid var(--border);
-      border-radius: 3px;
-      padding: 2px 6px;
-      font-family: 'Press Start 2P', monospace;
-      font-size: 6px;
-      color: var(--text);
-      min-width: 26px;
-      text-align: center;
-    }
-
-    /* LEVEL display */
-    .level-display {
-      font-family: 'Press Start 2P', monospace;
-      font-size: 14px;
-      color: var(--accent3);
-      text-shadow: 0 0 8px rgba(255,217,61,0.5);
-    }
-
-    /* COMBO display */
-    .combo-display {
-      position: absolute;
-      pointer-events: none;
-      font-family: 'Press Start 2P', monospace;
-      font-size: clamp(14px, 3vw, 22px);
-      color: var(--accent3);
-      text-shadow: 0 0 10px rgba(255,217,61,0.8);
-      white-space: nowrap;
-      z-index: 20;
-      animation: comboPop 1s forwards;
-    }
-
-    @keyframes comboPop {
-      0% { opacity: 0; transform: scale(0.5) translateY(0); }
-      20% { opacity: 1; transform: scale(1.3) translateY(-10px); }
-      60% { opacity: 1; transform: scale(1) translateY(-30px); }
-      100% { opacity: 0; transform: scale(0.8) translateY(-60px); }
-    }
-
-    /* FLASH OVERLAY */
-    .flash-overlay {
-      position: absolute;
-      inset: 0;
-      border-radius: 4px;
-      pointer-events: none;
-      z-index: 5;
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
-
-    .flash-overlay.flash-good { background: rgba(107,203,119,0.3); }
-    .flash-overlay.flash-bad { background: rgba(255,107,107,0.3); }
-
-    /* MOBILE CONTROLS */
-    .mobile-controls {
-      display: none;
-      gap: 8px;
-      margin-top: 12px;
-      justify-content: center;
-    }
-
-    .m-btn {
-      background: rgba(0,0,0,0.5);
-      border: 2px solid var(--border);
-      color: var(--text);
-      width: 52px;
-      height: 52px;
-      border-radius: 8px;
-      font-size: 20px;
-      cursor: pointer;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.1s;
-      user-select: none;
-      -webkit-user-select: none;
-    }
-
-    .m-btn:active {
-      background: rgba(0,255,204,0.2);
-      border-color: var(--accent);
-    }
-
-    @media (max-width: 700px) {
-      .game-wrapper { flex-direction: column; align-items: center; gap: 10px; }
-      .left-panel, .right-panel { width: 100%; max-width: 400px; }
-      .mini-stats { grid-template-columns: repeat(4, 1fr); }
-      .mobile-controls { display: flex; flex-wrap: wrap; }
-    }
-
-    /* POPUP */
-    .word-popup {
-      position: absolute;
-      left: 50%;
-      transform: translateX(-50%);
-      background: var(--panel);
-      border: 2px solid var(--accent);
-      border-radius: 4px;
-      padding: 10px 16px;
-      text-align: center;
-      pointer-events: none;
-      z-index: 15;
-      white-space: nowrap;
-      box-shadow: var(--glow);
-      animation: popupAnim 1.5s forwards;
-    }
-
-    .word-popup .wp-word { font-size: 18px; font-weight: 900; color: var(--accent); }
-    .word-popup .wp-trans { font-size: 12px; color: var(--text); margin-top: 2px; }
-
-    @keyframes popupAnim {
-      0% { opacity: 0; top: 50%; }
-      15% { opacity: 1; top: 45%; }
-      70% { opacity: 1; top: 40%; }
-      100% { opacity: 0; top: 30%; }
-    }
-
-    /* TABLE COMPLETE */
-    .table-complete-overlay {
-      background: rgba(0,0,0,0.9);
-    }
-
-    .firework {
-      position: absolute;
-      width: 6px;
-      height: 6px;
-      border-radius: 50%;
-      animation: fireworkAnim 1s ease-out forwards;
-    }
-
-    @keyframes fireworkAnim {
-      0% { opacity: 1; transform: translate(0,0) scale(1); }
-      100% { opacity: 0; transform: translate(var(--dx), var(--dy)) scale(0); }
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>WORDTRIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Noto+Sans+TC:wght@400;700;900&display=swap" rel="stylesheet">
+<style>
+/* ── TOKENS ── */
+:root {
+  --bg:        #07080f;
+  --surface:   #0d0f1c;
+  --border:    rgba(255,255,255,0.07);
+  --border-hi: rgba(255,255,255,0.18);
+  --text:      #c8cde8;
+  --dim:       #3a3d5c;
+  --mono:      'DM Mono', monospace;
+  --sans:      'Noto Sans TC', sans-serif;
+  --radius:    6px;
+
+  /* Neon palette */
+  --cyan:   #00f5ff;
+  --pink:   #ff2d78;
+  --gold:   #ffe600;
+  --green:  #00ff88;
+  --purple: #bf5fff;
+
+  --glow-cyan:  0 0 12px rgba(0,245,255,0.5), 0 0 40px rgba(0,245,255,0.15);
+  --glow-pink:  0 0 12px rgba(255,45,120,0.5), 0 0 40px rgba(255,45,120,0.15);
+  --glow-gold:  0 0 12px rgba(255,230,0,0.5), 0 0 40px rgba(255,230,0,0.15);
+  --glow-green: 0 0 12px rgba(0,255,136,0.5), 0 0 40px rgba(0,255,136,0.15);
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { height: 100%; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow-x: hidden;
+}
+
+/* Noise texture */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  pointer-events: none; z-index: 999; opacity: 0.6;
+}
+
+/* ── HEADER ── */
+header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px 10px;
+  border-bottom: 1px solid var(--border);
+  position: relative; z-index: 1;
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: 6px;
+  color: var(--cyan);
+  text-shadow: var(--glow-cyan);
+}
+
+.logo span { color: var(--pink); text-shadow: var(--glow-pink); }
+
+.header-mode {
+  display: flex;
+  gap: 6px;
+}
+
+.tag {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  padding: 4px 10px;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  cursor: pointer;
+  transition: all 0.15s;
+  text-transform: uppercase;
+}
+
+.tag.active-cyan  { border-color: var(--cyan);  color: var(--cyan);  box-shadow: var(--glow-cyan); }
+.tag.active-pink  { border-color: var(--pink);  color: var(--pink);  box-shadow: var(--glow-pink); }
+
+/* ── LAYOUT ── */
+.layout {
+  display: flex;
+  gap: 20px;
+  padding: 16px 20px 24px;
+  align-items: flex-start;
+  position: relative; z-index: 1;
+}
+
+/* ── SIDEBAR ── */
+.sidebar {
+  width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.card-label {
+  font-family: var(--mono);
+  font-size: 9px;
+  letter-spacing: 2.5px;
+  color: var(--dim);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+/* Score */
+.score-num {
+  font-family: var(--mono);
+  font-size: 32px;
+  font-weight: 500;
+  color: var(--gold);
+  text-shadow: var(--glow-gold);
+  line-height: 1;
+}
+
+.score-sub {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+}
+
+.stat { flex: 1; }
+.stat-n {
+  font-family: var(--mono);
+  font-size: 18px;
+  color: var(--cyan);
+  text-shadow: var(--glow-cyan);
+}
+.stat-l { font-size: 10px; color: var(--dim); margin-top: 1px; }
+
+/* Next piece */
+.next-box {
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 0;
+}
+
+.next-word {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+  text-align: center;
+  line-height: 1.3;
+}
+
+.next-fields {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.next-field-tag {
+  font-family: var(--mono);
+  font-size: 9px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  border: 1px solid;
+}
+
+/* Field legend */
+.field-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
+.legend-count {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--dim);
+}
+
+/* Word set selector */
+select {
+  width: 100%;
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 7px 10px;
+  outline: none;
+  cursor: pointer;
+  appearance: none;
+}
+select:focus { border-color: var(--cyan); box-shadow: 0 0 8px rgba(0,245,255,0.2); }
+
+/* Buttons */
+.btn {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid;
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all 0.15s;
+  background: transparent;
+}
+
+.btn-primary {
+  border-color: var(--cyan);
+  color: var(--cyan);
+}
+.btn-primary:hover {
+  background: rgba(0,245,255,0.08);
+  box-shadow: var(--glow-cyan);
+}
+
+.btn-ghost {
+  border-color: var(--border-hi);
+  color: var(--dim);
+}
+.btn-ghost:hover { color: var(--text); border-color: var(--border-hi); }
+
+/* Progress bar */
+.prog-wrap {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  height: 4px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.prog-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--cyan), var(--green));
+  border-radius: 2px;
+  transition: width 0.5s cubic-bezier(0.4,0,0.2,1);
+  box-shadow: 0 0 8px rgba(0,245,255,0.4);
+}
+.prog-text {
+  font-family: var(--mono);
+  font-size: 9px;
+  color: var(--dim);
+  text-align: right;
+  margin-top: 4px;
+}
+
+/* Keys */
+.keys-grid { display: flex; flex-direction: column; gap: 5px; }
+.key-row { display: flex; align-items: center; gap: 8px; font-size: 10px; color: var(--dim); }
+kbd {
+  font-family: var(--mono);
+  font-size: 8px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--border-hi);
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 2px 6px;
+  min-width: 26px;
+  text-align: center;
+  color: var(--text);
+}
+
+/* ── GAME AREA ── */
+.game-area { position: relative; }
+
+canvas {
+  display: block;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* Canvas glow rim */
+.canvas-rim {
+  position: absolute; inset: -1px;
+  border-radius: calc(var(--radius) + 1px);
+  border: 1px solid rgba(0,245,255,0.12);
+  pointer-events: none;
+  box-shadow: 0 0 30px rgba(0,245,255,0.06);
+}
+
+/* ── OVERLAY ── */
+.overlay {
+  position: absolute; inset: 0;
+  background: rgba(7,8,15,0.9);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+  z-index: 20;
+  gap: 6px;
+}
+
+.overlay-title {
+  font-family: var(--mono);
+  font-size: 20px;
+  letter-spacing: 4px;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-shadow: var(--glow-cyan);
+  margin-bottom: 4px;
+}
+
+.overlay-body {
+  font-size: 12px;
+  color: var(--dim);
+  text-align: center;
+  line-height: 2;
+  margin-bottom: 10px;
+}
+
+.overlay-stat {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+}
+
+.overlay-btn {
+  padding: 10px 32px;
+  border: 1px solid var(--cyan);
+  border-radius: var(--radius);
+  background: rgba(0,245,255,0.06);
+  color: var(--cyan);
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  margin: 3px;
+}
+.overlay-btn:hover {
+  background: rgba(0,245,255,0.14);
+  box-shadow: var(--glow-cyan);
+}
+.overlay-btn.green {
+  border-color: var(--green);
+  color: var(--green);
+  background: rgba(0,255,136,0.06);
+}
+.overlay-btn.green:hover {
+  background: rgba(0,255,136,0.14);
+  box-shadow: var(--glow-green);
+}
+
+/* Flash */
+.flash {
+  position: absolute; inset: 0;
+  border-radius: var(--radius);
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  transition: opacity 0.08s;
+}
+.flash-good { background: rgba(0,255,136,0.18); }
+.flash-bad  { background: rgba(255,45,120,0.14); }
+
+/* Floating score */
+.float-score {
+  position: absolute;
+  font-family: var(--mono);
+  font-size: 13px;
+  pointer-events: none;
+  z-index: 30;
+  white-space: nowrap;
+  animation: floatUp 1s ease-out forwards;
+}
+@keyframes floatUp {
+  0%   { opacity: 0; transform: translateY(0) scale(0.8); }
+  15%  { opacity: 1; transform: translateY(-8px) scale(1.1); }
+  70%  { opacity: 1; transform: translateY(-36px) scale(1); }
+  100% { opacity: 0; transform: translateY(-70px) scale(0.9); }
+}
+
+/* Vocab list (right sidebar) */
+.vocab-scroll {
+  max-height: 340px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.vocab-scroll::-webkit-scrollbar { width: 3px; }
+.vocab-scroll::-webkit-scrollbar-thumb { background: var(--border); }
+
+.vocab-row {
+  display: grid;
+  gap: 4px;
+  align-items: center;
+  padding: 5px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  border: 1px solid transparent;
+  transition: all 0.35s;
+  margin-bottom: 2px;
+}
+
+.vocab-row .v0 { font-weight: 700; }
+.vocab-row .check { font-size: 10px; color: transparent; text-align: right; }
+
+.vocab-row.done {
+  background: rgba(0,255,136,0.06);
+  border-color: rgba(0,255,136,0.15);
+}
+.vocab-row.done .check { color: var(--green); }
+
+/* ── MOBILE ── */
+.mobile-pad {
+  display: none;
+  gap: 8px;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 20px;
+}
+.m-row { display: flex; gap: 8px; }
+.m-btn {
+  width: 58px; height: 58px;
+  background: var(--surface);
+  border: 1px solid var(--border-hi);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.1s;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+.m-btn:active { background: rgba(0,245,255,0.1); border-color: var(--cyan); color: var(--cyan); }
+
+/* Firework particle */
+.fw { position: absolute; width: 5px; height: 5px; border-radius: 50%; animation: fw 0.9s ease-out forwards; }
+@keyframes fw {
+  from { opacity:1; transform:translate(0,0) scale(1); }
+  to   { opacity:0; transform:translate(var(--tx),var(--ty)) scale(0); }
+}
+
+@media (max-width: 740px) {
+  .layout { flex-direction: column; align-items: center; padding: 10px; gap: 10px; }
+  .sidebar { width: 100%; max-width: 360px; flex-direction: row; flex-wrap: wrap; }
+  .sidebar .card { flex: 1; min-width: 140px; }
+  .mobile-pad { display: flex; }
+  .right-sidebar { width: 100%; max-width: 360px; }
+}
+</style>
 </head>
 <body>
 
-<div class="title-bar">
-  <h1>字塊學堂</h1>
-  <div class="title-sub">WORD TETRIS LEARNING</div>
-</div>
-
-<div class="game-wrapper">
-
-  <!-- LEFT PANEL -->
-  <div class="panel left-panel">
-    <div class="score-block">
-      <div class="panel-title">SCORE</div>
-      <div class="score-value" id="scoreVal">0</div>
-    </div>
-
-    <div class="mini-stats">
-      <div class="stat-item">
-        <div class="stat-num level-display" id="levelVal">1</div>
-        <div class="stat-lbl">LEVEL</div>
-      </div>
-      <div class="stat-item">
-        <div class="stat-num" id="linesVal">0</div>
-        <div class="stat-lbl">MATCHED</div>
-      </div>
-    </div>
-
-    <div class="panel-title">NEXT WORD</div>
-    <div class="next-display" id="nextDisplay">
-      <div>
-        <div class="next-piece-word" id="nextWord">—</div>
-        <div class="next-piece-trans" id="nextTrans"></div>
-      </div>
-    </div>
-
-    <div class="set-selector">
-      <div class="panel-title">WORD SET</div>
-      <select id="wordSetSelect"></select>
-    </div>
-
-    <div class="panel-title">GAME MODE</div>
-    <div class="mode-toggle">
-      <button class="mode-btn active" id="modeLineBtn" onclick="setMode('line')">
-        ▬▬▬<br>消除<br>模式
-      </button>
-      <button class="mode-btn" id="modeTableBtn" onclick="setMode('table')">
-        ▦▦▦<br>完整<br>模式
-      </button>
-    </div>
-
-    <button class="ctrl-btn" id="startBtn" onclick="startGame()">▶ START</button>
-    <button class="ctrl-btn" id="pauseBtn" onclick="togglePause()" style="display:none">⏸ PAUSE</button>
-    <button class="ctrl-btn danger" onclick="resetGame()">↺ RESET</button>
+<header>
+  <div class="logo">WORD<span>TRIS</span></div>
+  <div class="header-mode">
+    <div class="tag active-cyan" id="tagLine" onclick="setMode('line')">ENDLESS</div>
+    <div class="tag" id="tagTable" onclick="setMode('table')">TABLE CLEAR</div>
   </div>
+</header>
 
-  <!-- GAME AREA -->
-  <div class="game-area" id="gameArea">
-    <canvas id="gameCanvas"></canvas>
-    <div class="flash-overlay" id="flashOverlay"></div>
+<div class="layout">
 
-    <!-- START OVERLAY -->
-    <div class="game-overlay" id="startOverlay">
-      <div class="overlay-title">字塊學堂<br><span style="font-size:0.6em;color:var(--dim)">WORD TETRIS</span></div>
-      <div class="overlay-sub">
-        讓單字方塊與翻譯對齊<br>
-        正確配對即可消除！<br><br>
-        <span style="color:var(--accent3)">← → 移動 ↓ 加速 ↑ 旋轉</span>
+  <!-- ── LEFT SIDEBAR ── -->
+  <div class="sidebar">
+
+    <div class="card">
+      <div class="card-label">Score</div>
+      <div class="score-num" id="scoreNum">0</div>
+      <div class="score-sub">
+        <div class="stat">
+          <div class="stat-n" id="levelNum">1</div>
+          <div class="stat-l">LEVEL</div>
+        </div>
+        <div class="stat">
+          <div class="stat-n" id="matchedNum">0</div>
+          <div class="stat-l">CLEARED</div>
+        </div>
       </div>
-      <button class="overlay-btn" onclick="startGame()">▶ 開始遊戲</button>
-    </div>
-  </div>
-
-  <!-- RIGHT PANEL -->
-  <div class="panel right-panel">
-    <div class="table-progress" id="tableProgress" style="display:none">
-      <div class="panel-title">TABLE PROGRESS</div>
-      <div class="progress-bar-wrap">
-        <div class="progress-bar-fill" id="progressFill" style="width:0%"></div>
-      </div>
-      <div class="progress-text" id="progressText">0 / 0</div>
     </div>
 
-    <div class="panel-title">VOCABULARY</div>
-    <div class="vocab-list" id="vocabList"></div>
+    <div class="card">
+      <div class="card-label">Next</div>
+      <div class="next-box" id="nextBox">
+        <div class="next-word" id="nextWordTxt">—</div>
+        <div class="next-fields" id="nextFields"></div>
+      </div>
+    </div>
 
-    <div class="panel" style="margin-top:14px; padding:10px; background:rgba(0,0,0,0.3)">
-      <div class="panel-title">CONTROLS</div>
+    <div class="card">
+      <div class="card-label">Word Set</div>
+      <select id="setSelect" style="margin-bottom:8px"></select>
+
+      <div class="field-legend" id="fieldLegend"></div>
+    </div>
+
+    <div id="tableProgressCard" class="card" style="display:none">
+      <div class="card-label">Progress</div>
+      <div class="prog-wrap">
+        <div class="prog-fill" id="progFill" style="width:0%"></div>
+      </div>
+      <div class="prog-text" id="progText">0 / 0</div>
+    </div>
+
+    <div class="card">
+      <button class="btn btn-primary" id="btnStart" onclick="startGame()">▶ START</button>
+      <br style="margin:4px 0">
+      <button class="btn btn-ghost" id="btnPause" onclick="togglePause()" style="display:none">⏸ PAUSE</button>
+      <br style="margin:4px 0">
+      <button class="btn btn-ghost" onclick="resetGame()">↺ RESET</button>
+    </div>
+
+    <div class="card">
+      <div class="card-label">Controls</div>
       <div class="keys-grid">
-        <div class="key-row"><span class="key-badge">←→</span> 左右移動</div>
-        <div class="key-row"><span class="key-badge">↑</span> 旋轉方向</div>
-        <div class="key-row"><span class="key-badge">↓</span> 加速下降</div>
-        <div class="key-row"><span class="key-badge">Space</span> 瞬間落地</div>
-        <div class="key-row"><span class="key-badge">P</span> 暫停</div>
+        <div class="key-row"><kbd>← →</kbd> 左右移動</div>
+        <div class="key-row"><kbd>↓</kbd> 加速下降</div>
+        <div class="key-row"><kbd>↑</kbd> 循環切換面</div>
+        <div class="key-row"><kbd>SPC</kbd> 瞬間落地</div>
+        <div class="key-row"><kbd>P</kbd> 暫停</div>
       </div>
+    </div>
+
+  </div>
+
+  <!-- ── CANVAS ── -->
+  <div class="game-area" id="gameArea">
+    <canvas id="c"></canvas>
+    <div class="canvas-rim"></div>
+    <div class="flash" id="flash"></div>
+
+    <div class="overlay" id="overlay">
+      <div class="overlay-title" id="ovTitle">WORDTRIS</div>
+      <div class="overlay-body" id="ovBody">
+        把同一個單字的所有欄位方塊<br>
+        <span style="color:var(--cyan)">由左到右依序排成一行</span>才能消除<br><br>
+        按 <kbd>↑</kbd> 可切換方塊顯示的欄位
+      </div>
+      <button class="overlay-btn" onclick="startGame()">▶ START GAME</button>
+    </div>
+  </div>
+
+  <!-- ── RIGHT SIDEBAR ── -->
+  <div class="sidebar right-sidebar">
+    <div class="card" style="width:100%">
+      <div class="card-label">Vocabulary</div>
+      <div class="vocab-scroll" id="vocabList"></div>
     </div>
   </div>
 
 </div>
 
-<!-- MOBILE CONTROLS -->
-<div class="mobile-controls">
-  <div style="display:flex;gap:8px;width:100%;justify-content:center">
-    <button class="m-btn" id="mBtnLeft" ontouchstart="mobilePress('left')" ontouchend="mobileRelease('left')">◀</button>
-    <button class="m-btn" id="mBtnDown" ontouchstart="mobilePress('down')" ontouchend="mobileRelease('down')">▼</button>
-    <button class="m-btn" id="mBtnRight" ontouchstart="mobilePress('right')" ontouchend="mobileRelease('right')">▶</button>
+<!-- Mobile controls -->
+<div class="mobile-pad" id="mobilePad">
+  <div class="m-row">
+    <button class="m-btn" ontouchstart="mStart('left')" ontouchend="mStop('left')" onmousedown="mStart('left')" onmouseup="mStop('left')">◀</button>
+    <button class="m-btn" ontouchstart="mStart('down')" ontouchend="mStop('down')" onmousedown="mStart('down')" onmouseup="mStop('down')">▼</button>
+    <button class="m-btn" ontouchstart="mStart('right')" ontouchend="mStop('right')" onmousedown="mStart('right')" onmouseup="mStop('right')">▶</button>
   </div>
-  <div style="display:flex;gap:8px;width:100%;justify-content:center">
-    <button class="m-btn" onclick="gameAction('rotate')">↻</button>
-    <button class="m-btn" onclick="gameAction('drop')">⬇</button>
+  <div class="m-row">
+    <button class="m-btn" onclick="rotatePiece()">↻</button>
+    <button class="m-btn" onclick="hardDrop()">⬇</button>
     <button class="m-btn" onclick="togglePause()">⏸</button>
   </div>
 </div>
 
 <script src="words.js"></script>
 <script>
-// ============================================================
-// GAME ENGINE
-// ============================================================
+// ═══════════════════════════════════════════════════════════════
+//  WORDTRIS ENGINE
+// ═══════════════════════════════════════════════════════════════
 
-const canvas = document.getElementById('gameCanvas');
+// ── CONFIG (read from words.js) ──────────────────────────────
+let fields = [];       // [{ key, label, color, abbr }]
+let wordSets = {};
+let currentSetName = '';
+let currentWords = [];
+
+// ── CANVAS ───────────────────────────────────────────────────
+const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-
-// CANVAS SIZE
-const CELL = 52;
-const COLS = 6;
-const ROWS = 14;
-canvas.width = COLS * CELL;
+const CELL = 56;
+const COLS = 8;
+const ROWS = 13;
+canvas.width  = COLS * CELL;
 canvas.height = ROWS * CELL;
 
-// Colors
-const COLORS = [
-  '#ff6b6b','#ffd93d','#6bcb77','#00ffcc','#a78bfa','#fb923c','#60a5fa'
-];
-const DARK_COLORS = [
-  '#4a1f1f','#4a3f00','#1a3f22','#004433','#2a1f5a','#4a2a00','#1a2a4a'
-];
-
-// ============================================================
-// GAME STATE
-// ============================================================
-let state = {
-  board: [],       // board[row][col] = { word, translation, color, darkColor } | null
-  current: null,   // { x, col, row, word, translation, color, darkColor }
+// ── STATE ─────────────────────────────────────────────────────
+let S = {
+  board: [],         // ROWS×COLS  null | { wordIdx, fieldIdx, color }
+  current: null,     // falling piece
   next: null,
   score: 0,
   level: 1,
-  matched: 0,
-  gameMode: 'line', // 'line' | 'table'
+  cleared: 0,
+  mode: 'line',
   running: false,
   paused: false,
-  wordSet: [],
-  wordSetName: '',
-  matchedWords: new Set(),
-  tableWords: [],   // For table mode: target words to complete
-  dropInterval: 900,
-  lastDrop: 0,
-  combo: 0,
+  matchedSet: new Set(),
+  dropMs: 850,
 };
 
-let dropTimer = null;
-let mobileIntervals = {};
+let raf = null;
+let lastT = 0;
+let held = {};
+let mIntervals = {};
 
-// ============================================================
-// INIT WORD SETS
-// ============================================================
-function initWordSets() {
-  const sel = document.getElementById('wordSetSelect');
+// ── INIT ──────────────────────────────────────────────────────
+function init() {
+  fields = WORD_CONFIG.fields;
+  wordSets = WORD_CONFIG.word_sets;
+
+  // Populate set selector
+  const sel = document.getElementById('setSelect');
   sel.innerHTML = '';
-  for (const setName of Object.keys(WORD_SETS)) {
-    const opt = document.createElement('option');
-    opt.value = setName;
-    opt.textContent = setName;
-    sel.appendChild(opt);
+  for (const name of Object.keys(wordSets)) {
+    const o = document.createElement('option');
+    o.value = o.textContent = name;
+    sel.appendChild(o);
   }
-  sel.value = DEFAULT_SET;
-  loadVocabList(DEFAULT_SET);
-  sel.addEventListener('change', () => {
-    if (!state.running) loadVocabList(sel.value);
-  });
+  sel.value = WORD_CONFIG.default_set;
+  sel.onchange = () => { if (!S.running) loadSet(sel.value); };
+
+  loadSet(WORD_CONFIG.default_set);
+  buildFieldLegend();
+  renderVocab();
+  drawIdle();
 }
 
-function loadVocabList(setName) {
-  state.wordSet = [...WORD_SETS[setName]];
-  state.wordSetName = setName;
-  renderVocabList();
+function loadSet(name) {
+  currentSetName = name;
+  currentWords = wordSets[name] || [];
+  S.matchedSet = new Set();
+  renderVocab();
+  updateProgress();
 }
 
-// ============================================================
-// MODE
-// ============================================================
-function setMode(mode) {
-  if (state.running) return;
-  state.gameMode = mode;
-  document.getElementById('modeLineBtn').classList.toggle('active', mode === 'line');
-  document.getElementById('modeTableBtn').classList.toggle('active', mode === 'table');
-  document.getElementById('tableProgress').style.display = mode === 'table' ? 'block' : 'none';
+function buildFieldLegend() {
+  const el = document.getElementById('fieldLegend');
+  el.innerHTML = '';
+  for (const f of fields) {
+    const row = document.createElement('div');
+    row.className = 'legend-row';
+    row.innerHTML = `<div class="legend-dot" style="background:${f.color};box-shadow:0 0 6px ${f.color}88"></div>
+      <span>${f.label}</span>
+      <span class="legend-count" style="color:${f.color}">${f.abbr}</span>`;
+    el.appendChild(row);
+  }
 }
 
-// ============================================================
-// BOARD
-// ============================================================
+// ── MODE ──────────────────────────────────────────────────────
+function setMode(m) {
+  if (S.running) return;
+  S.mode = m;
+  document.getElementById('tagLine').className  = 'tag' + (m === 'line'  ? ' active-cyan' : '');
+  document.getElementById('tagTable').className = 'tag' + (m === 'table' ? ' active-pink' : '');
+  document.getElementById('tableProgressCard').style.display = m === 'table' ? 'block' : 'none';
+}
+
+// ── GAME START ────────────────────────────────────────────────
+function startGame() {
+  const setName = document.getElementById('setSelect').value;
+  loadSet(setName);
+
+  S.board    = createBoard();
+  S.score    = 0;
+  S.level    = 1;
+  S.cleared  = 0;
+  S.matchedSet = new Set();
+  S.running  = true;
+  S.paused   = false;
+  S.dropMs   = 850;
+
+  hideOverlay();
+  document.getElementById('btnStart').style.display = 'none';
+  document.getElementById('btnPause').style.display = 'block';
+
+  S.next    = makePiece();
+  spawnPiece();
+  updateHUD();
+  renderVocab();
+
+  if (raf) cancelAnimationFrame(raf);
+  lastT = performance.now();
+  raf = requestAnimationFrame(loop);
+}
+
+function resetGame() {
+  if (raf) cancelAnimationFrame(raf);
+  S.running = false;
+  S.board   = createBoard();
+  S.current = null;
+  S.score = S.level = S.cleared = 0;
+  S.matchedSet = new Set();
+
+  document.getElementById('btnStart').style.display = 'block';
+  document.getElementById('btnPause').style.display = 'none';
+
+  showOverlay('WORDTRIS',
+    '把同一個單字的所有欄位方塊<br><span style="color:var(--cyan)">由左到右依序排成一行</span>才能消除<br><br>按 <kbd>↑</kbd> 可切換方塊顯示的欄位',
+    [{ label: '▶ START', fn: 'startGame()' }]
+  );
+
+  updateHUD();
+  renderVocab();
+  drawIdle();
+}
+
+// ── BOARD ─────────────────────────────────────────────────────
 function createBoard() {
   return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
 }
 
-// ============================================================
-// PIECE GENERATION
-// ============================================================
-function getRandomWord() {
-  const words = state.wordSet;
-  return words[Math.floor(Math.random() * words.length)];
-}
-
-function getRandomColor() {
-  const i = Math.floor(Math.random() * COLORS.length);
-  return { color: COLORS[i], darkColor: DARK_COLORS[i] };
-}
-
-function newPiece(wordData) {
-  const { color, darkColor } = getRandomColor();
-  const data = wordData || getRandomWord();
+// ── PIECE ─────────────────────────────────────────────────────
+// A "piece" is ONE cell wide, falling vertically.
+// It represents ONE field of ONE word entry.
+// When placed, we check for row-matches.
+function makePiece() {
+  const wi = Math.floor(Math.random() * currentWords.length);
+  const fi = Math.floor(Math.random() * fields.length);
   return {
-    col: Math.floor(COLS / 2) - 0,
+    wordIdx:  wi,
+    fieldIdx: fi,
+    col: Math.floor(COLS / 2),
     row: 0,
-    word: data.word,
-    translation: data.translation,
-    color,
-    darkColor,
-    facing: 'word', // 'word' | 'translation' — rotate toggles which side shows
   };
 }
 
-// ============================================================
-// START / RESET
-// ============================================================
-function startGame() {
-  const setName = document.getElementById('wordSetSelect').value;
-  loadVocabList(setName);
-
-  state.board = createBoard();
-  state.score = 0;
-  state.level = 1;
-  state.matched = 0;
-  state.matchedWords = new Set();
-  state.combo = 0;
-  state.running = true;
-  state.paused = false;
-  state.dropInterval = 900;
-
-  if (state.gameMode === 'table') {
-    state.tableWords = [...state.wordSet];
-    state.matchedWords = new Set();
-    updateTableProgress();
-  }
-
-  document.getElementById('startOverlay').style.display = 'none';
-  document.getElementById('startBtn').style.display = 'none';
-  document.getElementById('pauseBtn').style.display = 'block';
-
-  updateScore();
-  renderVocabList();
-
-  state.next = newPiece();
-  spawnPiece();
-  updateNextDisplay();
-
-  if (dropTimer) cancelAnimationFrame(dropTimer);
-  state.lastDrop = performance.now();
-  dropTimer = requestAnimationFrame(gameLoop);
+function pieceColor(p) {
+  return fields[p.fieldIdx].color;
 }
 
-function resetGame() {
-  if (dropTimer) cancelAnimationFrame(dropTimer);
-  state.running = false;
-  state.paused = false;
-  state.board = createBoard();
-  state.current = null;
-  state.next = null;
-  state.score = 0;
-  state.level = 1;
-  state.matched = 0;
-  state.matchedWords = new Set();
-  state.combo = 0;
-
-  document.getElementById('startBtn').style.display = 'block';
-  document.getElementById('pauseBtn').style.display = 'none';
-
-  const overlay = document.getElementById('startOverlay');
-  overlay.style.display = 'flex';
-  overlay.querySelector('.overlay-title').innerHTML = '字塊學堂<br><span style="font-size:0.6em;color:var(--dim)">WORD TETRIS</span>';
-  overlay.querySelector('.overlay-sub').innerHTML = '讓單字方塊與翻譯對齊<br>正確配對即可消除！<br><br><span style="color:var(--accent3)">← → 移動 ↓ 加速 ↑ 旋轉</span>';
-  overlay.innerHTML = overlay.innerHTML; // force re-render
-  // Rebuild overlay cleanly
-  showStartOverlay();
-
-  updateScore();
-  renderVocabList();
-  drawBoard();
+function pieceText(p) {
+  const word = currentWords[p.wordIdx];
+  const f    = fields[p.fieldIdx];
+  return word ? String(word[f.key] || '') : '?';
 }
 
-function showStartOverlay() {
-  const overlay = document.getElementById('startOverlay');
-  overlay.style.display = 'flex';
-  overlay.innerHTML = `
-    <div class="overlay-title">字塊學堂<br><span style="font-size:0.6em;color:var(--dim)">WORD TETRIS</span></div>
-    <div class="overlay-sub">
-      讓單字方塊與翻譯對齊<br>
-      正確配對即可消除！<br><br>
-      <span style="color:var(--accent3)">← → 移動 ↓ 加速 ↑ 旋轉</span>
-    </div>
-    <button class="overlay-btn" onclick="startGame()">▶ 開始遊戲</button>
-  `;
+function pieceAbbr(p) {
+  return fields[p.fieldIdx].abbr;
 }
 
 function spawnPiece() {
-  state.current = state.next;
-  state.current.row = 0;
-  state.current.col = Math.floor(COLS / 2);
-  state.next = newPiece();
+  S.current = S.next;
+  S.current.col = Math.floor(COLS / 2);
+  S.current.row = 0;
+  S.next = makePiece();
   updateNextDisplay();
 
-  // Check game over
-  if (isColliding(state.current, state.current.col, state.current.row)) {
+  if (isCollide(S.current.col, S.current.row)) {
     gameOver();
   }
 }
 
-// ============================================================
-// GAME LOOP
-// ============================================================
-function gameLoop(timestamp) {
-  if (!state.running) return;
-  if (state.paused) {
-    dropTimer = requestAnimationFrame(gameLoop);
-    return;
+// ── LOOP ──────────────────────────────────────────────────────
+function loop(t) {
+  if (!S.running) return;
+  if (!S.paused && t - lastT > S.dropMs) {
+    lastT = t;
+    stepDown();
   }
-
-  if (timestamp - state.lastDrop > state.dropInterval) {
-    state.lastDrop = timestamp;
-    moveDown();
-  }
-
-  drawBoard();
-  dropTimer = requestAnimationFrame(gameLoop);
+  draw();
+  raf = requestAnimationFrame(loop);
 }
 
-// ============================================================
-// COLLISION
-// ============================================================
-function isColliding(piece, col, row) {
+// ── MOVEMENT ─────────────────────────────────────────────────
+function isCollide(col, row) {
   if (col < 0 || col >= COLS) return true;
   if (row >= ROWS) return true;
-  if (row >= 0 && state.board[row][col] !== null) return true;
+  if (row >= 0 && S.board[row][col] !== null) return true;
   return false;
 }
 
-// ============================================================
-// MOVEMENT
-// ============================================================
-function moveDown() {
-  if (!state.current) return;
-  const { col, row } = state.current;
-  if (!isColliding(state.current, col, row + 1)) {
-    state.current.row++;
+function stepDown() {
+  if (!S.current) return;
+  if (!isCollide(S.current.col, S.current.row + 1)) {
+    S.current.row++;
   } else {
-    placePiece();
+    place();
   }
 }
 
-function moveLeft() {
-  if (!state.current || state.paused) return;
-  const { col, row } = state.current;
-  if (!isColliding(state.current, col - 1, row)) {
-    state.current.col--;
-  }
-}
+function moveLeft()  { if (S.current && !S.paused && !isCollide(S.current.col - 1, S.current.row)) S.current.col--; }
+function moveRight() { if (S.current && !S.paused && !isCollide(S.current.col + 1, S.current.row)) S.current.col++; }
 
-function moveRight() {
-  if (!state.current || state.paused) return;
-  const { col, row } = state.current;
-  if (!isColliding(state.current, col + 1, row)) {
-    state.current.col++;
-  }
-}
-
-function rotate() {
-  if (!state.current || state.paused) return;
-  // Toggle facing: word <-> translation
-  state.current.facing = state.current.facing === 'word' ? 'translation' : 'word';
+function rotatePiece() {
+  if (!S.current || S.paused) return;
+  // Cycle through fields of the SAME word
+  S.current.fieldIdx = (S.current.fieldIdx + 1) % fields.length;
 }
 
 function hardDrop() {
-  if (!state.current || state.paused) return;
-  while (!isColliding(state.current, state.current.col, state.current.row + 1)) {
-    state.current.row++;
-    state.score += 1;
+  if (!S.current || S.paused) return;
+  let bonus = 0;
+  while (!isCollide(S.current.col, S.current.row + 1)) {
+    S.current.row++;
+    bonus++;
   }
-  placePiece();
-  updateScore();
+  S.score += bonus;
+  place();
+  updateHUD();
 }
 
-// ============================================================
-// PLACE & MATCH
-// ============================================================
-function placePiece() {
-  const { col, row, word, translation, color, darkColor, facing } = state.current;
+// ── PLACE & MATCH ─────────────────────────────────────────────
+function place() {
+  const { col, row, wordIdx, fieldIdx } = S.current;
   if (row < 0) { gameOver(); return; }
+  S.board[row][col] = { wordIdx, fieldIdx, color: fields[fieldIdx].color };
+  S.current = null;
 
-  state.board[row][col] = { word, translation, color, darkColor, facing };
-  state.current = null;
-
-  flash('bad', 100);
+  doFlash('bad', 80);
   checkMatches();
-  spawnPiece();
+  setTimeout(spawnPiece, 50);
 }
 
+// ──────────────────────────────────────────────────────────────
+//  MATCH LOGIC
+//  A "match" occurs when a complete row contains all fields of
+//  a single word in the correct left-to-right field order.
+//
+//  "COMPLETE ROW" mode: the row must be fully filled AND contain
+//  a valid sequence for each group of consecutive cells.
+//
+//  Simpler version we implement:
+//  Scan every row. Find any horizontal run of (fields.length)
+//  consecutive non-null cells where:
+//    - all cells belong to the SAME wordIdx
+//    - their fieldIdx matches fields[0..n-1] in order
+//  That run is cleared.
+// ──────────────────────────────────────────────────────────────
 function checkMatches() {
-  let anyMatch = false;
+  const n = fields.length;
+  let toRemove = []; // [[r,c], ...]
 
-  if (state.gameMode === 'line') {
-    // LINE MODE: find any row where ALL cells match (word ↔ translation pairs)
-    // Actually: find pairs in the same row or adjacent columns
-    // Simplified: if a word cell is adjacent to its translation in same row → match!
-    checkPairMatches();
-  } else {
-    // TABLE MODE: check if every word in the set has been correctly placed
-    checkPairMatches();
-    updateTableProgress();
-    if (state.matchedWords.size === state.wordSet.length) {
-      tableComplete();
-      return;
-    }
-  }
-}
-
-function checkPairMatches() {
-  let cleared = [];
-
-  // Check each cell: if word-facing cell is horizontally adjacent to matching translation-facing cell
   for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      const cell = state.board[r][c];
-      if (!cell) continue;
-      if (cell.facing === 'word') {
-        // Check right neighbor
-        if (c + 1 < COLS && state.board[r][c + 1]) {
-          const neighbor = state.board[r][c + 1];
-          if (neighbor.facing === 'translation' && neighbor.word === cell.word) {
-            cleared.push([r, c], [r, c + 1]);
-            recordMatch(cell.word, cell.translation);
+    for (let c = 0; c <= COLS - n; c++) {
+      // Check window [c .. c+n-1]
+      let valid = true;
+      const wi = S.board[r][c] ? S.board[r][c].wordIdx : -1;
+      if (wi < 0) { valid = false; }
+      if (valid) {
+        for (let k = 0; k < n; k++) {
+          const cell = S.board[r][c + k];
+          if (!cell || cell.wordIdx !== wi || cell.fieldIdx !== k) {
+            valid = false; break;
           }
         }
-        // Check left neighbor
-        if (c - 1 >= 0 && state.board[r][c - 1]) {
-          const neighbor = state.board[r][c - 1];
-          if (neighbor.facing === 'translation' && neighbor.word === cell.word) {
-            cleared.push([r, c], [r, c - 1]);
-            recordMatch(cell.word, cell.translation);
-          }
-        }
+      }
+      if (valid) {
+        for (let k = 0; k < n; k++) toRemove.push([r, c + k]);
+        S.matchedSet.add(wi);
       }
     }
   }
 
-  // Also check: full rows (any cells in a complete row get cleared if all have matches)
-  for (let r = 0; r < ROWS; r++) {
-    const rowFull = state.board[r].every(c => c !== null);
-    if (rowFull) {
-      // Clear the row as bonus
-      for (let c = 0; c < COLS; c++) {
-        cleared.push([r, c]);
-      }
-    }
-  }
+  if (toRemove.length === 0) { S.combo = 0; return; }
 
-  if (cleared.length === 0) {
-    state.combo = 0;
-    return;
-  }
-
-  // De-duplicate
-  const unique = [];
+  // De-dup
   const seen = new Set();
-  for (const [r, c] of cleared) {
-    const key = r + '_' + c;
-    if (!seen.has(key)) { seen.add(key); unique.push([r, c]); }
-  }
+  const unique = toRemove.filter(([r,c]) => {
+    const k = r*100+c; if (seen.has(k)) return false; seen.add(k); return true;
+  });
 
-  // Animate & clear
-  flashCells(unique);
+  // Animate clear
+  unique.forEach(([r,c]) => {
+    if (S.board[r][c]) S.board[r][c]._clear = true;
+  });
+
   setTimeout(() => {
-    for (const [r, c] of unique) {
-      state.board[r][c] = null;
-    }
-    // Drop cells above
+    unique.forEach(([r,c]) => { S.board[r][c] = null; });
     collapseBoard();
-    state.combo++;
-    const points = unique.length * 50 * state.combo;
-    state.score += points;
-    state.matched += Math.floor(unique.length / 2);
-    updateScore();
-    updateLevel();
-    renderVocabList();
-    flash('good', 150);
-    showCombo(state.combo, points);
-  }, 300);
-}
+    const words = unique.length / n;
+    const pts   = words * 100 * S.level;
+    S.score  += pts;
+    S.cleared += words;
+    S.level   = Math.floor(S.cleared / 4) + 1;
+    S.dropMs  = Math.max(120, 850 - (S.level - 1) * 70);
+    updateHUD();
+    renderVocab();
+    updateProgress();
+    doFlash('good', 150);
+    showFloat(`+${pts}`, words >= 2 ? 'var(--gold)' : 'var(--green)');
 
-function recordMatch(word, translation) {
-  state.matchedWords.add(word);
+    if (S.mode === 'table' && S.matchedSet.size === currentWords.length) {
+      tableComplete();
+    }
+  }, 220);
 }
 
 function collapseBoard() {
-  // For each column, drop cells down
   for (let c = 0; c < COLS; c++) {
-    let writeRow = ROWS - 1;
+    let wr = ROWS - 1;
     for (let r = ROWS - 1; r >= 0; r--) {
-      if (state.board[r][c] !== null) {
-        state.board[writeRow][c] = state.board[r][c];
-        if (writeRow !== r) state.board[r][c] = null;
-        writeRow--;
-      }
+      if (S.board[r][c]) { S.board[wr][c] = S.board[r][c]; if (wr !== r) S.board[r][c] = null; wr--; }
     }
-    for (let r = writeRow; r >= 0; r--) {
-      state.board[r][c] = null;
-    }
+    for (let r = wr; r >= 0; r--) S.board[r][c] = null;
   }
 }
 
-// ============================================================
-// DRAW
-// ============================================================
-function drawBoard() {
+// ── DRAW ──────────────────────────────────────────────────────
+function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Background
-  ctx.fillStyle = '#080814';
+  // BG
+  ctx.fillStyle = '#080a14';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // Grid lines
-  ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+  // Grid
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
   ctx.lineWidth = 1;
   for (let r = 0; r <= ROWS; r++) {
-    ctx.beginPath();
-    ctx.moveTo(0, r * CELL);
-    ctx.lineTo(canvas.width, r * CELL);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, r*CELL); ctx.lineTo(canvas.width, r*CELL); ctx.stroke();
   }
   for (let c = 0; c <= COLS; c++) {
-    ctx.beginPath();
-    ctx.moveTo(c * CELL, 0);
-    ctx.lineTo(c * CELL, canvas.height);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(c*CELL, 0); ctx.lineTo(c*CELL, canvas.height); ctx.stroke();
   }
 
-  // Board cells
+  // Board
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
-      if (state.board[r][c]) {
-        drawCell(c, r, state.board[r][c]);
-      }
+      const cell = S.board[r][c];
+      if (cell) drawCell(c, r, cell);
     }
   }
 
-  // Ghost piece
-  if (state.current && !state.paused) {
-    let ghostRow = state.current.row;
-    while (!isColliding(state.current, state.current.col, ghostRow + 1)) {
-      ghostRow++;
-    }
-    if (ghostRow !== state.current.row) {
-      drawGhost(state.current.col, ghostRow, state.current);
-    }
+  // Ghost
+  if (S.current && !S.paused) {
+    let gr = S.current.row;
+    while (!isCollide(S.current.col, gr + 1)) gr++;
+    if (gr !== S.current.row) drawGhost(S.current.col, gr, S.current);
   }
 
-  // Current piece
-  if (state.current) {
-    drawCell(state.current.col, state.current.row, state.current);
-  }
+  // Current
+  if (S.current) drawCell(S.current.col, S.current.row, S.current);
 
-  // Pause overlay
-  if (state.paused) {
-    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+  // Pause text
+  if (S.paused) {
+    ctx.fillStyle = 'rgba(7,8,15,0.7)';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    ctx.fillStyle = '#00ffcc';
-    ctx.font = 'bold 16px "Press Start 2P", monospace';
+    ctx.fillStyle = 'rgba(0,245,255,0.9)';
+    ctx.font = '500 14px "DM Mono", monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('PAUSED', canvas.width / 2, canvas.height / 2);
+    ctx.fillText('PAUSED', canvas.width/2, canvas.height/2);
+  }
+}
+
+function drawIdle() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = '#080a14';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.strokeStyle = 'rgba(255,255,255,0.03)';
+  ctx.lineWidth = 1;
+  for (let r = 0; r <= ROWS; r++) {
+    ctx.beginPath(); ctx.moveTo(0, r*CELL); ctx.lineTo(canvas.width, r*CELL); ctx.stroke();
+  }
+  for (let c = 0; c <= COLS; c++) {
+    ctx.beginPath(); ctx.moveTo(c*CELL, 0); ctx.lineTo(c*CELL, canvas.height); ctx.stroke();
   }
 }
 
 function drawCell(col, row, data) {
-  const x = col * CELL;
-  const y = row * CELL;
-  const pad = 3;
+  const x = col * CELL, y = row * CELL;
+  const pad = 4, r = 5;
+  const color = data.color || fields[data.fieldIdx]?.color || '#fff';
+  const isClearing = data._clear;
+  const alpha = isClearing ? 0.4 : 1;
+
+  ctx.globalAlpha = alpha;
 
   // Background
-  ctx.fillStyle = data.darkColor;
-  roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 5);
+  ctx.fillStyle = colorWithAlpha(color, 0.1);
+  roundRect(ctx, x+pad, y+pad, CELL-pad*2, CELL-pad*2, r);
   ctx.fill();
 
-  // Gradient overlay
-  const grad = ctx.createLinearGradient(x + pad, y + pad, x + pad, y + CELL - pad);
-  grad.addColorStop(0, 'rgba(255,255,255,0.15)');
-  grad.addColorStop(1, 'rgba(0,0,0,0.15)');
-  ctx.fillStyle = grad;
-  roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 5);
-  ctx.fill();
-
-  // Border
-  ctx.strokeStyle = data.color;
-  ctx.lineWidth = 1.5;
-  roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 5);
+  // Neon border
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = 1.5;
+  ctx.shadowColor = color;
+  ctx.shadowBlur  = 10;
+  roundRect(ctx, x+pad, y+pad, CELL-pad*2, CELL-pad*2, r);
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // Text
-  const displayText = data.facing === 'word' ? data.word : data.translation;
-  drawCellText(ctx, displayText, x + CELL / 2, y + CELL / 2, data.color, CELL - pad * 4);
-}
+  // Abbr badge (top-right)
+  const abbr  = fields[data.fieldIdx]?.abbr || '?';
+  ctx.fillStyle = colorWithAlpha(color, 0.4);
+  ctx.fillRect(x + CELL - pad - 18, y + pad + 1, 18, 11);
+  ctx.fillStyle = color;
+  ctx.font = '500 7px "DM Mono", monospace';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(abbr, x + CELL - pad - 9, y + pad + 7);
 
-function drawGhost(col, row, data) {
-  const x = col * CELL;
-  const y = row * CELL;
-  const pad = 3;
+  // Main text
+  const text = currentWords[data.wordIdx]
+    ? String(currentWords[data.wordIdx][fields[data.fieldIdx]?.key] || '')
+    : '?';
 
-  ctx.strokeStyle = data.color + '44';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([4, 4]);
-  roundRect(ctx, x + pad, y + pad, CELL - pad * 2, CELL - pad * 2, 5);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.fillStyle = color;
+  ctx.shadowColor = color;
+  ctx.shadowBlur = 8;
+  drawFitText(ctx, text, x + CELL/2, y + CELL/2 + 4, CELL - pad*2 - 8);
+  ctx.shadowBlur = 0;
 
-  const displayText = data.facing === 'word' ? data.word : data.translation;
-  ctx.globalAlpha = 0.3;
-  drawCellText(ctx, displayText, x + CELL / 2, y + CELL / 2, data.color, CELL - pad * 4);
   ctx.globalAlpha = 1;
 }
 
-function drawCellText(ctx, text, cx, cy, color, maxWidth) {
+function drawGhost(col, row, piece) {
+  const x = col*CELL, y = row*CELL, pad = 4, r = 5;
+  const color = fields[piece.fieldIdx].color;
+  ctx.globalAlpha = 0.2;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([3, 3]);
+  roundRect(ctx, x+pad, y+pad, CELL-pad*2, CELL-pad*2, r);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const text = currentWords[piece.wordIdx]
+    ? String(currentWords[piece.wordIdx][fields[piece.fieldIdx].key] || '') : '?';
   ctx.fillStyle = color;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.font = '700 11px "Noto Sans TC", sans-serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(text.slice(0,4), x + CELL/2, y + CELL/2);
+  ctx.globalAlpha = 1;
+}
 
-  // Dynamic font size
-  let fontSize = 16;
-  if (text.length > 6) fontSize = 12;
-  if (text.length > 9) fontSize = 10;
-  if (text.length > 12) fontSize = 8;
+function drawFitText(ctx, text, cx, cy, maxW) {
+  let size = 15;
+  if (text.length > 5)  size = 12;
+  if (text.length > 8)  size = 10;
+  if (text.length > 11) size = 8;
+  ctx.font = `700 ${size}px "Noto Sans TC", sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
 
-  ctx.font = `bold ${fontSize}px "Noto Sans TC", sans-serif`;
-
-  // Word wrap if needed
-  const words = text.split('');
-  if (ctx.measureText(text).width > maxWidth && text.length > 4) {
-    // Split into 2 lines
-    const mid = Math.ceil(text.length / 2);
-    const line1 = text.slice(0, mid);
-    const line2 = text.slice(mid);
-    ctx.fillText(line1, cx, cy - fontSize / 2 - 1);
-    ctx.fillText(line2, cx, cy + fontSize / 2 + 1);
+  if (ctx.measureText(text).width > maxW && text.length > 5) {
+    const half = Math.ceil(text.length / 2);
+    ctx.fillText(text.slice(0, half), cx, cy - size/2 - 1);
+    ctx.fillText(text.slice(half),    cx, cy + size/2 + 1);
   } else {
     ctx.fillText(text, cx, cy);
   }
@@ -1250,248 +1089,241 @@ function drawCellText(ctx, text, cx, cy, color, maxWidth) {
 
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.moveTo(x+r, y);
+  ctx.lineTo(x+w-r, y); ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+  ctx.lineTo(x+w, y+h-r); ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+  ctx.lineTo(x+r, y+h); ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+  ctx.lineTo(x, y+r); ctx.quadraticCurveTo(x, y, x+r, y);
   ctx.closePath();
 }
 
-// ============================================================
-// UI UPDATES
-// ============================================================
-function updateScore() {
-  document.getElementById('scoreVal').textContent = state.score.toLocaleString();
-  document.getElementById('levelVal').textContent = state.level;
-  document.getElementById('linesVal').textContent = state.matched;
+function colorWithAlpha(hex, a) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${a})`;
 }
 
-function updateLevel() {
-  state.level = Math.floor(state.matched / 5) + 1;
-  state.dropInterval = Math.max(150, 900 - (state.level - 1) * 80);
+// ── HUD ───────────────────────────────────────────────────────
+function updateHUD() {
+  document.getElementById('scoreNum').textContent  = S.score.toLocaleString();
+  document.getElementById('levelNum').textContent  = S.level;
+  document.getElementById('matchedNum').textContent= S.cleared;
 }
 
 function updateNextDisplay() {
-  if (!state.next) return;
-  document.getElementById('nextWord').textContent = state.next.word;
-  document.getElementById('nextTrans').textContent = state.next.translation;
-}
+  if (!S.next) return;
+  const w = currentWords[S.next.wordIdx];
+  document.getElementById('nextWordTxt').textContent = w ? String(w[fields[0].key] || '—') : '—';
 
-function renderVocabList() {
-  const list = document.getElementById('vocabList');
-  list.innerHTML = '';
-  const words = WORD_SETS[document.getElementById('wordSetSelect').value] || state.wordSet;
-  for (const item of words) {
-    const div = document.createElement('div');
-    div.className = 'vocab-item' + (state.matchedWords.has(item.word) ? ' matched' : '');
-    div.innerHTML = `
-      <span class="v-word">${item.word}</span>
-      <span class="v-trans">${item.translation}</span>
-      <span class="v-check">${state.matchedWords.has(item.word) ? '✓' : ''}</span>
-    `;
-    list.appendChild(div);
-  }
-}
-
-function updateTableProgress() {
-  const total = state.wordSet.length;
-  const done = state.matchedWords.size;
-  const pct = total > 0 ? (done / total * 100) : 0;
-  document.getElementById('progressFill').style.width = pct + '%';
-  document.getElementById('progressText').textContent = `${done} / ${total}`;
-}
-
-// ============================================================
-// EFFECTS
-// ============================================================
-function flash(type, duration) {
-  const el = document.getElementById('flashOverlay');
-  el.className = 'flash-overlay flash-' + type;
-  el.style.opacity = '1';
-  setTimeout(() => { el.style.opacity = '0'; }, duration);
-}
-
-function flashCells(cells) {
-  // Visual flash on canvas cells
-  // We'll just do a quick highlight
-  for (const [r, c] of cells) {
-    if (state.board[r] && state.board[r][c]) {
-      state.board[r][c]._flash = true;
+  const nf = document.getElementById('nextFields');
+  nf.innerHTML = '';
+  if (w) {
+    for (const f of fields) {
+      const tag = document.createElement('span');
+      tag.className = 'next-field-tag';
+      tag.style.borderColor = f.color + '99';
+      tag.style.color = f.color;
+      tag.textContent = String(w[f.key] || '');
+      nf.appendChild(tag);
     }
   }
 }
 
-function showCombo(combo, points) {
-  const gameArea = document.getElementById('gameArea');
-  const div = document.createElement('div');
-  div.className = 'combo-display';
-  div.style.top = '40%';
+function updateProgress() {
+  if (S.mode !== 'table') return;
+  const total = currentWords.length, done = S.matchedSet.size;
+  document.getElementById('progFill').style.width = (total ? done/total*100 : 0) + '%';
+  document.getElementById('progText').textContent = `${done} / ${total}`;
+}
 
-  if (combo >= 3) {
-    div.textContent = `${combo}x COMBO! +${points}`;
-    div.style.color = '#ffd93d';
-  } else {
-    div.textContent = `✓ +${points}`;
-    div.style.color = '#6bcb77';
-    div.style.fontSize = '14px';
+function renderVocab() {
+  const el = document.getElementById('vocabList');
+  el.innerHTML = '';
+  const cols = fields.length;
+  for (let wi = 0; wi < currentWords.length; wi++) {
+    const w    = currentWords[wi];
+    const done = S.matchedSet.has(wi);
+    const row  = document.createElement('div');
+    row.className = 'vocab-row' + (done ? ' done' : '');
+    row.style.gridTemplateColumns = `repeat(${cols}, 1fr) 14px`;
+
+    let inner = '';
+    fields.forEach((f, i) => {
+      inner += `<span class="v${i}" style="color:${done ? 'var(--green)' : f.color}aa">${w[f.key]||''}</span>`;
+    });
+    inner += `<span class="check">${done ? '✓' : ''}</span>`;
+    row.innerHTML = inner;
+    el.appendChild(row);
   }
-
-  gameArea.appendChild(div);
-  setTimeout(() => div.remove(), 1000);
 }
 
-function showWordPopup(word, translation) {
-  const gameArea = document.getElementById('gameArea');
-  const div = document.createElement('div');
-  div.className = 'word-popup';
-  div.innerHTML = `<div class="wp-word">${word}</div><div class="wp-trans">${translation}</div>`;
-  gameArea.appendChild(div);
-  setTimeout(() => div.remove(), 1500);
+// ── EFFECTS ──────────────────────────────────────────────────
+function doFlash(type, ms) {
+  const el = document.getElementById('flash');
+  el.className = `flash flash-${type}`;
+  el.style.opacity = '1';
+  setTimeout(() => el.style.opacity = '0', ms);
 }
 
-// ============================================================
-// GAME OVER
-// ============================================================
+function showFloat(text, color) {
+  const ga = document.getElementById('gameArea');
+  const d  = document.createElement('div');
+  d.className = 'float-score';
+  d.textContent = text;
+  d.style.color = color;
+  d.style.textShadow = `0 0 10px ${color}`;
+  d.style.left = (canvas.width / 2 - 30) + 'px';
+  d.style.top  = (canvas.height / 2) + 'px';
+  ga.appendChild(d);
+  setTimeout(() => d.remove(), 1050);
+}
+
+// ── OVERLAY ───────────────────────────────────────────────────
+function showOverlay(title, body, btns = []) {
+  const ov = document.getElementById('overlay');
+  ov.style.display = 'flex';
+  document.getElementById('ovTitle').innerHTML = title;
+  document.getElementById('ovBody').innerHTML  = body;
+
+  // Remove old dynamic buttons
+  ov.querySelectorAll('.dyn-btn').forEach(e => e.remove());
+  for (const b of btns) {
+    const btn = document.createElement('button');
+    btn.className = `overlay-btn dyn-btn ${b.cls||''}`;
+    btn.innerHTML = b.label;
+    btn.setAttribute('onclick', b.fn);
+    ov.appendChild(btn);
+  }
+}
+
+function hideOverlay() {
+  document.getElementById('overlay').style.display = 'none';
+}
+
+// ── GAME OVER ─────────────────────────────────────────────────
 function gameOver() {
-  state.running = false;
-  if (dropTimer) cancelAnimationFrame(dropTimer);
+  S.running = false;
+  cancelAnimationFrame(raf);
+  document.getElementById('btnPause').style.display = 'none';
+  document.getElementById('btnStart').style.display = 'block';
 
-  document.getElementById('pauseBtn').style.display = 'none';
-  document.getElementById('startBtn').style.display = 'block';
-
-  const overlay = document.getElementById('startOverlay');
-  overlay.style.display = 'flex';
-  overlay.innerHTML = `
-    <div class="overlay-title" style="color:var(--accent2)">GAME OVER</div>
-    <div class="overlay-sub">
-      <span style="color:var(--accent3)">得分: ${state.score.toLocaleString()}</span><br>
-      <span style="color:var(--accent4)">配對: ${state.matched} 個</span><br>
-      <span style="color:var(--dim)">等級: ${state.level}</span>
-    </div>
-    <button class="overlay-btn" onclick="startGame()">▶ 再玩一次</button>
-  `;
+  showOverlay(
+    '<span style="color:var(--pink)">GAME OVER</span>',
+    `<span style="color:var(--gold)">Score: ${S.score.toLocaleString()}</span><br>
+     <span style="color:var(--cyan)">Cleared: ${S.cleared}</span><br>
+     <span style="color:var(--dim)">Level: ${S.level}</span>`,
+    [{ label: '▶ PLAY AGAIN', fn: 'startGame()' }]
+  );
 }
 
-// ============================================================
-// TABLE COMPLETE
-// ============================================================
+// ── TABLE COMPLETE ────────────────────────────────────────────
 function tableComplete() {
-  state.running = false;
-  if (dropTimer) cancelAnimationFrame(dropTimer);
+  S.running = false;
+  cancelAnimationFrame(raf);
+  document.getElementById('btnPause').style.display = 'none';
+  document.getElementById('btnStart').style.display = 'block';
 
-  document.getElementById('pauseBtn').style.display = 'none';
+  showOverlay(
+    '<span style="color:var(--gold)">COMPLETE!</span>',
+    `所有單字都已配對完成！🎉<br>
+     <span style="color:var(--gold)">Score: ${S.score.toLocaleString()}</span><br>
+     <span style="color:var(--green)">全 ${currentWords.length} 個單字已學習</span>`,
+    [
+      { label: '▶ AGAIN', fn: 'startGame()', cls: '' },
+      { label: '✦ OTHER SET', fn: 'resetGame()', cls: 'green' },
+    ]
+  );
 
-  const overlay = document.getElementById('startOverlay');
-  overlay.style.display = 'flex';
-  overlay.className = 'game-overlay table-complete-overlay';
-  overlay.innerHTML = `
-    <div class="overlay-title" style="color:var(--accent3)">🎉 完成！<br>TABLE CLEAR!</div>
-    <div class="overlay-sub">
-      你已學完所有單字！<br>
-      <span style="color:var(--accent3)">得分: ${state.score.toLocaleString()}</span><br>
-      <span style="color:var(--accent4)">配對: ${state.matched} 個</span>
-    </div>
-    <button class="overlay-btn" onclick="startGame()">▶ 再玩一次</button>
-    <button class="overlay-btn" style="background:var(--accent4);margin-top:6px" onclick="resetGame()">選擇其他單字集</button>
-  `;
-
-  // Fireworks!
-  for (let i = 0; i < 20; i++) {
-    setTimeout(() => spawnFirework(overlay), i * 150);
-  }
+  spawnFireworks();
 }
 
-function spawnFirework(parent) {
-  const colors = ['#ff6b6b','#ffd93d','#6bcb77','#00ffcc','#a78bfa','#fb923c'];
-  for (let i = 0; i < 8; i++) {
-    const dot = document.createElement('div');
-    dot.className = 'firework';
-    dot.style.background = colors[Math.floor(Math.random() * colors.length)];
-    dot.style.left = (20 + Math.random() * 60) + '%';
-    dot.style.top = (20 + Math.random() * 60) + '%';
-    const angle = (i / 8) * Math.PI * 2;
-    const dist = 40 + Math.random() * 60;
-    dot.style.setProperty('--dx', Math.cos(angle) * dist + 'px');
-    dot.style.setProperty('--dy', Math.sin(angle) * dist + 'px');
-    dot.style.animationDelay = Math.random() * 0.3 + 's';
-    parent.appendChild(dot);
-    setTimeout(() => dot.remove(), 1500);
-  }
+function spawnFireworks() {
+  const ga = document.getElementById('gameArea');
+  const colors = ['#00f5ff','#ff2d78','#ffe600','#00ff88','#bf5fff'];
+  let burst = 0;
+  const iv = setInterval(() => {
+    for (let i = 0; i < 10; i++) {
+      const dot = document.createElement('div');
+      dot.className = 'fw';
+      dot.style.background = colors[Math.floor(Math.random()*colors.length)];
+      dot.style.left = (10 + Math.random() * 80) + '%';
+      dot.style.top  = (10 + Math.random() * 80) + '%';
+      const a = (i/10)*Math.PI*2, d = 30 + Math.random()*50;
+      dot.style.setProperty('--tx', Math.cos(a)*d+'px');
+      dot.style.setProperty('--ty', Math.sin(a)*d+'px');
+      dot.style.animationDelay = Math.random()*0.2+'s';
+      ga.appendChild(dot);
+      setTimeout(() => dot.remove(), 1200);
+    }
+    if (++burst > 8) clearInterval(iv);
+  }, 200);
 }
 
-// ============================================================
-// PAUSE
-// ============================================================
+// ── PAUSE ─────────────────────────────────────────────────────
 function togglePause() {
-  if (!state.running) return;
-  state.paused = !state.paused;
-  document.getElementById('pauseBtn').textContent = state.paused ? '▶ RESUME' : '⏸ PAUSE';
+  if (!S.running) return;
+  S.paused = !S.paused;
+  document.getElementById('btnPause').textContent = S.paused ? '▶ RESUME' : '⏸ PAUSE';
+  if (!S.paused) {
+    lastT = performance.now();
+    raf = requestAnimationFrame(loop);
+  }
 }
 
-// ============================================================
-// KEYBOARD
-// ============================================================
-let keysHeld = {};
-
+// ── KEYBOARD ─────────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (!state.running) return;
+  if (!S.running) return;
   switch (e.code) {
-    case 'ArrowLeft': e.preventDefault(); if (!keysHeld.left) { moveLeft(); keysHeld.left = setInterval(moveLeft, 120); } break;
-    case 'ArrowRight': e.preventDefault(); if (!keysHeld.right) { moveRight(); keysHeld.right = setInterval(moveRight, 120); } break;
-    case 'ArrowDown': e.preventDefault(); if (!keysHeld.down) { state.dropInterval = 80; keysHeld.down = true; } break;
-    case 'ArrowUp': e.preventDefault(); rotate(); break;
-    case 'Space': e.preventDefault(); hardDrop(); break;
-    case 'KeyP': togglePause(); break;
-  }
-});
-
-document.addEventListener('keyup', e => {
-  switch (e.code) {
-    case 'ArrowLeft': clearInterval(keysHeld.left); delete keysHeld.left; break;
-    case 'ArrowRight': clearInterval(keysHeld.right); delete keysHeld.right; break;
+    case 'ArrowLeft':
+      e.preventDefault();
+      if (!held.L) { moveLeft(); held.L = setInterval(moveLeft, 110); }
+      break;
+    case 'ArrowRight':
+      e.preventDefault();
+      if (!held.R) { moveRight(); held.R = setInterval(moveRight, 110); }
+      break;
     case 'ArrowDown':
-      delete keysHeld.down;
-      state.dropInterval = Math.max(150, 900 - (state.level - 1) * 80);
+      e.preventDefault();
+      if (!held.D) { S.dropMs = 70; held.D = true; }
+      break;
+    case 'ArrowUp':
+      e.preventDefault();
+      rotatePiece();
+      break;
+    case 'Space':
+      e.preventDefault();
+      hardDrop();
+      break;
+    case 'KeyP':
+      togglePause();
       break;
   }
 });
 
-function gameAction(action) {
-  if (!state.running) return;
-  switch(action) {
-    case 'rotate': rotate(); break;
-    case 'drop': hardDrop(); break;
+document.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft')  { clearInterval(held.L); delete held.L; }
+  if (e.code === 'ArrowRight') { clearInterval(held.R); delete held.R; }
+  if (e.code === 'ArrowDown')  {
+    delete held.D;
+    S.dropMs = Math.max(120, 850 - (S.level-1)*70);
   }
+});
+
+// ── MOBILE ───────────────────────────────────────────────────
+function mStart(dir) {
+  if (!S.running) return;
+  if (dir === 'left')  { moveLeft();  mIntervals.left  = setInterval(moveLeft,  120); }
+  if (dir === 'right') { moveRight(); mIntervals.right = setInterval(moveRight, 120); }
+  if (dir === 'down')  { S.dropMs = 70; }
+}
+function mStop(dir) {
+  clearInterval(mIntervals[dir]); delete mIntervals[dir];
+  if (dir === 'down') S.dropMs = Math.max(120, 850 - (S.level-1)*70);
 }
 
-// ============================================================
-// MOBILE
-// ============================================================
-function mobilePress(dir) {
-  if (!state.running) return;
-  if (dir === 'left') { moveLeft(); mobileIntervals.left = setInterval(moveLeft, 130); }
-  if (dir === 'right') { moveRight(); mobileIntervals.right = setInterval(moveRight, 130); }
-  if (dir === 'down') { state.dropInterval = 80; }
-}
-
-function mobileRelease(dir) {
-  clearInterval(mobileIntervals[dir]);
-  delete mobileIntervals[dir];
-  if (dir === 'down') {
-    state.dropInterval = Math.max(150, 900 - (state.level - 1) * 80);
-  }
-}
-
-// ============================================================
-// INIT
-// ============================================================
-initWordSets();
-drawBoard();
+// ── BOOT ─────────────────────────────────────────────────────
+init();
 </script>
 </body>
 </html>

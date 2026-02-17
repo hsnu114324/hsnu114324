@@ -1,86 +1,71 @@
-// ========================================
-// 單字表 - 可自由編輯！
-// 格式: { word: "中文", translation: "English" }
-// 你可以加入自己的單字，或建立不同的分類
-// ========================================
+// ═══════════════════════════════════════════════════════════════
+//  WORDTRIS — 單字資料設定檔
+//  部署到 GitHub Pages 時只需編輯此檔案即可自訂所有內容
+// ═══════════════════════════════════════════════════════════════
 
-const WORD_SETS = {
-  "基礎日常": [
-    { word: "蘋果", translation: "Apple" },
-    { word: "書本", translation: "Book" },
-    { word: "貓咪", translation: "Cat" },
-    { word: "狗狗", translation: "Dog" },
-    { word: "魚", translation: "Fish" },
-    { word: "水", translation: "Water" },
-    { word: "火", translation: "Fire" },
-    { word: "學校", translation: "School" },
-    { word: "家", translation: "Home" },
-    { word: "朋友", translation: "Friend" },
-    { word: "太陽", translation: "Sun" },
-    { word: "月亮", translation: "Moon" },
-    { word: "星星", translation: "Star" },
-    { word: "山", translation: "Mountain" },
-    { word: "海", translation: "Sea" },
-    { word: "花", translation: "Flower" },
-    { word: "樹", translation: "Tree" },
-    { word: "鳥", translation: "Bird" },
-    { word: "車", translation: "Car" },
-    { word: "門", translation: "Door" }
+const WORD_CONFIG = {
+
+  // ─────────────────────────────────────────────────────────────
+  //  欄位定義 (fields)
+  //  每個欄位 = 一種方塊的「面」
+  //  消除規則：同一個單字的所有欄位方塊必須依序排成一行才能消除
+  //
+  //  欄位屬性:
+  //    key   : 對應 words 陣列中的屬性名稱
+  //    label : 顯示名稱（UI 標籤用）
+  //    color : 霓虹主色 (hex)
+  //    abbr  : 縮寫（方塊右上角標記）
+  // ─────────────────────────────────────────────────────────────
+  fields: [
+    { key: "word",   label: "德文",   color: "#00f5ff", abbr: "DE" },
+    { key: "zh",     label: "中文",   color: "#ff2d78", abbr: "中" },
+    { key: "gender", label: "陰陽性", color: "#ffe600", abbr: "性" },
   ],
-  "數字與時間": [
-    { word: "一", translation: "One" },
-    { word: "二", translation: "Two" },
-    { word: "三", translation: "Three" },
-    { word: "四", translation: "Four" },
-    { word: "五", translation: "Five" },
-    { word: "六", translation: "Six" },
-    { word: "七", translation: "Seven" },
-    { word: "八", translation: "Eight" },
-    { word: "九", translation: "Nine" },
-    { word: "十", translation: "Ten" },
-    { word: "今天", translation: "Today" },
-    { word: "明天", translation: "Tomorrow" },
-    { word: "昨天", translation: "Yesterday" },
-    { word: "早上", translation: "Morning" },
-    { word: "下午", translation: "Afternoon" },
-    { word: "晚上", translation: "Evening" }
-  ],
-  "食物飲料": [
-    { word: "飯", translation: "Rice" },
-    { word: "麵", translation: "Noodles" },
-    { word: "湯", translation: "Soup" },
-    { word: "茶", translation: "Tea" },
-    { word: "咖啡", translation: "Coffee" },
-    { word: "牛奶", translation: "Milk" },
-    { word: "果汁", translation: "Juice" },
-    { word: "肉", translation: "Meat" },
-    { word: "蔬菜", translation: "Vegetable" },
-    { word: "水果", translation: "Fruit" },
-    { word: "麵包", translation: "Bread" },
-    { word: "蛋", translation: "Egg" },
-    { word: "糖", translation: "Sugar" },
-    { word: "鹽", translation: "Salt" },
-    { word: "餅乾", translation: "Cookie" }
-  ],
-  "顏色形容詞": [
-    { word: "紅色", translation: "Red" },
-    { word: "藍色", translation: "Blue" },
-    { word: "綠色", translation: "Green" },
-    { word: "黃色", translation: "Yellow" },
-    { word: "白色", translation: "White" },
-    { word: "黑色", translation: "Black" },
-    { word: "大", translation: "Big" },
-    { word: "小", translation: "Small" },
-    { word: "快", translation: "Fast" },
-    { word: "慢", translation: "Slow" },
-    { word: "熱", translation: "Hot" },
-    { word: "冷", translation: "Cold" },
-    { word: "新", translation: "New" },
-    { word: "舊", translation: "Old" },
-    { word: "好", translation: "Good" },
-    { word: "壞", translation: "Bad" }
-  ]
+
+  // ─────────────────────────────────────────────────────────────
+  //  單字集 (word_sets)
+  //  每筆資料的 key 對應上方 fields 中的 key
+  // ─────────────────────────────────────────────────────────────
+  word_sets: {
+
+    "德文名詞 — 基礎": [
+      { word: "der Hund",   zh: "狗",   gender: "陽性 m" },
+      { word: "die Katze",  zh: "貓",   gender: "陰性 f" },
+      { word: "das Haus",   zh: "房子", gender: "中性 n" },
+      { word: "der Mann",   zh: "男人", gender: "陽性 m" },
+      { word: "die Frau",   zh: "女人", gender: "陰性 f" },
+      { word: "das Kind",   zh: "孩子", gender: "中性 n" },
+      { word: "der Tisch",  zh: "桌子", gender: "陽性 m" },
+      { word: "die Tür",    zh: "門",   gender: "陰性 f" },
+      { word: "das Buch",   zh: "書",   gender: "中性 n" },
+      { word: "der Apfel",  zh: "蘋果", gender: "陽性 m" },
+      { word: "die Schule", zh: "學校", gender: "陰性 f" },
+      { word: "das Wasser", zh: "水",   gender: "中性 n" },
+    ],
+
+    "德文名詞 — 進階": [
+      { word: "der Bahnhof",     zh: "火車站", gender: "陽性 m" },
+      { word: "die Universität", zh: "大學",   gender: "陰性 f" },
+      { word: "das Krankenhaus", zh: "醫院",   gender: "中性 n" },
+      { word: "der Supermarkt",  zh: "超市",   gender: "陽性 m" },
+      { word: "die Bibliothek",  zh: "圖書館", gender: "陰性 f" },
+      { word: "das Restaurant",  zh: "餐廳",   gender: "中性 n" },
+      { word: "der Flughafen",   zh: "機場",   gender: "陽性 m" },
+      { word: "die Apotheke",    zh: "藥局",   gender: "陰性 f" },
+      { word: "das Museum",      zh: "博物館", gender: "中性 n" },
+    ],
+
+    "德文動詞 — 常用": [
+      { word: "gehen",    zh: "去、走", gender: "不規則" },
+      { word: "kommen",   zh: "來",     gender: "不規則" },
+      { word: "sehen",    zh: "看",     gender: "不規則" },
+      { word: "essen",    zh: "吃",     gender: "不規則" },
+      { word: "trinken",  zh: "喝",     gender: "規則" },
+      { word: "schlafen", zh: "睡覺",   gender: "不規則" },
+      { word: "lernen",   zh: "學習",   gender: "規則" },
+      { word: "arbeiten", zh: "工作",   gender: "規則" },
+    ],
+  },
+
+  default_set: "德文名詞 — 基礎",
 };
-
-// 預設使用的單字集
-const DEFAULT_SET = "基礎日常";
