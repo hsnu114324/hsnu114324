@@ -44,6 +44,7 @@ let running = true;
 let animating = false;  // 消除動畫播放中
 let particles = [];     // 爆散粒子
 let clearedCombos = new Set(); // 已消除的 combo 索引
+let wordQueue = [];     // 派發佇列：確保所有組合輪過一遍
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -159,13 +160,40 @@ function resizeCanvas() {
   drawGrid();
 }
 
-function randomWord() {
-  const idx = Math.floor(Math.random() * wordPool.length);
-  return wordPool[idx];
+// 建立一輪派發佇列：把所有 combo 的字依序交錯排入
+// 例如 combo A=[a,b], B=[c,d,e] → 一輪 = [a,c,b,d,e]（輪流取，短的先結束）
+function buildWordQueue() {
+  // 先打亂 combo 順序，避免每輪都一樣
+  const indices = Array.from({ length: comboList.length }, (_, i) => i);
+  for (let i = indices.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [indices[i], indices[j]] = [indices[j], indices[i]];
+  }
+
+  const cursors = indices.map(() => 0);
+  const queue = [];
+  const maxLen = Math.max(...comboList.map((c) => c.length));
+
+  for (let step = 0; step < maxLen; step++) {
+    for (let k = 0; k < indices.length; k++) {
+      const ci = indices[k];
+      if (step < comboList[ci].length) {
+        queue.push(comboList[ci][step]);
+      }
+    }
+  }
+  return queue;
+}
+
+function nextWord() {
+  if (!wordQueue.length) {
+    wordQueue = buildWordQueue();
+  }
+  return wordQueue.shift();
 }
 
 function spawnBlock() {
-  const word = randomWord();
+  const word = nextWord();
   activeBlock = {
     row: 0,
     col: Math.floor(COLS / 2),
@@ -552,6 +580,7 @@ function restartGame() {
   running = true;
   clearedCombos = new Set();
   particles = [];
+  wordQueue = [];
   scoreEl.textContent = "0";
   updateProgress();
   setMessage("遊戲開始，左/右移動，下鍵直接落地", true);
