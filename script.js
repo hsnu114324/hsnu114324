@@ -280,6 +280,48 @@ function placeActiveBlock() {
   if (running) spawnBlock();
 }
 
+// 將文字拆成多行，讓每行都塞得進格子寬度
+function wrapText(text, maxWidth, fontSize) {
+  ctx.font = `bold ${fontSize}px sans-serif`;
+
+  // 先試一行塞得下就不拆
+  if (ctx.measureText(text).width <= maxWidth) return [text];
+
+  // 嘗試依空白切（例如 "ice cream"）
+  const spaceWords = text.split(/\s+/);
+  if (spaceWords.length > 1) {
+    const lines = [];
+    let current = "";
+    for (const w of spaceWords) {
+      const test = current ? current + " " + w : w;
+      if (ctx.measureText(test).width <= maxWidth) {
+        current = test;
+      } else {
+        if (current) lines.push(current);
+        current = w;
+      }
+    }
+    if (current) lines.push(current);
+    if (lines.length <= 3) return lines;
+  }
+
+  // 沒有空白或拆完仍太長 → 按字元強制斷行
+  const lines = [];
+  let current = "";
+  for (const ch of text) {
+    const test = current + ch;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = ch;
+    } else {
+      current = test;
+    }
+    if (lines.length >= 3) break; // 最多 3 行
+  }
+  if (current && lines.length < 3) lines.push(current);
+  return lines;
+}
+
 function drawCell(row, col, cellData) {
   const x = col * cellSize;
   const y = row * cellSize;
@@ -292,17 +334,27 @@ function drawCell(row, col, cellData) {
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
-  // 自動縮小字體直到文字能塞進格子
   const maxWidth = cellSize - 6;
   let fontSize = Math.max(10, Math.floor(cellSize * 0.28));
-  ctx.font = `bold ${fontSize}px sans-serif`;
+  const lines = wrapText(cellData.word, maxWidth, fontSize);
 
-  while (ctx.measureText(cellData.word).width > maxWidth && fontSize > 6) {
+  // 如果拆行後單行仍太長，縮小字體
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  while (
+    lines.some((line) => ctx.measureText(line).width > maxWidth) &&
+    fontSize > 6
+  ) {
     fontSize -= 1;
     ctx.font = `bold ${fontSize}px sans-serif`;
   }
 
-  ctx.fillText(cellData.word, x + cellSize / 2, y + cellSize / 2);
+  const lineHeight = fontSize + 2;
+  const totalHeight = lines.length * lineHeight;
+  const startY = y + cellSize / 2 - totalHeight / 2 + lineHeight / 2;
+
+  lines.forEach((line, i) => {
+    ctx.fillText(line, x + cellSize / 2, startY + i * lineHeight);
+  });
 }
 
 function drawGrid() {
