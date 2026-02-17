@@ -66,6 +66,12 @@ body {
 
 .score-chip {
   font-size: 0.95rem;
+  color: #ffda44;
+}
+
+.score-chip b {
+  color: #5fd18d;
+  font-size: 1.1rem;
 }
 
 button {
