@@ -10,6 +10,38 @@ const resetBtn = document.getElementById("resetBtn");
 
 let rows = loadRows();
 
+function preventDoubleTapZoom() {
+  let lastTouchEnd = 0;
+
+  document.addEventListener(
+    "touchend",
+    (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 320) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    },
+    { passive: false },
+  );
+
+  document.addEventListener(
+    "dblclick",
+    (event) => {
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  document.addEventListener(
+    "gesturestart",
+    (event) => {
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 function isValidRowString(row) {
   if (typeof row !== "string") return false;
   const words = row
@@ -121,5 +153,6 @@ newRowInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addRow();
 });
 
+preventDoubleTapZoom();
 renderRows();
 

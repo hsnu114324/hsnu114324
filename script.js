@@ -39,6 +39,38 @@ let lastTick = 0;
 let gameLoopId = null;
 let running = true;
 
+function preventDoubleTapZoom() {
+  let lastTouchEnd = 0;
+
+  document.addEventListener(
+    "touchend",
+    (event) => {
+      const now = Date.now();
+      if (now - lastTouchEnd <= 320) {
+        event.preventDefault();
+      }
+      lastTouchEnd = now;
+    },
+    { passive: false },
+  );
+
+  document.addEventListener(
+    "dblclick",
+    (event) => {
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+
+  document.addEventListener(
+    "gesturestart",
+    (event) => {
+      event.preventDefault();
+    },
+    { passive: false },
+  );
+}
+
 function buildComboList(rows) {
   return rows.map((row, index) => {
     const words = row
@@ -298,6 +330,7 @@ function bindControls() {
 }
 
 function init() {
+  preventDoubleTapZoom();
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
   bindControls();
