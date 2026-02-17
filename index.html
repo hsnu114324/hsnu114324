@@ -12,16 +12,14 @@
   <body>
     <main class="app">
       <header class="top-info">
-        <h1>Word Tetris</h1>
-        <p>橫向連續字詞符合資料表（2~5 格）就會消去</p>
         <div class="meta">
-          <span>分數：<b id="score">0</b></span>
+          <span class="score-chip">分數：<b id="score">0</b></span>
           <div class="meta-actions">
             <a class="btn-link" href="./settings.html">編輯資料表</a>
             <button id="restartBtn" type="button">重新開始</button>
           </div>
         </div>
-        <p id="message" class="message"></p>
+        <p id="message" class="message compact-message" aria-hidden="true"></p>
       </header>
 
       <section class="board-wrap">
