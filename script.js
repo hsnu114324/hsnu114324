@@ -39,36 +39,71 @@ let lastTick = 0;
 let gameLoopId = null;
 let running = true;
 
-function preventDoubleTapZoom() {
+function preventZoom() {
+  // 攔截雙擊縮放
   let lastTouchEnd = 0;
-
   document.addEventListener(
     "touchend",
-    (event) => {
+    (e) => {
       const now = Date.now();
-      if (now - lastTouchEnd <= 320) {
-        event.preventDefault();
+      if (now - lastTouchEnd < 350) {
+        e.preventDefault();
       }
       lastTouchEnd = now;
     },
     { passive: false },
   );
 
+  // 攔截雙指縮放（pinch zoom）
   document.addEventListener(
-    "dblclick",
-    (event) => {
-      event.preventDefault();
+    "touchmove",
+    (e) => {
+      if (e.touches.length > 1) {
+        e.preventDefault();
+      }
     },
     { passive: false },
   );
 
-  document.addEventListener(
-    "gesturestart",
-    (event) => {
-      event.preventDefault();
+  // 攔截 Safari gesture 縮放
+  document.addEventListener("gesturestart", (e) => e.preventDefault(), {
+    passive: false,
+  });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), {
+    passive: false,
+  });
+  document.addEventListener("gestureend", (e) => e.preventDefault(), {
+    passive: false,
+  });
+
+  // 攔截 dblclick
+  document.addEventListener("dblclick", (e) => e.preventDefault(), {
+    passive: false,
+  });
+}
+
+// 讓按鈕用 touchstart 直接反應，不等 click（避免 300ms 延遲和雙擊問題）
+function tapBind(el, callback) {
+  let touched = false;
+
+  el.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      touched = true;
+      callback();
     },
     { passive: false },
   );
+
+  // 桌面版 fallback
+  el.addEventListener("click", (e) => {
+    if (touched) {
+      touched = false;
+      return; // 已由 touchstart 處理
+    }
+    callback();
+  });
 }
 
 function buildComboList(rows) {
@@ -314,10 +349,10 @@ function restartGame() {
 }
 
 function bindControls() {
-  leftBtn.addEventListener("click", () => moveHorizontal(-1));
-  rightBtn.addEventListener("click", () => moveHorizontal(1));
-  downBtn.addEventListener("click", hardDrop);
-  restartBtn.addEventListener("click", restartGame);
+  tapBind(leftBtn, () => moveHorizontal(-1));
+  tapBind(rightBtn, () => moveHorizontal(1));
+  tapBind(downBtn, hardDrop);
+  tapBind(restartBtn, restartGame);
 
   window.addEventListener("keydown", (event) => {
     if (event.key === "ArrowLeft") moveHorizontal(-1);
@@ -330,7 +365,7 @@ function bindControls() {
 }
 
 function init() {
-  preventDoubleTapZoom();
+  preventZoom();
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
   bindControls();

@@ -13,9 +13,16 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-html,
+html {
+  touch-action: pan-y;
+  -ms-touch-action: pan-y;
+}
+
 body {
-  touch-action: manipulation;
+  touch-action: pan-y;
+  -ms-touch-action: pan-y;
+  overscroll-behavior: none;
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -68,7 +75,9 @@ button {
   padding: 8px 12px;
   border-radius: 10px;
   cursor: pointer;
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .btn-link {
@@ -81,7 +90,9 @@ button {
   border-radius: 10px;
   text-decoration: none;
   font-size: 0.9rem;
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .message {
@@ -110,7 +121,15 @@ button {
   border-radius: 12px;
   background: #0a0d1d;
   box-shadow: 0 12px 30px rgb(0 0 0 / 40%);
-  touch-action: manipulation;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.mobile-controls {
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .mobile-controls {
