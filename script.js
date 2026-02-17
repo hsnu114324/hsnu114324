@@ -40,20 +40,6 @@ let gameLoopId = null;
 let running = true;
 
 function preventZoom() {
-  // 攔截雙擊縮放
-  let lastTouchEnd = 0;
-  document.addEventListener(
-    "touchend",
-    (e) => {
-      const now = Date.now();
-      if (now - lastTouchEnd < 350) {
-        e.preventDefault();
-      }
-      lastTouchEnd = now;
-    },
-    { passive: false },
-  );
-
   // 攔截雙指縮放（pinch zoom）
   document.addEventListener(
     "touchmove",
