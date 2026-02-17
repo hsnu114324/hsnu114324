@@ -59,6 +59,12 @@ body {
   gap: 8px;
 }
 
+.meta-left {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
 .meta-actions {
   display: flex;
   gap: 8px;
@@ -71,6 +77,15 @@ body {
 
 .score-chip b {
   color: #5fd18d;
+}
+
+.progress-chip {
+  font-size: 0.85rem;
+  color: #a5b4fc;
+}
+
+.progress-chip b {
+  color: #7ea6ff;
   font-size: 1.1rem;
 }
 

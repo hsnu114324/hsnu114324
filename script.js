@@ -23,6 +23,7 @@ const COLORS = [
 const canvas = document.getElementById("board");
 const ctx = canvas.getContext("2d");
 const scoreEl = document.getElementById("score");
+const progressEl = document.getElementById("progress");
 const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restartBtn");
 const leftBtn = document.getElementById("leftBtn");
@@ -40,8 +41,9 @@ let score = 0;
 let lastTick = 0;
 let gameLoopId = null;
 let running = true;
-let animating = false; // 消除動畫播放中
-let particles = [];    // 爆散粒子
+let animating = false;  // 消除動畫播放中
+let particles = [];     // 爆散粒子
+let clearedCombos = new Set(); // 已消除的 combo 索引
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -227,7 +229,8 @@ function findMatchedGroups() {
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
       if (!board[row][col]) continue;
-      for (const combo of comboList) {
+      for (let ci = 0; ci < comboList.length; ci++) {
+        const combo = comboList[ci];
         if (col + combo.length > COLS) continue;
         let hit = true;
         for (let i = 0; i < combo.length; i += 1) {
@@ -238,7 +241,7 @@ function findMatchedGroups() {
         }
         if (hit) {
           const cells = combo.map((_, i) => ({ row, col: col + i }));
-          groups.push(cells);
+          groups.push({ cells, comboIndex: ci });
         }
       }
     }
@@ -343,6 +346,10 @@ function playClearAnimation(markedPositions) {
   });
 }
 
+function updateProgress() {
+  progressEl.textContent = `${clearedCombos.size}/${comboList.length}`;
+}
+
 async function clearMatches() {
   let totalCleared = 0;
 
@@ -351,7 +358,8 @@ async function clearMatches() {
     if (!groups.length) break;
 
     const marked = new Set();
-    groups.forEach((cells) => {
+    groups.forEach(({ cells, comboIndex }) => {
+      clearedCombos.add(comboIndex);
       cells.forEach(({ row, col }) => marked.add(`${row}-${col}`));
     });
 
@@ -372,13 +380,58 @@ async function clearMatches() {
 
     totalCleared += positions.length;
     settleBoardGravity();
+    updateProgress();
   }
 
   if (totalCleared > 0) {
     score += totalCleared;
     scoreEl.textContent = String(score);
-    setMessage(`消除 ${totalCleared} 格`, true);
+
+    // 檢查是否破關
+    if (clearedCombos.size >= comboList.length) {
+      running = false;
+      setMessage("🎉 恭喜破關！所有組合都已消除！", true);
+      playClearAllAnimation();
+      return;
+    }
+
+    setMessage(`消除 ${totalCleared} 格（${clearedCombos.size}/${comboList.length}）`, true);
   }
+}
+
+// 破關慶祝動畫：全畫面放煙火粒子
+function playClearAllAnimation() {
+  const cols = COLS;
+  const rows = ROWS;
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => {
+      const cx = Math.random() * canvas.width;
+      const cy = Math.random() * canvas.height * 0.6;
+      for (let j = 0; j < 20; j++) {
+        const angle = (Math.PI * 2 * j) / 20 + Math.random() * 0.3;
+        const speed = 2 + Math.random() * 3;
+        particles.push({
+          x: cx,
+          y: cy,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          r: 3 + Math.random() * 4,
+          color: COLORS[Math.floor(Math.random() * COLORS.length)],
+          life: 1.0,
+        });
+      }
+    }, i * 200);
+  }
+  // 讓粒子持續渲染一段時間
+  let frames = 0;
+  function celebrateTick() {
+    drawGrid();
+    frames++;
+    if (frames < 120 || particles.length > 0) {
+      requestAnimationFrame(celebrateTick);
+    }
+  }
+  requestAnimationFrame(celebrateTick);
 }
 
 async function placeActiveBlock() {
@@ -497,7 +550,10 @@ function restartGame() {
   score = 0;
   lastTick = 0;
   running = true;
+  clearedCombos = new Set();
+  particles = [];
   scoreEl.textContent = "0";
+  updateProgress();
   setMessage("遊戲開始，左/右移動，下鍵直接落地", true);
   spawnBlock();
   cancelAnimationFrame(gameLoopId);
