@@ -721,7 +721,6 @@ function bindControls() {
   tapBind(rightBtn, () => { if (!autoMode) moveHorizontal(1); });
   tapBind(downBtn, () => { if (!autoMode) hardDrop(); });
   tapBind(restartBtn, restartGame);
-  tapBind(autoBtn, toggleAutoMode);
 
   window.addEventListener("keydown", (event) => {
     if (autoMode) return;

@@ -75,6 +75,7 @@ body {
   border-color: #2aa06a;
   font-weight: 700;
   min-width: 52px;
+  touch-action: manipulation;
   transition: background 0.2s, border-color 0.2s;
 }
 
