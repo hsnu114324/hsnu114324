@@ -96,6 +96,17 @@ body {
   border-color: #b6953f;
 }
 
+#debugHistoryBtn {
+  background: #2f3556;
+  border-color: #59659c;
+  min-width: 40px;
+}
+
+#debugHistoryBtn.active {
+  background: #3f2d62;
+  border-color: #8a6bc7;
+}
+
 .score-chip {
   font-size: 0.95rem;
   color: #ffda44;
