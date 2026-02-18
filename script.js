@@ -772,6 +772,7 @@ async function runAISearch(word) {
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
     let prevBestCleared = popcount(cl);
+    let frontierPaths = null; // 壓縮後各 frontier 的前綴路徑（col 陣列）
 
     // ── 池輔助函數 ──
     function poolHash(board, clMask) {
@@ -825,7 +826,15 @@ async function runAISearch(word) {
         idx = bfsPool.parentIdx[idx];
       }
       moves.reverse();
-      return [...p1Path, ...moves];
+      // 壓縮後的前綴路徑（從壓縮根往回追）
+      let prefix = [];
+      if (frontierPaths && idx >= 0 && idx < frontierPaths.length && frontierPaths[idx]) {
+        const cols = frontierPaths[idx];
+        for (let i = 0; i < cols.length; i++) {
+          prefix.push({ word: fullSeq[p2Start + i], col: cols[i] });
+        }
+      }
+      return [...p1Path, ...prefix, ...moves];
     }
 
     function poolMemStr() {
@@ -870,6 +879,81 @@ async function runAISearch(word) {
       const pruned = fLen - keepCount;
       bfsPool.fALen = keepCount;
       return pruned;
+    }
+
+    // ── 記憶體壓縮：重置池，只保留 frontier 狀態 + 前綴路徑 ──
+    // 將 frontier 各狀態的 parent chain 轉成 Uint8Array(col) 前綴，
+    // 然後清空池、只插回 frontier 為新根。
+    // 額外記憶體 ≈ fLen*(TC+4+depth) bytes（臨時，壓縮後即釋放）
+    function compactPoolToFrontier() {
+      const fLen = bfsPool.fALen;
+      if (fLen === 0) return 0;
+
+      // 1) 儲存各 frontier 的完整前綴路徑（僅 col）
+      const newPaths = new Array(fLen);
+      for (let fi = 0; fi < fLen; fi++) {
+        const idx = bfsPool.frontierA[fi];
+        const cols = [];
+        let cur = idx;
+        while (cur >= 0 && bfsPool.parentIdx[cur] >= 0) {
+          cols.push(bfsPool.moveCol[cur]);
+          cur = bfsPool.parentIdx[cur];
+        }
+        cols.reverse();
+        const ep = (frontierPaths && cur >= 0 && cur < frontierPaths.length && frontierPaths[cur])
+          ? frontierPaths[cur] : null;
+        const epLen = ep ? ep.length : 0;
+        const combined = new Uint8Array(epLen + cols.length);
+        if (epLen) combined.set(ep);
+        for (let i = 0; i < cols.length; i++) combined[epLen + i] = cols[i];
+        newPaths[fi] = combined;
+      }
+
+      // 2) 暫存 frontier 盤面 + cl
+      const savedBoards = new Uint8Array(fLen * TC);
+      const savedCl = new Uint32Array(fLen);
+      for (let fi = 0; fi < fLen; fi++) {
+        const idx = bfsPool.frontierA[fi];
+        const base = idx * TC;
+        for (let j = 0; j < TC; j++) savedBoards[fi * TC + j] = bfsPool.boards[base + j];
+        savedCl[fi] = bfsPool.cl[idx];
+      }
+
+      const oldCount = bfsPool.count;
+
+      // 3) 重置池
+      resetBFSPool();
+
+      // 4) 重新插入 frontier 為新根
+      for (let fi = 0; fi < fLen; fi++) {
+        const base = fi * TC;
+        for (let j = 0; j < TC; j++) bfsPool.boards[base + j] = savedBoards[base + j];
+        bfsPool.cl[fi] = savedCl[fi];
+        bfsPool.parentIdx[fi] = -1;
+        bfsPool.firstCol[fi] = -1;
+        bfsPool.moveWord[fi] = 0;
+        bfsPool.moveCol[fi] = 0;
+        bfsPool.frontierA[fi] = fi;
+      }
+      bfsPool.count = fLen;
+      bfsPool.fALen = fLen;
+
+      // 5) 重建雜湊表（僅 frontier）
+      for (let fi = 0; fi < fLen; fi++) {
+        const hash = poolHash(bfsPool.boards.subarray(fi * TC, (fi + 1) * TC), bfsPool.cl[fi]);
+        let slot = hash & BFS_HASH_MASK;
+        for (let probe = 0; probe < BFS_HASH_SIZE; probe++) {
+          if (bfsPool.hashGen[slot] !== bfsPool.gen) {
+            bfsPool.hashTable[slot] = fi;
+            bfsPool.hashGen[slot] = bfsPool.gen;
+            break;
+          }
+          slot = (slot + 1) & BFS_HASH_MASK;
+        }
+      }
+
+      frontierPaths = newPaths;
+      return oldCount - fLen;
     }
 
     // 插入根狀態（Phase 1 結束盤面）
@@ -1015,6 +1099,15 @@ async function runAISearch(word) {
       } else if (poolUsage > 0.60) {
         const p = pruneFrontier(0.75);  // 輕度：保留 75%
         if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(60%) -${p}態`;
+      }
+      // ── 記憶體壓縮：重置池，只保留 frontier + 前綴路徑 ──
+      // 決策已存在 autoPlan 中，壓縮後可繼續搜索
+      if (bfsPool.count / BFS_POOL_MAX > 0.50 && bfsPool.count > bfsPool.fALen * 2) {
+        const compacted = compactPoolToFrontier();
+        if (compacted > 0) {
+          stepEvent += (stepEvent ? " " : "") + `🗜️壓縮-${compacted}態`;
+          poolFull = false; // 池已清理，可繼續搜索
+        }
       }
       if (poolFull) stepEvent += (stepEvent ? " " : "") + "⚠池滿";
 
@@ -1474,9 +1567,8 @@ function gameLoop(ts) {
           // 向目標欄移動（計算中也能移動）
           moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
         } else if (!aiComputing) {
-          // 已到目標欄且 AI 計算完成 → 落下
-          hardDrop();
-          autoTargetCol = -1;
+          // 已到目標欄且計算完成 → 加速掉落（不硬降，爭取決策時間）
+          softDrop();
         }
         // 若到目標欄但 AI 仍在計算 → 等待（方塊自然掉落）
         autoLastMoveTime = ts;
