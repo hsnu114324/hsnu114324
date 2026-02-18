@@ -1090,6 +1090,11 @@ async function runAISearch(word) {
       }
       // ── 預防性剪枝：根據池使用率，漸進式淘汰弱 frontier 狀態 ──
       const poolUsage = bfsPool.count / BFS_POOL_MAX;
+      // 池壓力大時先讓出控制權，避免剪枝+壓縮造成畫面停滯
+      if (poolFull || poolUsage > 0.60) {
+        await new Promise(r => setTimeout(r, 0));
+        if (myGen !== aiSearchGen) return;
+      }
       if (poolUsage > 0.90) {
         const p = pruneFrontier(0.25);  // 激進：只保留 25%
         if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(90%) -${p}態`;
@@ -1559,18 +1564,14 @@ function gameLoop(ts) {
       lastTick = ts;
     }
 
-    // 自動模式：一邊計算一邊移動
+    // 自動模式：只做水平移動，不加速掉落，所有時間用於未來決策計算
     if (autoMode && activeBlock) {
       if (autoTargetCol < 0) autoTargetCol = findBestColumn();
       if (autoTargetCol >= 0 && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
         if (activeBlock.col !== autoTargetCol) {
-          // 向目標欄移動（計算中也能移動）
           moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
-        } else if (!aiComputing) {
-          // 已到目標欄且計算完成 → 加速掉落（不硬降，爭取決策時間）
-          softDrop();
         }
-        // 若到目標欄但 AI 仍在計算 → 等待（方塊自然掉落）
+        // 到目標欄後完全依靠正常掉落速度，爭取最大計算時間
         autoLastMoveTime = ts;
       }
     }
