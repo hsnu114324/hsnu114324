@@ -397,6 +397,110 @@ async function runAISearch(word) {
     return rows.join("\n");
   }
 
+  // ── 版型快速枚舉（全 5-word + 6 欄 → 2^N 版型完整模擬）──
+  const activeCI = [];
+  for (let ci = 0; ci < numCombos; ci++) if (!(initCl & (1 << ci))) activeCI.push(ci);
+  const allFiveWord = COLS === 6 && activeCI.length > 0 &&
+    activeCI.every(ci => _cIdx[ci].length === 5);
+
+  const wordToCi = new Int8Array(_iToW.length).fill(-1);
+  const wordToPos = new Int8Array(_iToW.length).fill(-1);
+  let bestLayoutStart = null;
+
+  if (allFiveWord) {
+    for (const ci of activeCI) {
+      const combo = _cIdx[ci];
+      for (let p = 0; p < combo.length; p++) {
+        if (wordToCi[combo[p]] === -1) {
+          wordToCi[combo[p]] = ci;
+          wordToPos[combo[p]] = p;
+        }
+      }
+    }
+
+    const N = activeCI.length;
+    const TL = 1 << N;
+    for (let layout = 0; layout < TL; layout++) {
+      if (myGen !== aiSearchGen) return;
+
+      // 每個 combo 的起始欄：0 或 1
+      const cs = new Uint8Array(numCombos);
+      for (let i = 0; i < N; i++) cs[activeCI[i]] = (layout >> i) & 1;
+
+      const sf = f0.slice();
+      let cl = initCl;
+      const path = [];
+      let ok = true;
+
+      for (let s = 0; s < totalSteps; s++) {
+        const wIdx = seqIdx[s];
+        const ci = wordToCi[wIdx];
+        let col;
+
+        if (ci >= 0 && !(cl & (1 << ci))) {
+          // 此字所屬 combo 尚未消除 → 放在版型指定欄
+          col = cs[ci] + wordToPos[wIdx];
+        } else {
+          // 已消除或無所屬 combo → 放最空欄
+          let mh = -1; col = 0;
+          for (let c = 0; c < COLS; c++) {
+            let h = 0;
+            for (let r = 0; r < ROWS; r++) {
+              if (sf[r * COLS + c] === 0) h++; else break;
+            }
+            if (h > mh) { mh = h; col = c; }
+          }
+        }
+
+        let lr = -1;
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (sf[r * COLS + col] === 0) { lr = r; break; }
+        }
+        if (lr < 0) { ok = false; break; }
+
+        sf[lr * COLS + col] = wIdx;
+        path.push({ word: fullSeq[s], col });
+        cl = simClear(sf, _cIdx, cl);
+      }
+
+      if (!ok) continue;
+
+      const cleared = popcount(cl);
+      let space = 0;
+      for (let c = 0; c < COLS; c++) {
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (sf[r * COLS + c] === 0) { space += r + 1; break; }
+        }
+      }
+
+      if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
+        bestCl = cleared; bestSp = space; bestPath = path;
+        bestLayoutStart = cs.slice();
+        if (autoMode && path.length > 0 && autoPlanStep <= 1) autoTargetCol = path[0].col;
+      }
+      if (cleared === numCombos) break;
+    }
+
+    if (myGen !== aiSearchGen) return;
+
+    if (bestPath.length > 0 && autoMode) {
+      autoPlan = bestPath;
+      if (!planInstalled) { autoPlanStep = 1; planInstalled = true; }
+      if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
+    }
+
+    if (bestCl === numCombos) {
+      if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
+      setMessage(`🤖 完成！枚舉 ${TL} 版型 → 全消 ✓`, true);
+      aiComputing = false;
+      return;
+    }
+
+    setMessage(`🤖 版型枚舉 ${bestCl}/${numCombos}，DFS 加深中...`, true);
+    await new Promise(r => setTimeout(r, 0));
+    if (myGen !== aiSearchGen) return;
+  }
+
   // ── Stage 1: 找「組合最佳排法」→ 產生每個字的偏好欄位 ──
   function pickBestLayoutMap() {
     const pref = new Int8Array(_iToW.length).fill(-1);
@@ -473,7 +577,17 @@ async function runAISearch(word) {
     return pref;
   }
 
-  const prefCol = pickBestLayoutMap();
+  let prefCol;
+  if (bestLayoutStart) {
+    // 使用版型枚舉找到的最佳版型
+    prefCol = new Int8Array(_iToW.length).fill(-1);
+    for (const ci of activeCI) {
+      const combo = _cIdx[ci];
+      for (let p = 0; p < combo.length; p++) prefCol[combo[p]] = bestLayoutStart[ci] + p;
+    }
+  } else {
+    prefCol = pickBestLayoutMap();
+  }
 
   // 每個字：先試版型偏好欄，再試 combo 相關欄，最後補齊所有欄
   const colOrd = [];
