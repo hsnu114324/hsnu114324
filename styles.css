@@ -61,14 +61,21 @@ body {
 
 .meta-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
+}
+
+.meta-actions button,
+.meta-actions .btn-link {
+  padding: 4px 7px;
+  font-size: 0.75rem;
+  border-radius: 7px;
 }
 
 #autoBtn {
   background: #1c6e47;
   border-color: #2aa06a;
   font-weight: 700;
-  min-width: 52px;
+  min-width: 40px;
   touch-action: manipulation;
   transition: background 0.2s, border-color 0.2s;
 }
@@ -125,10 +132,11 @@ button {
 }
 
 .message {
-  margin: 2px 0 0;
-  min-height: 1.2em;
-  font-size: 0.8rem;
+  margin: 1px 0 0;
+  min-height: 1em;
+  font-size: 0.75rem;
   color: var(--warn);
+  line-height: 1.2;
 }
 
 .message:empty {
