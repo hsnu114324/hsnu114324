@@ -622,27 +622,54 @@ async function runAISearch(word) {
     }
   }
 
-  // ── Phase 1: 掃描 Q 前 7 個字，找出最有可能的 combo ──
+  // ── Phase 1: 掃描 Q 前 7 個字 + 盤面，找出最應優先的 combo ──
   const P1 = Math.min(7, totalSteps);
   const comboFreq = new Uint8Array(numCombos);
   for (let s = 0; s < P1; s++) {
     const ci = wordToCi[seqIdx[s]];
     if (ci >= 0) comboFreq[ci]++;
   }
-  // 優先 combo = 前 7 中出現最多字的那組
-  let priCI = -1, priMax = 0;
+
+  // 計算每個 combo 在盤面上已正確放置的字數 + 最佳起始欄
+  // boardMatch[ci] = 在最佳起始欄下，已有多少 combo 字在正確位置
+  // boardBestStart[ci] = 該 combo 在盤面上匹配最多字的起始欄
+  const boardMatch = new Uint8Array(numCombos);
+  const boardBestStart = new Uint8Array(numCombos);
   for (const ci of activeCI) {
-    if (comboFreq[ci] > priMax) { priMax = comboFreq[ci]; priCI = ci; }
+    const combo = _cIdx[ci];
+    const cLen = combo.length;
+    let maxM = 0, bestSC = 0;
+    for (let sc = 0; sc <= COLS - cLen; sc++) {
+      let m = 0;
+      for (let p = 0; p < cLen; p++) {
+        for (let r = 0; r < ROWS; r++) {
+          if (f0[r * COLS + (sc + p)] === combo[p]) { m++; break; }
+        }
+      }
+      if (m > maxM) { maxM = m; bestSC = sc; }
+    }
+    boardMatch[ci] = maxM;
+    boardBestStart[ci] = bestSC;
   }
 
-  // 只有優先 combo 的字有固定欄位，其他 combo 字當 garbage
+  // 優先 combo = Q 頻率 + 盤面進度 綜合最高的那組
+  // boardMatch 權重較高：盤面已有的字更確定（Q 裡的字還沒放）
+  let priCI = -1, priMax = 0;
+  for (const ci of activeCI) {
+    const score = comboFreq[ci] + boardMatch[ci] * 3;
+    if (score > priMax) { priMax = score; priCI = ci; }
+  }
+
+  // 根據盤面決定 priCI 的起始欄（不再硬編碼 col 0）
   const wordFixedCol = new Int8Array(_iToW.length).fill(-1);
-  let comboMaxEnd = 0; // 優先 combo 佔用的最右欄 +1
+  let priStartCol = 0;
+  let comboMaxEnd = 0;
   if (priCI >= 0) {
     const combo = _cIdx[priCI];
-    comboMaxEnd = combo.length;
+    priStartCol = boardBestStart[priCI];
+    comboMaxEnd = priStartCol + combo.length;
     for (let p = 0; p < combo.length; p++) {
-      wordFixedCol[combo[p]] = p; // col 0 + position
+      wordFixedCol[combo[p]] = priStartCol + p;
     }
   }
 
@@ -670,12 +697,12 @@ async function runAISearch(word) {
   const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
   setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
   if (debugMode) {
-    // 顯示各 combo 的有效起始欄數
     const comboInfo = activeCI.map(ci => {
       const cLen = _cIdx[ci].length;
       const starts = COLS - cLen + 1;
       const name = _cIdx[ci].map(w => _iToW[w]).join(",");
-      return ci === priCI ? `★${name}(固定c0)` : `${name}(${starts}位)`;
+      if (ci === priCI) return `★${name}(c${priStartCol}~${comboMaxEnd - 1}, 盤面${boardMatch[ci]}字)`;
+      return `${name}(${starts}位)`;
     }).join(" ");
     setDebugText(`智慧欄位: combo字分支≈${Math.max(1, COLS - (_cIdx[activeCI[0]]?.length || 3) + 1) + 1}, 垃圾字≈3\n${comboInfo}`);
   }
@@ -697,11 +724,11 @@ async function runAISearch(word) {
     if (fc >= 0 && ci >= 0 && !(cl & (1 << ci))) {
       col = fc; // combo 字 → 固定欄位
     } else {
-      // Garbage → 避開優先 combo 佔用的欄位，從右往左找最空
+        // Garbage → 避開優先 combo 佔用的欄位，從右往左找最空
       let mh = -1; col = COLS - 1;
       for (let c = COLS - 1; c >= 0; c--) {
-        // 優先 combo 尚未消除時，跳過它佔用的欄 (col 0 ~ comboMaxEnd-1)
-        if (priCI >= 0 && !(cl & (1 << priCI)) && c < comboMaxEnd) continue;
+        // 優先 combo 尚未消除時，跳過它佔用的欄 (priStartCol ~ comboMaxEnd-1)
+        if (priCI >= 0 && !(cl & (1 << priCI)) && c >= priStartCol && c < comboMaxEnd) continue;
         let h = 0;
         for (let r = 0; r < ROWS; r++) {
           if (sf[r * COLS + c] === 0) h++; else break;
