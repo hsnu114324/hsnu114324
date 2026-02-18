@@ -372,9 +372,10 @@ function findBestColumn() {
   return quickGuessCol();
 }
 
-// ── 兩階段搜索：Phase 1 啟發式 + Phase 2 全 DFS ──
+// ── 兩階段搜索：Phase 1 啟發式 + Phase 2 全搜索 BFS ──
 // Phase 1: 分析前 7 個字，找出最多字的 combo 優先放底部，其餘 garbage
-// Phase 2: 剩餘字用全搜索（DFS + 上界剪枝 + combo 合法欄優先）
+// Phase 2: 固定 combo 字放固定欄，其餘字全欄嘗試（全搜索 BFS）
+//          消除 combo 後漸進剪枝 + 記憶體縮減。Phase 2 在 Phase 1 落子期間偷跑
 async function runAISearch(word) {
   const myGen = ++aiSearchGen;
   aiComputing = true;
@@ -720,14 +721,21 @@ async function runAISearch(word) {
   if (debugMode) debugP1Board = sf.slice();
   if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
 
+  // ── 偷跑：Phase 1 結束後立即讓出控制權 ──
+  // 讓遊戲迴圈開始執行 Phase 1 的落子，Phase 2 在下一個 tick 開始計算
+  await new Promise(r => setTimeout(r, 0));
+  if (myGen !== aiSearchGen) return;
+
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
     // 偵錯：顯示 Phase 1 完成狀態
     if (debugMode) {
       buildDebugDiagram();
     }
 
-    // ── Phase 2: 漸進剪枝 BFS ──
-    // 每次消除一組 combo 後，掃描剩餘 Q 找下一個最多字的 combo 並固定欄位
+    // ── Phase 2: 全搜索 BFS + 漸進剪枝 ──
+    // 固定 combo 字只嘗試固定欄，其餘字嘗試所有欄（全搜索）
+    // 每消除一組 combo 後固定下一組 + 主動清理記憶體
+    // Phase 2 在 Phase 1 方塊掉落期間即開始計算（偷跑）
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
     const MAX_STATES = 500000;
@@ -737,7 +745,7 @@ async function runAISearch(word) {
     const fixedSet = new Set(); // 已固定的 combo index
     if (priCI >= 0) fixedSet.add(priCI);
     let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
-    // 追蹤所有已固定 combo 佔用的最右欄 +1（garbage 要避開 0 ~ fixedMaxEnd-1）
+    // 追蹤所有已固定 combo 佔用的最右欄 +1（用於 pruneFrontier 判斷堵死）
     let fixedMaxEnd = comboMaxEnd;
 
     // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定；回傳新固定的 combo index（-1=無）
@@ -847,15 +855,7 @@ async function runAISearch(word) {
         const useDetermined = fc2 >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
 
         for (let col = useDetermined ? fc2 : 0; col < (useDetermined ? fc2 + 1 : COLS); col++) {
-          // 非固定字（garbage）→ 避開已固定 combo 佔用的欄位，除非所有 combo 欄的 combo 都已消除
-          if (!useDetermined && col < fixedMaxEnd) {
-            // 檢查此欄是否仍被活躍 combo 佔用
-            let colNeeded = false;
-            for (const ci of fixedSet) {
-              if (!(state.cl & (1 << ci)) && col < _cIdx[ci].length) { colNeeded = true; break; }
-            }
-            if (colNeeded) continue; // 跳過 combo 佔用的欄位
-          }
+          // 全搜索：非固定字嘗試所有欄位（含 combo 佔用的欄位）
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
             if (state.board[r * COLS + col] === 0) { lr = r; break; }
