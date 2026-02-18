@@ -57,6 +57,7 @@ let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
 let autoPlanStep = 0;        // 目前執行到第幾步
 let aiComputing = false;     // AI 正在計算中
 let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
+let autoPlanExpectedCol = -1; // 目前方塊應落在哪一欄（用於檢測計畫是否過時）
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -331,11 +332,16 @@ function findBestColumn() {
   // 快取命中 → O(1)
   if (autoPlan.length > 0 && autoPlanStep < autoPlan.length) {
     const planned = autoPlan[autoPlanStep];
-    if (planned.word === word) { autoPlanStep++; return planned.col; }
+    if (planned.word === word) {
+      autoPlanStep++;
+      autoPlanExpectedCol = planned.col; // 記錄期望落點
+      return planned.col;
+    }
     clearAutoPlan();
   }
 
   // 啟動背景搜索 + 立刻回傳初步猜測（不凍結）
+  autoPlanExpectedCol = -1;
   runAISearch(word);
   return quickGuessCol();
 }
@@ -381,80 +387,95 @@ async function runAISearch(word) {
   let bestCl = -1, bestSp = -1, bestPath = null;
 
   // ═══════════════════════════════════════════════════════
-  // Phase 1: 快速貪心 — 窮舉 combo 起始欄配置
-  // 5 字 combo 在 6 欄只有 2 個起始位 (col 0 或 1)
-  // 3 組 combo → 2³ = 8 種配置，瞬間完成
+  // Phase 1: 快速貪心 — 窮舉 combo 起始欄配置（混合基數枚舉）
+  // 每個 combo 的合法起始欄數 = COLS - combo.length + 1
+  //   長度 5 → 2 個（col 0,1）
+  //   長度 4 → 3 個（col 0,1,2）
+  //   長度 3 → 4 個（col 0,1,2,3）
+  //   長度 2 → 5 個（col 0,1,2,3,4）
   // ═══════════════════════════════════════════════════════
-  if (numCombos <= 10) {
-    const nCfg = 1 << numCombos;
-    for (let cfg = 0; cfg < nCfg; cfg++) {
-      const wCol = new Int8Array(_iToW.length).fill(-1);
-      let valid = true;
+  {
+    // 計算每個 combo 的合法起始欄數
+    const comboChoices = new Uint8Array(numCombos);
+    let totalCfg = 1;
+    for (let ci = 0; ci < numCombos; ci++) {
+      if (initCl & (1 << ci)) { comboChoices[ci] = 1; continue; }
+      comboChoices[ci] = COLS - _cIdx[ci].length + 1;
+      totalCfg *= comboChoices[ci];
+    }
 
-      for (let ci = 0; ci < numCombos; ci++) {
-        if (initCl & (1 << ci)) continue; // 已清的 combo 跳過
-        const sc = (cfg >> ci) & 1;        // 此 combo 從 col sc 開始
-        const combo = _cIdx[ci];
-        if (sc + combo.length > COLS) { valid = false; break; }
-        for (let p = 0; p < combo.length; p++) {
-          const c = sc + p;
-          if (wCol[combo[p]] !== -1 && wCol[combo[p]] !== c) {
-            valid = false; break; // 同一字被分到不同欄 → 衝突
+    // 只在配置數可控時執行（≤ 10000）
+    if (totalCfg <= 10000) {
+      for (let cfg = 0; cfg < totalCfg; cfg++) {
+        const wCol = new Int8Array(_iToW.length).fill(-1);
+        let valid = true;
+        let rem = cfg;
+
+        for (let ci = 0; ci < numCombos; ci++) {
+          const nch = comboChoices[ci];
+          const sc = rem % nch;            // 此 combo 的起始欄
+          rem = (rem / nch) | 0;
+          if (initCl & (1 << ci)) continue;
+          const combo = _cIdx[ci];
+          for (let p = 0; p < combo.length; p++) {
+            const c = sc + p;
+            if (wCol[combo[p]] !== -1 && wCol[combo[p]] !== c) {
+              valid = false; break;
+            }
+            wCol[combo[p]] = c;
           }
-          wCol[combo[p]] = c;
+          if (!valid) break;
         }
-        if (!valid) break;
+        if (!valid) continue;
+
+        // 模擬整場遊戲
+        const f = f0.slice();
+        let cl = initCl;
+        const path = [];
+        let ok = true;
+
+        for (let s = 0; s < totalSteps; s++) {
+          const wIdx = seqIdx[s];
+          if ((wcMask[wIdx] & ~cl) === 0) continue;
+          const col = wCol[wIdx];
+          if (col < 0) { ok = false; break; }
+          let lr = -1;
+          for (let r = ROWS - 1; r >= 0; r--)
+            if (f[r * COLS + col] === 0) { lr = r; break; }
+          if (lr < 0) { ok = false; break; }
+          f[lr * COLS + col] = wIdx;
+          cl = simClear(f, _cIdx, cl);
+          path.push({ word: fullSeq[s], col });
+        }
+        if (!ok) continue;
+
+        const cleared = popcount(cl);
+        let space = 0;
+        for (let c = 0; c < COLS; c++)
+          for (let r = ROWS - 1; r >= 0; r--)
+            if (f[r * COLS + c] === 0) { space += r + 1; break; }
+
+        if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
+          bestCl = cleared; bestSp = space; bestPath = path;
+        }
+        if (bestCl === numCombos) break;
       }
-      if (!valid) continue;
 
-      // 模擬整場遊戲
-      const f = f0.slice();
-      let cl = initCl;
-      const path = [];
-      let ok = true;
+      if (myGen !== aiSearchGen) return;
 
-      for (let s = 0; s < totalSteps; s++) {
-        const wIdx = seqIdx[s];
-        if ((wcMask[wIdx] & ~cl) === 0) continue; // 不需要的字跳過
-        const col = wCol[wIdx];
-        if (col < 0) { ok = false; break; }
-        let lr = -1;
-        for (let r = ROWS - 1; r >= 0; r--)
-          if (f[r * COLS + col] === 0) { lr = r; break; }
-        if (lr < 0) { ok = false; break; } // 欄滿溢出
-        f[lr * COLS + col] = wIdx;
-        cl = simClear(f, _cIdx, cl);
-        path.push({ word: fullSeq[s], col });
+      if (bestPath && bestPath.length > 0 && autoMode) {
+        autoTargetCol = bestPath[0].col;
       }
-      if (!ok) continue;
 
-      const cleared = popcount(cl);
-      let space = 0;
-      for (let c = 0; c < COLS; c++)
-        for (let r = ROWS - 1; r >= 0; r--)
-          if (f[r * COLS + c] === 0) { space += r + 1; break; }
-
-      if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
-        bestCl = cleared; bestSp = space; bestPath = path;
+      if (bestCl === numCombos) {
+        autoPlan = bestPath;
+        autoPlanStep = 1;
+        autoPlanExpectedCol = bestPath[0].col;
+        autoTargetCol = bestPath[0].col;
+        setMessage(`🤖 完成！全消 ${numCombos} 組（快速模式）`, true);
+        aiComputing = false;
+        return;
       }
-      if (bestCl === numCombos) break; // 全消！不用再試
-    }
-
-    if (myGen !== aiSearchGen) return;
-
-    // 即時更新目標
-    if (bestPath && bestPath.length > 0 && autoMode) {
-      autoTargetCol = bestPath[0].col;
-    }
-
-    // 已全消 → 跳過 DFS，瞬間完成
-    if (bestCl === numCombos) {
-      autoPlan = bestPath;
-      autoPlanStep = 1;
-      autoTargetCol = bestPath[0].col;
-      setMessage(`🤖 完成！全消 ${numCombos} 組（快速模式）`, true);
-      aiComputing = false;
-      return;
     }
   }
 
@@ -512,8 +533,10 @@ async function runAISearch(word) {
   const sP   = new Int8Array(maxD);
   sCol[0] = -2; sCl[0] = initCl;
 
-  const HT_MASK = 0x3FF;
-  const ht = new Uint32Array(1024);
+  // 雙雜湊表：4096 entries × 2 hash = 碰撞率極低
+  const HT_MASK = 0xFFF;  // 4095
+  const ht1 = new Uint32Array(4096);
+  const ht2 = new Uint32Array(4096);
 
   let ops = 0, depth = 0;
 
@@ -530,17 +553,23 @@ async function runAISearch(word) {
         if (myGen !== aiSearchGen) return;
       }
 
-      // 內聯雜湊去重
-      let h = 0x811c9dc5;
-      h = Math.imul(h ^ (depth * 397), 0x01000193);
-      for (let i = off, e = off + TC; i < e; i++) h = Math.imul(h ^ pool[i], 0x01000193);
-      h = Math.imul(h ^ cl, 0x01000193);
-      h = (h >>> 0) || 1;
+      // 內聯雙雜湊去重（兩個獨立 hash 同時命中才判定為重複）
+      let h1 = 0x811c9dc5, h2 = 0x01000193;
+      for (let i = off, e = off + TC; i < e; i++) {
+        h1 = Math.imul(h1 ^ pool[i], 0x01000193);
+        h2 = Math.imul(h2 ^ pool[i], 0x27d4eb2d);
+      }
+      h1 = Math.imul(h1 ^ (depth * 397), 0x01000193);
+      h2 = Math.imul(h2 ^ (depth * 619), 0x27d4eb2d);
+      h1 = Math.imul(h1 ^ cl, 0x01000193);
+      h2 = Math.imul(h2 ^ cl, 0x27d4eb2d);
+      h1 = (h1 >>> 0) || 1;
+      h2 = (h2 >>> 0) || 1;
       {
-        let idx = h & HT_MASK, dup = false;
-        for (let p = 0; p < 12; p++) {
-          if (ht[idx] === 0) { ht[idx] = h; break; }
-          if (ht[idx] === h) { dup = true; break; }
+        let idx = h1 & HT_MASK, dup = false;
+        for (let p = 0; p < 16; p++) {
+          if (ht1[idx] === 0) { ht1[idx] = h1; ht2[idx] = h2; break; }
+          if (ht1[idx] === h1 && ht2[idx] === h2) { dup = true; break; }
           idx = (idx + 1) & HT_MASK;
         }
         if (dup) { depth--; continue; }
@@ -622,7 +651,8 @@ async function runAISearch(word) {
   if (bestPath && bestPath.length > 0) {
     autoPlan = bestPath;
     autoPlanStep = 1;
-    autoTargetCol = autoPlan[0].col;
+    autoPlanExpectedCol = bestPath[0].col;
+    autoTargetCol = bestPath[0].col;
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
@@ -635,15 +665,17 @@ function toggleAutoMode() {
   autoBtn.textContent = autoMode ? "手動" : "自動";
   autoBtn.classList.toggle("active", autoMode);
   if (autoMode && activeBlock) {
-    aiSearchGen++;          // 取消舊搜索
+    aiSearchGen++;
     aiComputing = false;
+    autoPlanExpectedCol = -1;
     clearAutoPlan();
     autoTargetCol = findBestColumn();
     autoLastMoveTime = 0;
   } else {
-    aiSearchGen++;          // 取消舊搜索
+    aiSearchGen++;
     autoTargetCol = -1;
     aiComputing = false;
+    autoPlanExpectedCol = -1;
     clearAutoPlan();
   }
 }
@@ -930,6 +962,16 @@ async function placeActiveBlock() {
   if (!activeBlock) return;
   const { row, col, word, color } = activeBlock;
   board[row][col] = { word, color };
+
+  // ── 計畫過時檢測 ──
+  // 若方塊落在非預期欄位，快取計畫失效（盤面已偏離假設）
+  if (autoPlanExpectedCol >= 0 && col !== autoPlanExpectedCol) {
+    clearAutoPlan();
+    aiSearchGen++;    // 取消正在進行的搜索
+    aiComputing = false;
+  }
+  autoPlanExpectedCol = -1;
+
   activeBlock = null;
   await clearMatches();
   if (running) spawnBlock();
@@ -1070,6 +1112,7 @@ function restartGame() {
   autoLastMoveTime = 0;
   aiSearchGen++;            // 取消舊搜索
   aiComputing = false;
+  autoPlanExpectedCol = -1;
   clearAutoPlan();
   scoreEl.textContent = "0";
   updateProgress();
