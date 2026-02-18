@@ -555,13 +555,47 @@ async function runAISearch(word) {
       );
     }
 
-    // ── Phase 2: 全狀態空間模擬 ──
-    // BFS：每步展開所有可達狀態，去重後保留唯一狀態
+    // ── Phase 2: 漸進剪枝 BFS ──
+    // 每次消除一組 combo 後，掃描剩餘 Q 找下一個最多字的 combo 並固定欄位
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
     const MAX_STATES = 500000;
 
-    // Path linked list：{ word, col, prev }
+    // 動態固定欄位表（隨 combo 消除逐步擴展）
+    const dynFixed = wordFixedCol.slice();
+    const fixedSet = new Set(); // 已固定的 combo index
+    if (priCI >= 0) fixedSet.add(priCI);
+    let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
+
+    // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定
+    function fixNextCombo(fromStep) {
+      const freq = new Uint8Array(numCombos);
+      for (let s = fromStep; s < totalSteps; s++) {
+        const ci2 = wordToCi[seqIdx[s]];
+        if (ci2 >= 0 && !fixedSet.has(ci2)) freq[ci2]++;
+      }
+      let nextCI = -1, nextMax = 0;
+      for (const ci2 of activeCI) {
+        if (!fixedSet.has(ci2) && freq[ci2] > nextMax) {
+          nextMax = freq[ci2]; nextCI = ci2;
+        }
+      }
+      if (nextCI >= 0) {
+        fixedSet.add(nextCI);
+        const combo = _cIdx[nextCI];
+        for (let p = 0; p < combo.length; p++) {
+          if (dynFixed[combo[p]] === -1) dynFixed[combo[p]] = p;
+        }
+        if (debugMode) {
+          const name = combo.map(w => _iToW[w]).join(",");
+          setDebugText(
+            `新剪枝: combo #${nextCI + 1}（${name}）固定 col 0~${combo.length - 1}\n` +
+            `已固定 ${fixedSet.size}/${activeCI.length} 組`
+          );
+        }
+      }
+    }
+
     function pathToArray(tail) {
       const arr = [];
       let n = tail;
@@ -595,18 +629,16 @@ async function runAISearch(word) {
       const wordStr = fullSeq[p2Start + d];
       const nextFrontier = new Map();
 
-      // 剪枝：優先 combo 的字有固定欄位 → 只嘗試該欄；其他 combo 字全搜索
+      // 剪枝：已固定 combo 的字 → 只嘗試固定欄；其他字全搜索
       const wCi = wordToCi[wIdx];
-      const fc = wordFixedCol[wIdx]; // >=0: 優先 combo 固定欄, -1: 非優先 combo / 無 combo
+      const fc2 = dynFixed[wIdx]; // >=0: 固定欄, -1: 未固定
 
       for (const [, state] of frontier) {
-        // 優先 combo 字且 combo 尚未消除 → 只嘗試固定欄；否則全搜索
-        const useDetermined = fc >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
-        const colStart = useDetermined ? fc : 0;
-        const colEnd = useDetermined ? fc + 1 : COLS;
+        const useDetermined = fc2 >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
+        const colStart = useDetermined ? fc2 : 0;
+        const colEnd = useDetermined ? fc2 + 1 : COLS;
 
         for (let col = colStart; col < colEnd; col++) {
-          // 找落點
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
             if (state.board[r * COLS + col] === 0) { lr = r; break; }
@@ -629,14 +661,13 @@ async function runAISearch(word) {
           }
 
           const key = stateKey(nb, nCl);
-          const fc = state.firstCol >= 0 ? state.firstCol : col;
+          const fCol = state.firstCol >= 0 ? state.firstCol : col;
           const newTail = { word: wordStr, col, prev: state.pathTail };
 
           if (!nextFrontier.has(key)) {
-            nextFrontier.set(key, { board: nb, cl: nCl, firstCol: fc, pathTail: newTail });
+            nextFrontier.set(key, { board: nb, cl: nCl, firstCol: fCol, pathTail: newTail });
           }
 
-          // 全消 → 立刻停止
           if (popcount(nCl) === numCombos) {
             const fullPath = pathToArray(newTail);
             if (tryUpdate(nb, nCl, fullPath)) { perfect = true; }
@@ -649,7 +680,7 @@ async function runAISearch(word) {
 
       frontier = nextFrontier;
 
-      // 每步結束後，找出當前 frontier 中最佳狀態並嘗試更新
+      // 找出 frontier 中最佳狀態
       let stepBestCl = -1, stepBestSp = -1, stepBestState = null;
       for (const [, state] of frontier) {
         const cleared = popcount(state.cl);
@@ -661,13 +692,19 @@ async function runAISearch(word) {
           stepBestCl = cleared; stepBestSp = space; stepBestState = state;
         }
       }
-      // 每步都嘗試更新（tryUpdate 內部已有 guard）
+
       if (stepBestState) {
         const fullPath = pathToArray(stepBestState.pathTail);
         tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
       }
 
-      // 安全上限：狀態過多時保留最佳的
+      // ── 漸進剪枝：如果最佳狀態消除了新的 combo → 固定下一組 ──
+      if (stepBestCl > prevBestCleared) {
+        prevBestCleared = stepBestCl;
+        fixNextCombo(p2Start + d + 1);
+      }
+
+      // 安全上限
       if (frontier.size > MAX_STATES) {
         const arr = [...frontier.entries()];
         arr.sort((a, b) => {
@@ -685,8 +722,8 @@ async function runAISearch(word) {
         frontier = new Map(arr.slice(0, MAX_STATES));
       }
 
-      // 定期讓出 UI
-      setMessage(`🤖 全狀態 步${d + 1}/${p2Len}（${frontier.size} 狀態，最佳 ${bestCl}/${numCombos}）`, true);
+      const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";
+      setMessage(`🤖 步${d + 1}/${p2Len}（${frontier.size} 狀態，${fixedInfo}，最佳 ${bestCl}/${numCombos}）`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
