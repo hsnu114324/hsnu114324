@@ -233,20 +233,19 @@ function nextWord() {
   return wordQueue.shift();
 }
 
-// ── 自動模式 AI（完全最優解 — 狀態空間全搜索，極省記憶體版）──
-// 棋盤：Uint8Array（每格 1 byte，用數字索引代替字串）
-// cleared：整數位元遮罩
-// 路徑：鏈結串列
-// Key：48+1 字元短字串（舊版 ~200 字元）
+// ── 自動模式 AI（完全最優解 — DFS + 固定雜湊表，極省記憶體）──
+// BFS 需同時保存所有狀態 + 鏈結串列 → 記憶體大
+// DFS 只保留當前路徑（~15 層）+ 固定大小雜湊表去重 → 記憶體極小
+// 用 generator 實現 DFS 暫停/恢復，每 N 步 yield 更新進度
 
-// ── 字詞索引表（搜索開始時建立一次）──
-let _wToI = null;  // Map<string, number>  字詞→索引
-let _iToW = null;  // string[]             索引→字詞
-let _cIdx = null;  // Uint8Array[]         combo 的索引版
+// ── 字詞索引表 ──
+let _wToI = null;
+let _iToW = null;
+let _cIdx = null;
 
 function buildWordIndex() {
   _wToI = new Map();
-  _iToW = [""];  // 0 = 空格
+  _iToW = [""];
   for (const combo of comboList) {
     for (const w of combo) {
       if (!_wToI.has(w)) { _wToI.set(w, _iToW.length); _iToW.push(w); }
@@ -257,7 +256,7 @@ function buildWordIndex() {
 
 // 真實 2D 棋盤 → Uint8Array
 function boardToFlat(b) {
-  const f = new Uint8Array(ROWS * COLS); // 0 = 空
+  const f = new Uint8Array(ROWS * COLS);
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) {
       const cell = b[r][c];
@@ -270,7 +269,6 @@ function boardToFlat(b) {
   return f;
 }
 
-// 某欄的落點 row（-1 = 滿）
 function simLandRow(f, col) {
   for (let r = ROWS - 1; r >= 0; r--) {
     if (f[r * COLS + col] === 0) return r;
@@ -278,10 +276,9 @@ function simLandRow(f, col) {
   return -1;
 }
 
-// 重力沉降
 function simGravity(f) {
   for (let col = 0; col < COLS; col++) {
-    let wi = ROWS - 1; // 寫入位置（由下往上）
+    let wi = ROWS - 1;
     for (let row = ROWS - 1; row >= 0; row--) {
       const v = f[row * COLS + col];
       if (v !== 0) { f[wi * COLS + col] = v; wi--; }
@@ -290,7 +287,6 @@ function simGravity(f) {
   }
 }
 
-// 消除 + 重力連鎖，回傳更新後的 cleared 位元遮罩
 function simClear(f, combos, cleared) {
   let cl = cleared;
   let again = true;
@@ -320,29 +316,36 @@ function simClear(f, combos, cleared) {
   return cl;
 }
 
-// 棋盤狀態 key（48 格 + cleared → 49 字元短字串）
-function boardKey(f, cleared) {
-  let k = "";
-  for (let i = 0; i < ROWS * COLS; i++) k += String.fromCharCode(f[i] + 33);
-  return k + String.fromCharCode(cleared + 33);
-}
-
-// 位元計數
 function popcount(n) {
   n = n - ((n >> 1) & 0x55555555);
   n = (n & 0x33333333) + ((n >> 2) & 0x33333333);
   return (((n + (n >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
-// 從鏈結串列重建路徑陣列
-function reconstructPath(node) {
-  const path = [];
-  while (node && node.w !== null) {
-    path.push({ word: node.w, col: node.c });
-    node = node.p;
+// ── 固定大小雜湊表（Uint32Array，零 GC 壓力）──
+const HTABLE_BITS = 14;                   // 16384 slots
+const HTABLE_SIZE = 1 << HTABLE_BITS;
+const HTABLE_MASK = HTABLE_SIZE - 1;
+let _htable = null;                        // Uint32Array(HTABLE_SIZE)
+
+function stateHash(f, cl, step) {
+  let h = 0x811c9dc5;
+  h = Math.imul(h ^ (step * 397), 0x01000193);
+  for (let i = 0; i < f.length; i++) {
+    h = Math.imul(h ^ f[i], 0x01000193);
   }
-  path.reverse();
-  return path;
+  h = Math.imul(h ^ cl, 0x01000193);
+  return (h >>> 0) || 1; // 避免 0（空標記）
+}
+
+function hashMarkIfNew(hash) {
+  let idx = hash & HTABLE_MASK;
+  for (let i = 0; i < 32; i++) {
+    if (_htable[idx] === 0) { _htable[idx] = hash; return true; }
+    if (_htable[idx] === hash) return false;
+    idx = (idx + 1) & HTABLE_MASK;
+  }
+  return true; // 探測鏈太長，視為新狀態
 }
 
 // 清除快取計畫
@@ -351,12 +354,11 @@ function clearAutoPlan() {
   autoPlanStep = 0;
 }
 
-// 同步入口：快取命中 → 直接回傳；否則啟動非同步搜索
+// 同步入口
 function findBestColumn() {
   if (!activeBlock) return Math.floor(COLS / 2);
   const word = activeBlock.word;
 
-  // ── 快取命中 → O(1) ──
   if (autoPlan.length > 0 && autoPlanStep < autoPlan.length) {
     const planned = autoPlan[autoPlanStep];
     if (planned.word === word) {
@@ -366,17 +368,72 @@ function findBestColumn() {
     clearAutoPlan();
   }
 
-  // 快取未命中 → 啟動非同步全搜索
   runAISearch(word);
   return -1;
 }
 
-// 非同步全搜索：每步 yield 給瀏覽器更新進度
+// ── DFS generator：暫停/恢復式深度搜索 ──
+function* dfsGen(f, cl, step, seqIdx, fullSeq, pathBuf, result) {
+  result.ops++;
+  if (result.ops % 300 === 0) yield; // 每 300 步交還控制權
+
+  // 雜湊去重
+  if (!hashMarkIfNew(stateHash(f, cl, step))) return;
+
+  // 終點：評估
+  if (step >= seqIdx.length) {
+    const cleared = popcount(cl);
+    let space = 0;
+    for (let c = 0; c < COLS; c++) {
+      const lr = simLandRow(f, c);
+      space += lr >= 0 ? lr + 1 : 0;
+    }
+    if (cleared > result.bestCleared ||
+       (cleared === result.bestCleared && space > result.bestSpace)) {
+      result.bestCleared = cleared;
+      result.bestSpace = space;
+      result.bestPath = [...pathBuf];
+    }
+    return;
+  }
+
+  const wIdx = seqIdx[step];
+
+  // 檢查是否需要
+  let needed = false;
+  for (let ci = 0; ci < _cIdx.length; ci++) {
+    if (!(cl & (1 << ci)) && _cIdx[ci].includes(wIdx)) {
+      needed = true;
+      break;
+    }
+  }
+
+  if (!needed) {
+    yield* dfsGen(f, cl, step + 1, seqIdx, fullSeq, pathBuf, result);
+    return;
+  }
+
+  const wStr = fullSeq[step];
+  for (let col = 0; col < COLS; col++) {
+    if (!autoMode) return; // 使用者取消
+    const lr = simLandRow(f, col);
+    if (lr < 0) continue;
+
+    const nf = f.slice();
+    nf[lr * COLS + col] = wIdx;
+    const nc = simClear(nf, _cIdx, cl);
+
+    pathBuf.push({ word: wStr, col });
+    yield* dfsGen(nf, nc, step + 1, seqIdx, fullSeq, pathBuf, result);
+    pathBuf.pop();
+  }
+}
+
+// 非同步搜索入口
 async function runAISearch(word) {
   aiComputing = true;
   buildWordIndex();
 
-  // 發牌序列（字串 + 對應索引）
   const fullSeq = [word];
   for (const w of wordQueue) {
     let active = false;
@@ -390,95 +447,45 @@ async function runAISearch(word) {
   }
   const seqIdx = fullSeq.map((w) => _wToI.get(w) || 0);
 
-  const totalSteps = fullSeq.length;
-  setMessage(`🤖 計算中 0/${totalSteps} 步...`, true);
+  setMessage(`🤖 搜索中...`, true);
   await new Promise((r) => requestAnimationFrame(r));
 
-  // clearedCombos → 位元遮罩
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
-
-  // 初始狀態
   const f0 = boardToFlat(board);
-  const rootNode = { p: null, w: null, c: -1 };
-  let states = new Map();
-  states.set(boardKey(f0, initCl), { f: f0, cl: initCl, n: rootNode });
 
-  for (let step = 0; step < totalSteps; step++) {
-    const wIdx = seqIdx[step];
-    const wStr = fullSeq[step];
-    const nextStates = new Map();
+  // 初始化固定雜湊表（64 KB）
+  _htable = new Uint32Array(HTABLE_SIZE);
 
-    for (const st of states.values()) {
-      // 這個字是否還需要
-      let needed = false;
-      for (let ci = 0; ci < _cIdx.length; ci++) {
-        if (!(st.cl & (1 << ci)) && _cIdx[ci].includes(wIdx)) {
-          needed = true;
-          break;
-        }
-      }
+  const result = { ops: 0, bestCleared: -1, bestSpace: -1, bestPath: null };
+  const pathBuf = [];
+  const gen = dfsGen(f0, initCl, 0, seqIdx, fullSeq, pathBuf, result);
 
-      if (!needed) {
-        const key = boardKey(st.f, st.cl);
-        if (!nextStates.has(key)) nextStates.set(key, st);
-        continue;
-      }
-
-      for (let col = 0; col < COLS; col++) {
-        const lr = simLandRow(st.f, col);
-        if (lr < 0) continue;
-
-        const nf = st.f.slice();          // Uint8Array.slice → 快速記憶體拷貝
-        nf[lr * COLS + col] = wIdx;
-        const nc = simClear(nf, _cIdx, st.cl);
-
-        const key = boardKey(nf, nc);
-        if (!nextStates.has(key)) {
-          nextStates.set(key, {
-            f: nf,
-            cl: nc,
-            n: { p: st.n, w: wStr, c: col },
-          });
-        }
-      }
-    }
-
-    states = nextStates;
-
-    setMessage(`🤖 計算中 ${step + 1}/${totalSteps} 步（${states.size} 狀態）...`, true);
+  // 驅動 generator，每次 yield 更新進度
+  while (true) {
+    const { done } = gen.next();
+    if (done) break;
+    setMessage(
+      `🤖 搜索中 ${result.ops} 步（最佳 ${Math.max(0, result.bestCleared)}/${comboList.length}）`,
+      true
+    );
     await new Promise((r) => requestAnimationFrame(r));
+    if (!autoMode) break;
   }
 
-  // ── 選最優解 ──
-  let bestNode = null;
-  let bestCleared = -1;
-  let bestSpace = -1;
+  _htable = null; // 釋放雜湊表
 
-  for (const st of states.values()) {
-    const cl = popcount(st.cl);
-    let space = 0;
-    for (let c = 0; c < COLS; c++) {
-      const lr = simLandRow(st.f, c);
-      space += lr >= 0 ? lr + 1 : 0;
-    }
-    if (cl > bestCleared || (cl === bestCleared && space > bestSpace)) {
-      bestCleared = cl;
-      bestSpace = space;
-      bestNode = st.n;
-    }
-  }
-
-  if (bestNode) {
-    autoPlan = reconstructPath(bestNode);
-    if (autoPlan.length > 0) {
-      autoPlanStep = 1;
-      autoTargetCol = autoPlan[0].col;
-    }
+  if (result.bestPath && result.bestPath.length > 0) {
+    autoPlan = result.bestPath;
+    autoPlanStep = 1;
+    autoTargetCol = autoPlan[0].col;
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
-  setMessage(`🤖 計算完成！最優解消除 ${bestCleared}/${comboList.length} 組`, true);
+  setMessage(
+    `🤖 完成！最優 ${Math.max(0, result.bestCleared)}/${comboList.length} 組（${result.ops} 步）`,
+    true
+  );
   aiComputing = false;
 }
 
