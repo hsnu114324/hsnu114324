@@ -188,6 +188,20 @@ function initDebugMode() {
     debugBoxEl.classList.toggle("show", debugMode);
     if (!debugMode) debugBoxEl.textContent = "";
   }
+  // 偵錯模式開啟時才顯示自動按鈕
+  if (autoBtn) {
+    autoBtn.style.display = debugMode ? "" : "none";
+    if (!debugMode && autoMode) {
+      // 關閉偵錯時，同時關閉自動模式
+      autoMode = false;
+      autoBtn.textContent = "自動";
+      autoBtn.classList.remove("active");
+      aiSearchGen++;
+      autoTargetCol = -1;
+      aiComputing = false;
+      clearAutoPlan();
+    }
+  }
 }
 
 function createEmptyBoard() {

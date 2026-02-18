@@ -72,12 +72,9 @@ body {
 }
 
 #autoBtn {
-  background: #1c6e47;
-  border-color: #2aa06a;
-  font-weight: 700;
+  display: none;
   min-width: 40px;
   touch-action: manipulation;
-  transition: background 0.2s, border-color 0.2s;
 }
 
 #autoBtn.active {
