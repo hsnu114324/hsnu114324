@@ -669,7 +669,16 @@ async function runAISearch(word) {
 
   const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
   setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
-  if (debugMode) setDebugText(`優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`);
+  if (debugMode) {
+    // 顯示各 combo 的有效起始欄數
+    const comboInfo = activeCI.map(ci => {
+      const cLen = _cIdx[ci].length;
+      const starts = COLS - cLen + 1;
+      const name = _cIdx[ci].map(w => _iToW[w]).join(",");
+      return ci === priCI ? `★${name}(固定c0)` : `${name}(${starts}位)`;
+    }).join(" ");
+    setDebugText(`智慧欄位: combo字分支≈${Math.max(1, COLS - (_cIdx[activeCI[0]]?.length || 3) + 1) + 1}, 垃圾字≈3\n${comboInfo}`);
+  }
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -970,6 +979,24 @@ async function runAISearch(word) {
     bfsPool.fALen = 1;
     bfsPool.frontierA[0] = rootIdx;
 
+    // ── 智慧欄位選擇：combo 字只嘗試有效 combo 位置，大幅降低分支因子 ──
+    // 例如 5-word combo 在 6 欄中 → 有效起始 = col 0 或 col 1
+    // 每個 combo 字只有 2 個有效位置 + 1 垃圾欄 = 3 分支（原本 6）
+    const wordComboCols = new Array(_iToW.length).fill(null);
+    for (let wi = 1; wi < _iToW.length; wi++) {
+      const ci = wordToCi[wi];
+      const pos = wordToPos[wi];
+      if (ci < 0 || pos < 0 || ci === priCI) continue;
+      const cLen = _cIdx[ci].length;
+      const starts = COLS - cLen + 1;
+      if (starts <= 0) continue;
+      const cols = new Uint8Array(starts);
+      for (let s = 0; s < starts; s++) cols[s] = s + pos;
+      wordComboCols[wi] = cols;
+    }
+    const tryColsBuf = new Uint8Array(COLS);
+    const garbH = new Int8Array(COLS);
+
     let perfect = false;
     let poolFull = false;
     const YIELD_INTERVAL = 5000;
@@ -987,6 +1014,7 @@ async function runAISearch(word) {
 
       const wCi = wordToCi[wIdx];
       const fc2 = wordFixedCol[wIdx];
+      const cc = wordComboCols[wIdx];  // 非優先 combo 字的有效欄位
 
       let statesDone = 0;
       const totalInFrontier = bfsPool.fALen;
@@ -997,9 +1025,50 @@ async function runAISearch(word) {
         const pCl = bfsPool.cl[pIdx];
         const pBase = pIdx * TC;
         const pFC = bfsPool.firstCol[pIdx];
-        const useDetermined = fc2 >= 0 && wCi >= 0 && !(pCl & (1 << wCi));
 
-        for (let col = useDetermined ? fc2 : 0; col < (useDetermined ? fc2 + 1 : COLS); col++) {
+        // ── 智慧欄位選擇 ──
+        const comboActive = wCi >= 0 && !(pCl & (1 << wCi));
+        let tryLen = 0;
+        if (fc2 >= 0 && comboActive) {
+          // 優先 combo 字 → 固定欄
+          tryColsBuf[0] = fc2;
+          tryLen = 1;
+        } else if (comboActive && cc) {
+          // 非優先活躍 combo 字 → 有效 combo 位置 + 最空垃圾欄
+          for (let i = 0; i < cc.length; i++) tryColsBuf[tryLen++] = cc[i];
+          let bestGC = -1, bestGH = -1;
+          for (let c = COLS - 1; c >= 0; c--) {
+            let skip = false;
+            for (let i = 0; i < cc.length; i++) if (cc[i] === c) { skip = true; break; }
+            if (skip) continue;
+            let h = 0;
+            for (let r = 0; r < ROWS; r++) {
+              if (bfsPool.boards[pBase + r * COLS + c] === 0) h++; else break;
+            }
+            if (h > bestGH) { bestGH = h; bestGC = c; }
+          }
+          if (bestGC >= 0) tryColsBuf[tryLen++] = bestGC;
+        } else {
+          // 垃圾字（非 combo 或已消除 combo）→ 最空的 3 欄
+          for (let c = 0; c < COLS; c++) {
+            garbH[c] = 0;
+            for (let r = 0; r < ROWS; r++) {
+              if (bfsPool.boards[pBase + r * COLS + c] === 0) garbH[c]++; else break;
+            }
+          }
+          for (let n = 0; n < 3; n++) {
+            let best = -1, bestH = 0;
+            for (let c = COLS - 1; c >= 0; c--) {
+              if (garbH[c] > bestH) { bestH = garbH[c]; best = c; }
+            }
+            if (best < 0) break;
+            tryColsBuf[tryLen++] = best;
+            garbH[best] = -1;
+          }
+        }
+
+        for (let ci_loop = 0; ci_loop < tryLen; ci_loop++) {
+          const col = tryColsBuf[ci_loop];
           // 找落點
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
