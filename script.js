@@ -453,12 +453,24 @@ async function runAISearch(word) {
       if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
       if (debugMode) {
         const fm = path[0] ? `${path[0].word}@c${path[0].col}` : "-";
-        const p1Info = path.slice(0, P1).map((m, i) => `${i + 1}.${m.word}→c${m.col}`).join(" ");
+        // 模擬 Phase 1 盤面快照
+        const p1Snap = f0.slice();
+        let p1Cl = initCl;
+        for (let i = 0; i < Math.min(P1, path.length); i++) {
+          const m = path[i];
+          const wI = _wToI.get(m.word) || 0;
+          let lr2 = -1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (p1Snap[r * COLS + m.col] === 0) { lr2 = r; break; }
+          }
+          if (lr2 >= 0) p1Snap[lr2 * COLS + m.col] = wI;
+          p1Cl = simClear(p1Snap, _cIdx, p1Cl);
+        }
         setDebugText(
           `最佳: ${cleared}/${numCombos}\n首步: ${fm}\n` +
-          `Phase1(前${P1}步): ${p1Info}\n` +
+          `Phase1(前${P1}步) 盤面:\n${flatToDebugText(p1Snap)}\n` +
           `${lastDebugSample ? lastDebugSample + "\n" : ""}` +
-          `盤面:\n${flatToDebugText(finalBoard)}`
+          `最終盤面:\n${flatToDebugText(finalBoard)}`
         );
       }
       return cleared === numCombos;
@@ -489,14 +501,29 @@ async function runAISearch(word) {
       if (ci === priCI && psc >= 0 && !(cl & (1 << priCI))) {
         col = psc + pos; // 優先 combo → 指定位置
       } else {
-        // Garbage → 最空的右側欄（從右往左掃，同高取最右）
+        // Garbage → 避開優先 combo 佔用的欄位，從右往左找最空欄
+        const priLen = priCI >= 0 ? _cIdx[priCI].length : 0;
+        const priEnd = psc >= 0 ? psc + priLen : 0; // 優先 combo 佔 [psc, priEnd)
+        const priActive = priCI >= 0 && !(cl & (1 << priCI));
         let mh = -1; col = COLS - 1;
         for (let c = COLS - 1; c >= 0; c--) {
+          // 跳過優先 combo 佔用的欄位
+          if (priActive && c >= psc && c < priEnd) continue;
           let h = 0;
           for (let r = 0; r < ROWS; r++) {
             if (sf[r * COLS + c] === 0) h++; else break;
           }
           if (h > mh) { mh = h; col = c; }
+        }
+        // 如果所有非 combo 欄都滿了，fallback 到任意最空欄
+        if (mh < 0) {
+          for (let c = COLS - 1; c >= 0; c--) {
+            let h = 0;
+            for (let r = 0; r < ROWS; r++) {
+              if (sf[r * COLS + c] === 0) h++; else break;
+            }
+            if (h > mh) { mh = h; col = c; }
+          }
         }
       }
 
@@ -521,10 +548,22 @@ async function runAISearch(word) {
 
     if (!p1Ok) continue;
 
+    // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
+    tryUpdate(sf, cl, [...p1Path]);
+
     // Phase 1 涵蓋全部步驟
     if (P1 >= totalSteps) {
-      if (tryUpdate(sf, cl, [...p1Path])) break;
+      if (bestCl === numCombos) break;
       continue;
+    }
+
+    // 偵錯：顯示 Phase 1 盤面（含落子標記）
+    if (debugMode) {
+      setDebugText(
+        `Phase1 完成（${P1} 步）\n` +
+        `Phase1 盤面:\n${flatToDebugText(sf)}\n` +
+        `→ Phase2 BFS 搜索中...`
+      );
     }
 
     // ── Phase 2: 全狀態空間模擬 ──
@@ -634,8 +673,8 @@ async function runAISearch(word) {
           stepBestCl = cleared; stepBestSp = space; stepBestState = state;
         }
       }
-      // 最後一步或中間有更好解 → 更新
-      if (stepBestState && (d === p2Len - 1 || stepBestCl > bestCl)) {
+      // 每步都嘗試更新（tryUpdate 內部已有 guard）
+      if (stepBestState) {
         const fullPath = pathToArray(stepBestState.pathTail);
         tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
       }
