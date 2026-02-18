@@ -1634,18 +1634,23 @@ function gameLoop(ts) {
     lastTick = ts;
   } else {
     if (!lastTick) lastTick = ts;
-    if (ts - lastTick >= FALL_MS) {
+    // 自動模式掉落稍快（350ms），手動維持原速（550ms）
+    const fallSpeed = autoMode ? 350 : FALL_MS;
+    if (ts - lastTick >= fallSpeed) {
       softDrop();
       lastTick = ts;
     }
 
-    // 自動模式：只做水平移動，完全不加速，所有掉落時間留給 BFS 計算
+    // 自動模式：水平移動 + 到達目標欄後額外加速
     if (autoMode && activeBlock) {
       if (autoTargetCol < 0) autoTargetCol = findBestColumn();
       if (autoTargetCol >= 0 && activeBlock.col !== autoTargetCol
           && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
         moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
         autoLastMoveTime = ts;
+      } else if (autoTargetCol >= 0 && activeBlock.col === autoTargetCol && !aiComputing) {
+        // 已到目標欄且計算完成 → 額外加速落下
+        softDrop();
       }
     }
   }
