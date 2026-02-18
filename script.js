@@ -817,9 +817,6 @@ async function runAISearch(word) {
       return -1; // 雜湊表滿（不應發生）
     }
 
-    // ── 壓縮前綴路徑（compactPool 後，根節點的完整路徑存在這裡）──
-    let compactedPrefixes = new Map();
-
     function poolPath(stateIdx) {
       const moves = [];
       let idx = stateIdx;
@@ -828,18 +825,6 @@ async function runAISearch(word) {
         idx = bfsPool.parentIdx[idx];
       }
       moves.reverse();
-      // 如果此根節點是壓縮後重建的，從 Int8Array cols 還原完整路徑
-      const prefixCols = compactedPrefixes.get(idx);
-      if (prefixCols) {
-        const result = new Array(prefixCols.length + moves.length);
-        for (let i = 0; i < prefixCols.length; i++) {
-          result[i] = { word: fullSeq[i] || "?", col: prefixCols[i] };
-        }
-        for (let i = 0; i < moves.length; i++) {
-          result[prefixCols.length + i] = moves[i];
-        }
-        return result;
-      }
       return [...p1Path, ...moves];
     }
 
@@ -850,20 +835,20 @@ async function runAISearch(word) {
       return `${(bytes / 1024).toFixed(0)}KB (${pct}%)`;
     }
 
-    // ── 池壓縮：淘汰弱狀態、重置池、繼續搜索 ──
-    const POOL_COMPACT_THRESHOLD = 0.75; // 75% 使用率時觸發預防性壓縮
-    const POOL_COMPACT_KEEP = 0.5;       // 保留前 50% 最佳狀態
-
-    function compactPool() {
+    // ── 預防性剪枝：淘汰弱 frontier 狀態，減緩池增長 ──
+    // 不重置池、不需臨時記憶體，parent chain 完整保留
+    // 額外記憶體：scores(Float64) + order(Int32) + temp(Int32) ≈ 16 bytes/frontier態
+    function pruneFrontier(keepRatio) {
       const fLen = bfsPool.fALen;
-      if (fLen <= 1) return { freed: 0, before: fLen, after: fLen };
+      if (fLen <= 1) return 0;
+      const keepCount = Math.max(1, Math.floor(fLen * keepRatio));
+      if (keepCount >= fLen) return 0;
 
-      // ── 第 1 步：評分（只用 typed array，不建 JS 物件）──
+      // 評分：消除數 * 10000 + 剩餘空間
       const scores = new Float64Array(fLen);
-      // 用 sortIdx 記錄排序後的 frontier 索引
-      const sortIdx = new Int32Array(fLen);
+      const order = new Int32Array(fLen);
       for (let i = 0; i < fLen; i++) {
-        sortIdx[i] = i;
+        order[i] = i;
         const idx = bfsPool.frontierA[i];
         const cleared = popcount(bfsPool.cl[idx]);
         let space = 0;
@@ -874,75 +859,17 @@ async function runAISearch(word) {
         scores[i] = cleared * 10000 + space;
       }
 
-      // 依分數排序（降序），保留前 50%
-      sortIdx.sort((a, b) => scores[b] - scores[a]);
-      const keepCount = Math.max(1, Math.floor(fLen * POOL_COMPACT_KEEP));
+      // 降序排列，保留前 keepCount 個
+      order.sort((a, b) => scores[b] - scores[a]);
 
-      // ── 第 2 步：用 typed array 暫存存活狀態的盤面資料 ──
-      // 只拷貝 board + cl + firstCol，路徑用壓縮格式（Int8Array of cols）
-      const tmpBoards = new Uint8Array(keepCount * TC);
-      const tmpCl = new Uint32Array(keepCount);
-      const tmpFC = new Int8Array(keepCount);
-      // 路徑壓縮：只存每步的 col (Int8)，word 可從 fullSeq 還原
-      const tmpPaths = new Array(keepCount); // 路徑仍需 JS 陣列，但用輕量格式
+      // 用臨時陣列重建 frontier（避免覆蓋問題）
+      const temp = new Int32Array(keepCount);
+      for (let i = 0; i < keepCount; i++) temp[i] = bfsPool.frontierA[order[i]];
+      for (let i = 0; i < keepCount; i++) bfsPool.frontierA[i] = temp[i];
 
-      for (let k = 0; k < keepCount; k++) {
-        const fi = sortIdx[k];
-        const idx = bfsPool.frontierA[fi];
-        tmpBoards.set(bfsPool.boards.subarray(idx * TC, (idx + 1) * TC), k * TC);
-        tmpCl[k] = bfsPool.cl[idx];
-        tmpFC[k] = bfsPool.firstCol[idx];
-        // 壓縮路徑：只存 col 的 Int8Array（word 可從步驟順序還原）
-        tmpPaths[k] = compactPathCols(idx);
-      }
-
-      const beforeCount = bfsPool.count;
-
-      // ── 第 3 步：重置池 ──
-      resetBFSPool();
-      compactedPrefixes.clear();
-
-      // ── 第 4 步：重新插入存活狀態 ──
-      for (let i = 0; i < keepCount; i++) {
-        const newIdx = bfsPool.count;
-        bfsPool.boards.set(tmpBoards.subarray(i * TC, (i + 1) * TC), newIdx * TC);
-        bfsPool.cl[newIdx]        = tmpCl[i];
-        bfsPool.firstCol[newIdx]  = tmpFC[i];
-        bfsPool.parentIdx[newIdx] = -1;
-        bfsPool.moveWord[newIdx]  = 0;
-        bfsPool.moveCol[newIdx]   = 0;
-        bfsPool.count++;
-        compactedPrefixes.set(newIdx, tmpPaths[i]);
-        bfsPool.frontierA[i] = newIdx;
-      }
+      const pruned = fLen - keepCount;
       bfsPool.fALen = keepCount;
-
-      return { freed: beforeCount - bfsPool.count, before: fLen, after: keepCount };
-    }
-
-    // 壓縮路徑：回傳 Int8Array（只存 col），記憶體極小
-    function compactPathCols(stateIdx) {
-      const cols = [];
-      let idx = stateIdx;
-      while (idx >= 0 && bfsPool.parentIdx[idx] >= 0) {
-        cols.push(bfsPool.moveCol[idx]);
-        idx = bfsPool.parentIdx[idx];
-      }
-      cols.reverse();
-      // 如果此根有前綴，拼接
-      const prefix = compactedPrefixes.get(idx);
-      if (prefix) {
-        const merged = new Int8Array(prefix.length + cols.length);
-        merged.set(prefix);
-        for (let i = 0; i < cols.length; i++) merged[prefix.length + i] = cols[i];
-        return merged;
-      }
-      // Phase 1 前綴 → 用 p1Path 的 col
-      const p1Cols = p1Path.map(m => m.col);
-      const merged = new Int8Array(p1Cols.length + cols.length);
-      for (let i = 0; i < p1Cols.length; i++) merged[i] = p1Cols[i];
-      for (let i = 0; i < cols.length; i++) merged[p1Cols.length + i] = cols[i];
-      return merged;
+      return pruned;
     }
 
     // 插入根狀態（Phase 1 結束盤面）
@@ -963,7 +890,7 @@ async function runAISearch(word) {
     const YIELD_INTERVAL = 5000;
     const tempBoard = new Uint8Array(TC);
 
-    for (let d = 0; d < p2Len && !perfect; d++) {
+    for (let d = 0; d < p2Len && !perfect && !poolFull; d++) {
       if (myGen !== aiSearchGen) return;
 
       const wIdx = seqIdx[p2Start + d];
@@ -1089,13 +1016,19 @@ async function runAISearch(word) {
         stepEvent = `★消除+${clDelta}`;
         if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
-      // ── 池壓縮：池滿或超過閾值時，淘汰弱狀態、重置池、繼續搜索 ──
-      if (poolFull || bfsPool.count > BFS_POOL_MAX * POOL_COMPACT_THRESHOLD) {
-        const tag = poolFull ? "⚠池滿" : "⚡閾值";
-        const cr = compactPool();
-        stepEvent += (stepEvent ? " " : "") + `♻壓縮(${tag}) ${cr.before}→${cr.after}態`;
-        poolFull = false;
+      // ── 預防性剪枝：根據池使用率，漸進式淘汰弱 frontier 狀態 ──
+      const poolUsage = bfsPool.count / BFS_POOL_MAX;
+      if (poolUsage > 0.90) {
+        const p = pruneFrontier(0.25);  // 激進：只保留 25%
+        if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(90%) -${p}態`;
+      } else if (poolUsage > 0.75) {
+        const p = pruneFrontier(0.50);  // 適度：保留 50%
+        if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(75%) -${p}態`;
+      } else if (poolUsage > 0.60) {
+        const p = pruneFrontier(0.75);  // 輕度：保留 75%
+        if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(60%) -${p}態`;
       }
+      if (poolFull) stepEvent += (stepEvent ? " " : "") + "⚠池滿";
 
       // 偵錯
       if (debugMode) {
