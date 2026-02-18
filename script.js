@@ -48,6 +48,7 @@ let animating = false;  // 消除動畫播放中
 let particles = [];     // 爆散粒子
 let clearedCombos = new Set(); // 已消除的 combo 索引
 let wordQueue = [];     // 派發佇列：確保所有組合輪過一遍
+let nextWordQueue = []; // 下一輪派發佇列（預先建立，讓 AI 可以看到）
 let autoMode = false;       // 自動模式
 let autoTargetCol = -1;     // AI 目標欄
 let autoLastMoveTime = 0;   // 上次 AI 移動時間戳
@@ -227,7 +228,7 @@ function buildWordQueue() {
   return queue;
 }
 
-// 消除後清理佇列：移除只屬於已消除 combo 的字
+// 消除後清理佇列：移除只屬於已消除 combo 的字（兩個佇列都清理）
 function purgeWordQueue() {
   const activeWords = new Set();
   for (let ci = 0; ci < comboList.length; ci++) {
@@ -235,12 +236,28 @@ function purgeWordQueue() {
     for (const w of comboList[ci]) activeWords.add(w);
   }
   wordQueue = wordQueue.filter((w) => activeWords.has(w));
+  nextWordQueue = nextWordQueue.filter((w) => activeWords.has(w));
+}
+
+function ensureQueues() {
+  // 確保 wordQueue 和 nextWordQueue 都有內容
+  if (!wordQueue.length) {
+    if (nextWordQueue.length) {
+      // 把下一輪升級為當前
+      wordQueue = nextWordQueue;
+    } else {
+      wordQueue = buildWordQueue();
+    }
+    // 預建下一輪
+    nextWordQueue = buildWordQueue();
+  }
+  if (!nextWordQueue.length) {
+    nextWordQueue = buildWordQueue();
+  }
 }
 
 function nextWord() {
-  if (!wordQueue.length) {
-    wordQueue = buildWordQueue();
-  }
+  ensureQueues();
   if (!wordQueue.length) {
     // 所有 combo 都已消除，不應再發牌（安全防護）
     return comboList[0]?.[0] || "?";
@@ -364,7 +381,9 @@ async function runAISearch(word) {
   buildWordIndex();
   const t0 = performance.now();
 
-  const fullSeq = [word, ...wordQueue];
+  // 確保下一輪佇列已建立，讓 AI 可以看到兩輪
+  ensureQueues();
+  const fullSeq = [word, ...wordQueue, ...nextWordQueue];
   const seqIdx = Uint8Array.from(fullSeq.map(w => _wToI.get(w) || 0));
   const totalSteps = fullSeq.length;
   const numCombos = comboList.length;
@@ -1346,6 +1365,7 @@ function restartGame() {
   clearedCombos = new Set();
   particles = [];
   wordQueue = [];
+  nextWordQueue = [];
   autoTargetCol = -1;
   autoLastMoveTime = 0;
   aiSearchGen++;            // 取消舊搜索
