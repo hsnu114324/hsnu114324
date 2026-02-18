@@ -389,7 +389,13 @@ async function runAISearch(word) {
   const numCombos = comboList.length;
   const TC = ROWS * COLS;
 
-  setMessage(`🤖 分析中...`, true);
+  // 計算狀態訊息：統一只顯示「步數 + 記憶體」
+  function calcMemStr(states) {
+    const bytes = states * (TC * 3 + 300);
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + "MB";
+    return (bytes / 1024).toFixed(0) + "KB";
+  }
+  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -496,7 +502,7 @@ async function runAISearch(word) {
 
   if (activeCI.length === 0) {
     aiComputing = false;
-    setMessage(`🤖 所有組合已消除！`, true);
+    setMessage(`🤖 BFS 0/0 | 記憶體 ${calcMemStr(1)}`, true);
     return;
   }
 
@@ -558,7 +564,7 @@ async function runAISearch(word) {
   }
 
   const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
-  setMessage(`🤖 Phase1 計算中...`, true);
+  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
   if (debugMode) setDebugText(`優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
@@ -630,6 +636,7 @@ async function runAISearch(word) {
       });
     }
     p1Path.push({ word: fullSeq[s], col });
+    setMessage(`🤖 BFS ${s + 1}/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
   }
 
   // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
@@ -821,7 +828,7 @@ async function runAISearch(word) {
         if (statesDone % YIELD_INTERVAL === 0) {
           const pct = Math.round(statesDone / totalInFrontier * 100);
           const mem = estimateMemoryStr(nextFrontier.size);
-          setMessage(`🤖 BFS ${d + 1}/${p2Len} ${pct}% | 記憶體 ${mem}`, true);
+          setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} ${pct}% | 記憶體 ${mem}`, true);
           await new Promise(r => setTimeout(r, 0));
           if (myGen !== aiSearchGen) return;
         }
@@ -908,7 +915,7 @@ async function runAISearch(word) {
       }
 
       const mem = estimateMemoryStr(frontier.size);
-      setMessage(`🤖 BFS ${d + 1}/${p2Len} | 記憶體 ${mem}`, true);
+      setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} | 記憶體 ${mem}`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
@@ -927,7 +934,7 @@ async function runAISearch(word) {
 
   const elapsed = (performance.now() - t0).toFixed(1);
   const peakMem = estimateMemoryStr(peakStates);
-  setMessage(`🤖 完成 ${bestCl}/${numCombos} | 峰值${peakStates}態 ${peakMem} | ${elapsed}ms`, true);
+  setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | 記憶體 ${peakMem}`, true);
   if (debugMode) {
     buildDebugDiagram(0, bestPath.length > 0 ? null : null);
     // 在圖表末尾追加完成資訊
