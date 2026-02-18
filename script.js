@@ -340,9 +340,12 @@ function findBestColumn() {
   return quickGuessCol();
 }
 
-// ── 非同步迭代式 DFS（一邊計算一邊移動，不凍結畫面）──
+// ── 兩階段 AI 搜索 ──
+// Phase 1: 快速貪心（2^numCombos 種 combo 起始欄配置，瞬間完成）
+// Phase 2: 帶欄位排序的迭代式 DFS（完整搜索，保證最優）
+
 async function runAISearch(word) {
-  const myGen = ++aiSearchGen;   // 世代號，用於取消舊搜索
+  const myGen = ++aiSearchGen;
   aiComputing = true;
   buildWordIndex();
 
@@ -362,7 +365,7 @@ async function runAISearch(word) {
 
   setMessage(`🤖 搜索中...`, true);
   await new Promise(r => setTimeout(r, 0));
-  if (myGen !== aiSearchGen) return; // 已被取消
+  if (myGen !== aiSearchGen) return;
 
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
@@ -373,6 +376,113 @@ async function runAISearch(word) {
   for (let ci = 0; ci < numCombos; ci++) {
     const combo = _cIdx[ci];
     for (let i = 0; i < combo.length; i++) wcMask[combo[i]] |= (1 << ci);
+  }
+
+  let bestCl = -1, bestSp = -1, bestPath = null;
+
+  // ═══════════════════════════════════════════════════════
+  // Phase 1: 快速貪心 — 窮舉 combo 起始欄配置
+  // 5 字 combo 在 6 欄只有 2 個起始位 (col 0 或 1)
+  // 3 組 combo → 2³ = 8 種配置，瞬間完成
+  // ═══════════════════════════════════════════════════════
+  if (numCombos <= 10) {
+    const nCfg = 1 << numCombos;
+    for (let cfg = 0; cfg < nCfg; cfg++) {
+      const wCol = new Int8Array(_iToW.length).fill(-1);
+      let valid = true;
+
+      for (let ci = 0; ci < numCombos; ci++) {
+        if (initCl & (1 << ci)) continue; // 已清的 combo 跳過
+        const sc = (cfg >> ci) & 1;        // 此 combo 從 col sc 開始
+        const combo = _cIdx[ci];
+        if (sc + combo.length > COLS) { valid = false; break; }
+        for (let p = 0; p < combo.length; p++) {
+          const c = sc + p;
+          if (wCol[combo[p]] !== -1 && wCol[combo[p]] !== c) {
+            valid = false; break; // 同一字被分到不同欄 → 衝突
+          }
+          wCol[combo[p]] = c;
+        }
+        if (!valid) break;
+      }
+      if (!valid) continue;
+
+      // 模擬整場遊戲
+      const f = f0.slice();
+      let cl = initCl;
+      const path = [];
+      let ok = true;
+
+      for (let s = 0; s < totalSteps; s++) {
+        const wIdx = seqIdx[s];
+        if ((wcMask[wIdx] & ~cl) === 0) continue; // 不需要的字跳過
+        const col = wCol[wIdx];
+        if (col < 0) { ok = false; break; }
+        let lr = -1;
+        for (let r = ROWS - 1; r >= 0; r--)
+          if (f[r * COLS + col] === 0) { lr = r; break; }
+        if (lr < 0) { ok = false; break; } // 欄滿溢出
+        f[lr * COLS + col] = wIdx;
+        cl = simClear(f, _cIdx, cl);
+        path.push({ word: fullSeq[s], col });
+      }
+      if (!ok) continue;
+
+      const cleared = popcount(cl);
+      let space = 0;
+      for (let c = 0; c < COLS; c++)
+        for (let r = ROWS - 1; r >= 0; r--)
+          if (f[r * COLS + c] === 0) { space += r + 1; break; }
+
+      if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
+        bestCl = cleared; bestSp = space; bestPath = path;
+      }
+      if (bestCl === numCombos) break; // 全消！不用再試
+    }
+
+    if (myGen !== aiSearchGen) return;
+
+    // 即時更新目標
+    if (bestPath && bestPath.length > 0 && autoMode) {
+      autoTargetCol = bestPath[0].col;
+    }
+
+    // 已全消 → 跳過 DFS，瞬間完成
+    if (bestCl === numCombos) {
+      autoPlan = bestPath;
+      autoPlanStep = 1;
+      autoTargetCol = bestPath[0].col;
+      setMessage(`🤖 完成！全消 ${numCombos} 組（快速模式）`, true);
+      aiComputing = false;
+      return;
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════
+  // Phase 2: 迭代式 DFS（帶 combo 欄位優先排序）
+  // 貪心找到的結果作為初始下界 → 更強的剪枝
+  // ═══════════════════════════════════════════════════════
+
+  // ── 欄位優先排序預計算 ──
+  // 每個字先嘗試它在 combo 中的「正確欄位」，再嘗試其他欄
+  // → DFS 第一個分支就可能是最優解，剪枝效果極佳
+  const colOrd = [];
+  for (let wIdx = 0; wIdx < _iToW.length; wIdx++) {
+    const pri = [], used = new Uint8Array(COLS);
+    for (let ci = 0; ci < numCombos; ci++) {
+      if (initCl & (1 << ci)) continue;
+      const combo = _cIdx[ci];
+      for (let p = 0; p < combo.length; p++) {
+        if (combo[p] === wIdx) {
+          for (let sc = 0; sc <= COLS - combo.length; sc++) {
+            const c = sc + p;
+            if (!used[c]) { used[c] = 1; pri.push(c); }
+          }
+        }
+      }
+    }
+    for (let c = 0; c < COLS; c++) if (!used[c]) pri.push(c);
+    colOrd.push(Uint8Array.from(pri));
   }
 
   // ── Upper-bound 剪枝預計算 ──
@@ -405,11 +515,10 @@ async function runAISearch(word) {
   const HT_MASK = 0x3FF;
   const ht = new Uint32Array(1024);
 
-  let bestCl = -1, bestSp = -1, bestPath = null;
   let ops = 0, depth = 0;
 
   while (depth >= 0) {
-    if (myGen !== aiSearchGen) return; // 世代不符 → 取消
+    if (myGen !== aiSearchGen) return;
     const off = depth * TC;
     const cl = sCl[depth];
 
@@ -418,7 +527,7 @@ async function runAISearch(word) {
       if (ops % 2000 === 0) {
         setMessage(`🤖 搜索中 ${ops} 步（最佳 ${Math.max(0, bestCl)}/${numCombos}）`, true);
         await new Promise(r => setTimeout(r, 0));
-        if (myGen !== aiSearchGen) return; // yield 後再檢查一次
+        if (myGen !== aiSearchGen) return;
       }
 
       // 內聯雜湊去重
@@ -450,7 +559,6 @@ async function runAISearch(word) {
           for (let d = 0; d < totalSteps; d++)
             if (sP[d] >= 0) path.push({ word: fullSeq[d], col: sP[d] });
           bestPath = path;
-          // ⬇ 即時更新目標欄：搜索中也能移動方塊
           if (myGen === aiSearchGen && autoMode && path.length > 0) {
             autoTargetCol = path[0].col;
           }
@@ -473,11 +581,12 @@ async function runAISearch(word) {
       sCol[depth] = 0;
     }
 
-    // ── 嘗試下一欄 ──
+    // ── 嘗試下一欄（按 combo 優先順序）──
     let found = false;
     const wIdx = seqIdx[depth];
+    const order = colOrd[wIdx];           // ← 優先排序的欄位列表
     while (sCol[depth] < COLS) {
-      const col = sCol[depth]++;
+      const col = order[sCol[depth]++];   // ← 依優先序取欄
       let lr = -1;
       for (let r = ROWS - 1; r >= 0; r--)
         if (pool[off + r * COLS + col] === 0) { lr = r; break; }
@@ -491,7 +600,7 @@ async function runAISearch(word) {
       sP[depth] = col; sCl[depth + 1] = nc; sCol[depth + 1] = -2;
       depth++; found = true;
 
-      // 早期停止：所有 combo 全消！
+      // 早期停止
       if (popcount(nc) === numCombos) {
         const path = [];
         for (let d = 0; d < depth; d++)
@@ -507,7 +616,7 @@ async function runAISearch(word) {
     if (!found) depth--;
   }
 
-  // ── 搜索完成：只有本世代才寫入結果 ──
+  // ── 搜索完成 ──
   if (myGen !== aiSearchGen) return;
 
   if (bestPath && bestPath.length > 0) {

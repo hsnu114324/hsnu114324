@@ -203,6 +203,18 @@ button {
   padding: 14px;
 }
 
+.version-tag {
+  font-size: 0.55em;
+  font-weight: 400;
+  color: #7ea6ff;
+  background: rgba(126, 166, 255, 0.12);
+  border: 1px solid rgba(126, 166, 255, 0.25);
+  border-radius: 6px;
+  padding: 2px 7px;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+
 .row-list {
   display: grid;
   gap: 10px;
