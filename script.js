@@ -338,10 +338,11 @@ function popcount(n) {
   return (((n + (n >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
-// ── BFS 記憶體池（1GB 固定分配）──
-// 所有 BFS 狀態存在預分配的 typed arrays 中，避免 GC 和 JS 物件開銷
-const BFS_POOL_MAX = 10_000_000;   // 最多 1000 萬個狀態
-const BFS_HASH_SIZE = 1 << 24;     // 16M 雜湊表（開放定址）
+// ── BFS 記憶體池（~40MB，每 7 步壓縮一次）──
+// 7 步 BFS 從單根最多 ~34 萬狀態，壓縮後 frontier 重新開始
+// 500K 池 + 1M 雜湊表已足夠，搭配剪枝+壓縮防溢出
+const BFS_POOL_MAX = 500_000;      // 最多 50 萬個狀態
+const BFS_HASH_SIZE = 1 << 20;     // 1M 雜湊表（開放定址）
 const BFS_HASH_MASK = BFS_HASH_SIZE - 1;
 let bfsPool = null;
 
@@ -351,19 +352,19 @@ function initBFSPool() {
   try {
     bfsPool = {
       TC,
-      boards:    new Uint8Array(BFS_POOL_MAX * TC),  // 480MB
-      cl:        new Uint32Array(BFS_POOL_MAX),       // 40MB
-      parentIdx: new Int32Array(BFS_POOL_MAX),        // 40MB
-      firstCol:  new Int8Array(BFS_POOL_MAX),         // 10MB
-      moveWord:  new Uint8Array(BFS_POOL_MAX),        // 10MB
-      moveCol:   new Int8Array(BFS_POOL_MAX),         // 10MB
-      hashTable: new Int32Array(BFS_HASH_SIZE),       // 64MB
-      hashGen:   new Uint16Array(BFS_HASH_SIZE),      // 32MB
-      frontierA: new Int32Array(BFS_POOL_MAX),        // 40MB
-      frontierB: new Int32Array(BFS_POOL_MAX),        // 40MB
+      boards:    new Uint8Array(BFS_POOL_MAX * TC),  // 24MB
+      cl:        new Uint32Array(BFS_POOL_MAX),       // 2MB
+      parentIdx: new Int32Array(BFS_POOL_MAX),        // 2MB
+      firstCol:  new Int8Array(BFS_POOL_MAX),         // 0.5MB
+      moveWord:  new Uint8Array(BFS_POOL_MAX),        // 0.5MB
+      moveCol:   new Int8Array(BFS_POOL_MAX),         // 0.5MB
+      hashTable: new Int32Array(BFS_HASH_SIZE),       // 4MB
+      hashGen:   new Uint16Array(BFS_HASH_SIZE),      // 2MB
+      frontierA: new Int32Array(BFS_POOL_MAX),        // 2MB
+      frontierB: new Int32Array(BFS_POOL_MAX),        // 2MB
       count: 0, gen: 1, fALen: 0, fBLen: 0,
     };
-    // Total: ~766MB < 1GB
+    // Total: ~40MB
     return true;
   } catch (e) {
     bfsPool = null;
@@ -763,7 +764,7 @@ async function runAISearch(word) {
     // 所有狀態存在預分配的 1GB typed array 池中
     // Phase 2 在 Phase 1 方塊掉落期間即開始計算（偷跑）
     if (!initBFSPool()) {
-      setMessage("⚠️ 記憶體池分配失敗（需要 ~766MB）", false);
+      setMessage("⚠️ 記憶體池分配失敗（需要 ~40MB）", false);
       aiComputing = false;
       return;
     }
