@@ -192,12 +192,12 @@ function resizeCanvas() {
   drawGrid();
 }
 
-// 建立一輪派發佇列：收齊所有 combo 的全部字後隨機打亂
-// 保證一輪內每組 combo 的每個字都至少出現一次
+// 建立一輪派發佇列：只包含尚未消除的 combo 的字，隨機打亂
 function buildWordQueue() {
   const queue = [];
-  for (const combo of comboList) {
-    for (const word of combo) {
+  for (let ci = 0; ci < comboList.length; ci++) {
+    if (clearedCombos.has(ci)) continue; // 已消除的 combo 不再發牌
+    for (const word of comboList[ci]) {
       queue.push(word);
     }
   }
@@ -209,9 +209,23 @@ function buildWordQueue() {
   return queue;
 }
 
+// 消除後清理佇列：移除只屬於已消除 combo 的字
+function purgeWordQueue() {
+  const activeWords = new Set();
+  for (let ci = 0; ci < comboList.length; ci++) {
+    if (clearedCombos.has(ci)) continue;
+    for (const w of comboList[ci]) activeWords.add(w);
+  }
+  wordQueue = wordQueue.filter((w) => activeWords.has(w));
+}
+
 function nextWord() {
   if (!wordQueue.length) {
     wordQueue = buildWordQueue();
+  }
+  if (!wordQueue.length) {
+    // 所有 combo 都已消除，不應再發牌（安全防護）
+    return comboList[0]?.[0] || "?";
   }
   return wordQueue.shift();
 }
@@ -689,6 +703,9 @@ async function clearMatches() {
   if (totalCleared > 0) {
     score += totalCleared;
     scoreEl.textContent = String(score);
+
+    // 清理佇列：已消除 combo 的字不再出現
+    purgeWordQueue();
 
     // 檢查是否破關
     if (clearedCombos.size >= comboList.length) {
