@@ -419,12 +419,12 @@ async function runAISearch(word) {
   let planInstalled = false;
 
   // ═══════════════════════════════════════════════════════
-  //  迭代加深 DFS：depth 7 → 8 → 9 → ... → totalSteps
-  //  每層結束即時更新 autoPlan + autoTargetCol
+  //  持續迭代加深 DFS：depth 1 → 2 → 3 → ... → totalSteps
+  //  從深度 1 開始，不停加深，不停調整決策
+  //  方塊一邊落一邊跟著最新最優解移動
   // ═══════════════════════════════════════════════════════
-  const startDepth = Math.min(7, totalSteps);
 
-  for (let maxDepth = startDepth; maxDepth <= totalSteps; maxDepth++) {
+  for (let maxDepth = 1; maxDepth <= totalSteps; maxDepth++) {
     if (myGen !== aiSearchGen) return;
 
     // ── 針對本層深度計算 upper-bound 剪枝表 ──
@@ -503,8 +503,8 @@ async function runAISearch(word) {
             for (let d = 0; d < maxDepth; d++)
               if (sP[d] >= 0) path.push({ word: fullSeq[d], col: sP[d] });
             bestPath = path;
-            // 即時更新目標欄
-            if (myGen === aiSearchGen && autoMode && path.length > 0) {
+            // 即時更新目標欄（僅限當前方塊尚未落地時）
+            if (myGen === aiSearchGen && autoMode && path.length > 0 && autoPlanStep <= 1) {
               autoTargetCol = path[0].col;
             }
           }
@@ -551,7 +551,7 @@ async function runAISearch(word) {
           for (let d = 0; d < depth; d++)
             if (sP[d] >= 0) path.push({ word: fullSeq[d], col: sP[d] });
           bestCl = numCombos; bestPath = path;
-          if (myGen === aiSearchGen && autoMode && path.length > 0) {
+          if (myGen === aiSearchGen && autoMode && path.length > 0 && autoPlanStep <= 1) {
             autoTargetCol = path[0].col;
           }
           depth = -1; // 結束本層 DFS
@@ -570,10 +570,14 @@ async function runAISearch(word) {
         autoPlanStep = 1;     // 首次安裝：step 0 給當前方塊
         planInstalled = true;
       }
-      autoTargetCol = bestPath[0].col;
+      // 只在當前方塊尚未被 findBestColumn 消耗時才更新目標
+      if (autoPlanStep <= 1) {
+        autoTargetCol = bestPath[0].col;
+      }
     }
 
-    setMessage(`🤖 深度 ${maxDepth}/${totalSteps} 完成（最佳 ${Math.max(0, bestCl)}/${numCombos}）`, true);
+    // 顯示進度（淺層瞬間閃過，深層會停留）
+    setMessage(`🤖 深度 ${maxDepth}/${totalSteps}（最佳 ${Math.max(0, bestCl)}/${numCombos}）`, true);
     await new Promise(r => setTimeout(r, 0));
 
     // 全消 → 不用再深搜
@@ -586,7 +590,7 @@ async function runAISearch(word) {
   if (bestPath && bestPath.length > 0) {
     autoPlan = bestPath;
     if (!planInstalled) autoPlanStep = 1;
-    autoTargetCol = bestPath[0].col;
+    if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
