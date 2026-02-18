@@ -344,7 +344,7 @@ function findBestColumn() {
 }
 
 // ── 迭代加深 AI 搜索 ──
-// 先算前 7 步 → 即時更新決策 → 逐步加深 → 保證最優
+// 從深度 1 開始 → 即時更新決策 → 持續加深 → 保證最優
 // 每多算一步，目標欄位實時更新，方塊一邊落一邊調整
 
 async function runAISearch(word) {
@@ -373,13 +373,6 @@ async function runAISearch(word) {
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
   const f0 = boardToFlat(board);
-
-  // ── O(1) needed check 預計算 ──
-  const wcMask = new Uint32Array(_iToW.length);
-  for (let ci = 0; ci < numCombos; ci++) {
-    const combo = _cIdx[ci];
-    for (let i = 0; i < combo.length; i++) wcMask[combo[i]] |= (1 << ci);
-  }
 
   // ── 欄位優先排序預計算 ──
   // 每個字先嘗試它在 combo 中的「正確欄位」→ 第一分支高概率是最優解
@@ -514,15 +507,8 @@ async function runAISearch(word) {
         // Upper-bound 剪枝
         if (popcount(cl | ccFrom[depth]) <= bestCl) { depth--; continue; }
 
-        // O(1) needed check
+        // 不再略過任何發牌：每一顆都必須落子，才能正確反映阻擋/消除/下落連鎖
         const wIdx = seqIdx[depth];
-        if ((wcMask[wIdx] & ~cl) === 0) {
-          const nx = (depth + 1) * TC;
-          pool.copyWithin(nx, off, off + TC);
-          sCl[depth + 1] = cl; sCol[depth + 1] = -2; sP[depth] = -1;
-          sCol[depth] = COLS;
-          depth++; continue;
-        }
         sCol[depth] = 0;
       }
 
