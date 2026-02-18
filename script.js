@@ -659,6 +659,8 @@ async function runAISearch(word) {
 
     let perfect = false;
 
+    const YIELD_INTERVAL = 5000; // 每處理 N 個狀態讓出一次（更新 UI）
+
     for (let d = 0; d < p2Len && !perfect; d++) {
       if (myGen !== aiSearchGen) return;
 
@@ -669,6 +671,9 @@ async function runAISearch(word) {
       // 剪枝：已固定 combo 的字 → 只嘗試固定欄；其他字全搜索
       const wCi = wordToCi[wIdx];
       const fc2 = dynFixed[wIdx]; // >=0: 固定欄, -1: 未固定
+
+      let statesDone = 0; // 本步已處理的狀態數
+      const totalInFrontier = frontier.size;
 
       for (const [, state] of frontier) {
         const useDetermined = fc2 >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
@@ -712,6 +717,17 @@ async function runAISearch(word) {
           }
         }
         if (perfect) break;
+
+        // 每處理 YIELD_INTERVAL 個狀態，讓出控制權並更新 UI
+        statesDone++;
+        if (statesDone % YIELD_INTERVAL === 0) {
+          const pct = Math.round(statesDone / totalInFrontier * 100);
+          const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";
+          const mem = estimateMemoryStr(nextFrontier.size);
+          setMessage(`🤖 步${d + 1}/${p2Len} ${pct}%（→${nextFrontier.size}態 ${mem}，${fixedInfo}，最佳${bestCl}/${numCombos}）`, true);
+          await new Promise(r => setTimeout(r, 0));
+          if (myGen !== aiSearchGen) return;
+        }
       }
       if (perfect) break;
 
