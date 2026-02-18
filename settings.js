@@ -91,36 +91,34 @@ const totalCountEl = document.getElementById("totalCount");
 let rows = loadRows();
 let pickCount = loadPickCount();
 
-function preventDoubleTapZoom() {
-  let lastTouchEnd = 0;
-
+function preventZoom() {
   document.addEventListener(
-    "touchend",
-    (event) => {
-      const now = Date.now();
-      if (now - lastTouchEnd <= 320) {
-        event.preventDefault();
-      }
-      lastTouchEnd = now;
+    "touchmove",
+    (e) => { if (e.touches.length > 1) e.preventDefault(); },
+    { passive: false },
+  );
+  document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
+  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
+}
+
+// touchstart 直接觸發，不等 click 的 300ms
+function tapBind(el, callback) {
+  let touched = false;
+  el.addEventListener(
+    "touchstart",
+    (e) => {
+      e.preventDefault();
+      touched = true;
+      callback();
     },
     { passive: false },
   );
-
-  document.addEventListener(
-    "dblclick",
-    (event) => {
-      event.preventDefault();
-    },
-    { passive: false },
-  );
-
-  document.addEventListener(
-    "gesturestart",
-    (event) => {
-      event.preventDefault();
-    },
-    { passive: false },
-  );
+  el.addEventListener("click", () => {
+    if (touched) { touched = false; return; }
+    callback();
+  });
 }
 
 function isValidRowString(row) {
@@ -199,7 +197,7 @@ function renderRows() {
     removeBtn.type = "button";
     removeBtn.textContent = "移除";
     removeBtn.className = "danger";
-    removeBtn.addEventListener("click", () => {
+    tapBind(removeBtn, () => {
       rows.splice(index, 1);
       renderRows();
       setMessage("已移除一列，按「儲存」生效。");
@@ -261,14 +259,14 @@ function resetDefault() {
   setMessage("已還原預設，按「儲存」即可覆蓋。");
 }
 
-addBtn.addEventListener("click", addRow);
-saveBtn.addEventListener("click", saveRows);
-resetBtn.addEventListener("click", resetDefault);
+tapBind(addBtn, addRow);
+tapBind(saveBtn, saveRows);
+tapBind(resetBtn, resetDefault);
 newRowInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addRow();
 });
 
-preventDoubleTapZoom();
+preventZoom();
 pickCountInput.value = pickCount;
 renderRows();
 
