@@ -343,51 +343,136 @@ function findBestColumn() {
   return quickGuessCol();
 }
 
-// ── 全 Q 最優搜索（完整看完發牌序列）──
-// 目標：最大化已消 combo 數；同分時保留空間較大的盤面
-// 做法：全深度 DFS + 精確狀態去重（Set key，無雜湊碰撞誤判）
+// ── 分段搜索 ──
+// 1) 先找組合最佳排法（版型）
+// 2) 先做 7 步前瞻求最佳
+// 3) 再逐步加深，每多算一步就更新決策
 async function runAISearch(word) {
   const myGen = ++aiSearchGen;
   aiComputing = true;
   buildWordIndex();
 
-  // 發牌序列：完整讀取當前方塊 + 整個 queue
   const fullSeq = [word, ...wordQueue];
   const seqIdx = Uint8Array.from(fullSeq.map(w => _wToI.get(w) || 0));
   const totalSteps = fullSeq.length;
   const numCombos = comboList.length;
   const TC = ROWS * COLS;
 
-  setMessage(`🤖 全Q最優搜索中...`, true);
+  setMessage(`🤖 分段搜索中...`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
   const f0 = boardToFlat(board);
+  let bestCl = popcount(initCl), bestSp = -1, bestPath = [];
+  let ops = 0;
+  let planInstalled = false;
 
-  // 每個字先嘗試它在 combo 中可能的欄位，找解更快
+  // ── Stage 1: 找「組合最佳排法」→ 產生每個字的偏好欄位 ──
+  function pickBestLayoutMap() {
+    const pref = new Int8Array(_iToW.length).fill(-1);
+    const active = [];
+    for (let ci = 0; ci < numCombos; ci++) if (!(initCl & (1 << ci))) active.push(ci);
+    if (active.length === 0) return pref;
+
+    const choice = new Uint8Array(active.length);
+    let cfgCount = 1;
+    for (let i = 0; i < active.length; i++) {
+      const clen = _cIdx[active[i]].length;
+      const cnt = Math.max(1, COLS - clen + 1);
+      choice[i] = cnt;
+      cfgCount *= cnt;
+      if (cfgCount > 50000) break; // 避免爆量
+    }
+
+    let bestScore = -1e9;
+    const tryCfg = (cfgNum) => {
+      const w2c = new Int8Array(_iToW.length).fill(-1);
+      let rem = cfgNum;
+      for (let i = 0; i < active.length; i++) {
+        const ci = active[i];
+        const combo = _cIdx[ci];
+        const sc = rem % choice[i];
+        rem = (rem / choice[i]) | 0;
+        for (let p = 0; p < combo.length; p++) {
+          const w = combo[p], c = sc + p;
+          if (w2c[w] !== -1 && w2c[w] !== c) return null; // 衝突版型
+          w2c[w] = c;
+        }
+      }
+      let score = 0;
+      // 覆蓋越多字越好
+      for (let i = 1; i < w2c.length; i++) if (w2c[i] >= 0) score += 12;
+      // 與現有盤面越一致越好（減少搬運成本）
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const v = f0[r * COLS + c];
+          if (v !== 0 && w2c[v] >= 0) score += (w2c[v] === c ? 4 : -1);
+        }
+      }
+      return { w2c, score };
+    };
+
+    if (cfgCount <= 50000) {
+      for (let cfg = 0; cfg < cfgCount; cfg++) {
+        const res = tryCfg(cfg);
+        if (!res) continue;
+        if (res.score > bestScore) {
+          bestScore = res.score;
+          pref.set(res.w2c);
+        }
+      }
+      return pref;
+    }
+
+    // 版型太多時退化成貪心配置
+    for (let i = 0; i < active.length; i++) {
+      const ci = active[i];
+      const combo = _cIdx[ci];
+      let bestSc = -1e9, bestStart = 0;
+      for (let sc = 0; sc <= COLS - combo.length; sc++) {
+        let scScore = 0, bad = false;
+        for (let p = 0; p < combo.length; p++) {
+          const w = combo[p], c = sc + p;
+          if (pref[w] !== -1 && pref[w] !== c) { bad = true; break; }
+          scScore += 3;
+        }
+        if (!bad && scScore > bestSc) { bestSc = scScore; bestStart = sc; }
+      }
+      for (let p = 0; p < combo.length; p++) pref[combo[p]] = bestStart + p;
+    }
+    return pref;
+  }
+
+  const prefCol = pickBestLayoutMap();
+
+  // 每個字：先試版型偏好欄，再試 combo 相關欄，最後補齊所有欄
   const colOrd = [];
   for (let wIdx = 0; wIdx < _iToW.length; wIdx++) {
-    const pri = [], used = new Uint8Array(COLS);
+    const used = new Uint8Array(COLS);
+    const ord = [];
+    if (prefCol[wIdx] >= 0) {
+      ord.push(prefCol[wIdx]);
+      used[prefCol[wIdx]] = 1;
+    }
     for (let ci = 0; ci < numCombos; ci++) {
       if (initCl & (1 << ci)) continue;
       const combo = _cIdx[ci];
       for (let p = 0; p < combo.length; p++) {
-        if (combo[p] === wIdx) {
-          for (let sc = 0; sc <= COLS - combo.length; sc++) {
-            const c = sc + p;
-            if (!used[c]) { used[c] = 1; pri.push(c); }
-          }
+        if (combo[p] !== wIdx) continue;
+        for (let sc = 0; sc <= COLS - combo.length; sc++) {
+          const c = sc + p;
+          if (!used[c]) { used[c] = 1; ord.push(c); }
         }
       }
     }
-    for (let c = 0; c < COLS; c++) if (!used[c]) pri.push(c);
-    colOrd.push(Uint8Array.from(pri));
+    for (let c = 0; c < COLS; c++) if (!used[c]) ord.push(c);
+    colOrd.push(Uint8Array.from(ord));
   }
 
-  // Upper-bound：從 depth 往後理論上最多還能補哪些 combo（僅用於 cleared 剪枝）
-  const ccFrom = new Uint32Array(totalSteps + 1);
+  // 完整上界（用於 pruning，對各深度都安全）
+  const ccFromFull = new Uint32Array(totalSteps + 1);
   {
     const rem = new Uint16Array(_iToW.length);
     for (let s = totalSteps - 1; s >= 0; s--) {
@@ -401,28 +486,16 @@ async function runAISearch(word) {
         }
         if (ok) mask |= (1 << ci);
       }
-      ccFrom[s] = mask;
+      ccFromFull[s] = mask;
     }
   }
 
   const maxD = totalSteps + 1;
   const pool = new Uint8Array(maxD * TC);
-  pool.set(f0, 0);
   const sCol = new Int8Array(maxD);
   const sCl = new Uint32Array(maxD);
   const sP = new Int8Array(maxD);
-  sCol[0] = -2;
-  sCl[0] = initCl;
 
-  const seen = new Set();
-  let bestCl = popcount(initCl), bestSp = -1, bestPath = [];
-  let ops = 0;
-  let depth = 0;
-  let planInstalled = false;
-
-  function stateKey(off, d, cl) {
-    return `${d}|${cl}|${String.fromCharCode(...pool.subarray(off, off + TC))}`;
-  }
   function evalState(off, d, cl) {
     const cleared = popcount(cl);
     let space = 0;
@@ -441,83 +514,104 @@ async function runAISearch(word) {
     }
   }
 
-  while (depth >= 0) {
-    if (myGen !== aiSearchGen) return;
-    const off = depth * TC;
-    const cl = sCl[depth];
+  function stateKey(off, d, cl) {
+    return `${d}|${cl}|${String.fromCharCode(...pool.subarray(off, off + TC))}`;
+  }
 
-    if (sCol[depth] === -2) {
-      ops++;
-      if (ops % 1500 === 0) {
-        setMessage(`🤖 全Q搜索 ${ops} 步（最佳 ${bestCl}/${numCombos}）`, true);
-        await new Promise(r => setTimeout(r, 0));
-        if (myGen !== aiSearchGen) return;
+  // ── Stage 2 + Stage 3: 先 7 步，再逐步 +1 深度 ──
+  const startDepth = Math.min(7, totalSteps);
+  for (let maxDepth = startDepth; maxDepth <= totalSteps; maxDepth++) {
+    if (myGen !== aiSearchGen) return;
+
+    const seen = new Set();
+    pool.set(f0, 0);
+    sCol[0] = -2;
+    sCl[0] = initCl;
+    let depth = 0;
+
+    while (depth >= 0) {
+      if (myGen !== aiSearchGen) return;
+      const off = depth * TC;
+      const cl = sCl[depth];
+
+      if (sCol[depth] === -2) {
+        ops++;
+        if (ops % 1500 === 0) {
+          setMessage(`🤖 深度 ${maxDepth}/${totalSteps}（最佳 ${bestCl}/${numCombos}）`, true);
+          await new Promise(r => setTimeout(r, 0));
+          if (myGen !== aiSearchGen) return;
+        }
+
+        if (depth >= maxDepth) {
+          evalState(off, depth, cl);
+          depth--;
+          continue;
+        }
+
+        if (popcount(cl | ccFromFull[depth]) < bestCl) { depth--; continue; }
+        const k = stateKey(off, depth, cl);
+        if (seen.has(k)) { depth--; continue; }
+        seen.add(k);
+        sCol[depth] = 0;
       }
 
-      if (depth >= totalSteps) {
+      let found = false;
+      const wIdx = seqIdx[depth];
+      const order = colOrd[wIdx];
+      while (sCol[depth] < COLS) {
+        const col = order[sCol[depth]++];
+        let lr = -1;
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (pool[off + r * COLS + col] === 0) { lr = r; break; }
+        }
+        if (lr < 0) continue;
+
+        const nx = (depth + 1) * TC;
+        pool.copyWithin(nx, off, off + TC);
+        pool[nx + lr * COLS + col] = wIdx;
+        const nc = simClear(pool.subarray(nx, nx + TC), _cIdx, cl);
+
+        sP[depth] = col;
+        sCl[depth + 1] = nc;
+        sCol[depth + 1] = -2;
+        depth++;
+        found = true;
+        break;
+      }
+
+      if (!found) {
         evalState(off, depth, cl);
         depth--;
-        continue;
       }
-
-      // 若上界連目前最佳 cleared 都超不過，直接剪掉
-      if (popcount(cl | ccFrom[depth]) < bestCl) { depth--; continue; }
-
-      const k = stateKey(off, depth, cl);
-      if (seen.has(k)) { depth--; continue; }
-      seen.add(k);
-
-      sCol[depth] = 0;
     }
 
-    let found = false;
-    const wIdx = seqIdx[depth];
-    const order = colOrd[wIdx];
-    while (sCol[depth] < COLS) {
-      const col = order[sCol[depth]++];
-      let lr = -1;
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (pool[off + r * COLS + col] === 0) { lr = r; break; }
-      }
-      if (lr < 0) continue;
+    if (myGen !== aiSearchGen) return;
 
-      const nx = (depth + 1) * TC;
-      pool.copyWithin(nx, off, off + TC);
-      pool[nx + lr * COLS + col] = wIdx;
-      const nc = simClear(pool.subarray(nx, nx + TC), _cIdx, cl);
-
-      sP[depth] = col;
-      sCl[depth + 1] = nc;
-      sCol[depth + 1] = -2;
-      depth++;
-      found = true;
-      break;
-    }
-
-    if (!found) {
-      // 無法再落子（等同提早結束），也要納入比較
-      evalState(off, depth, cl);
-      depth--;
-    }
-
-    if (bestCl === numCombos && totalSteps > 0 && bestPath.length > 0 && !planInstalled) {
+    if (bestPath.length > 0 && autoMode) {
       autoPlan = bestPath;
-      autoPlanStep = 1;
-      planInstalled = true;
+      if (!planInstalled) {
+        autoPlanStep = 1;
+        planInstalled = true;
+      }
       if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
     }
+
+    setMessage(`🤖 深度 ${maxDepth}/${totalSteps} 完成（最佳 ${bestCl}/${numCombos}）`, true);
+    await new Promise(r => setTimeout(r, 0));
+
+    if (bestCl === numCombos && maxDepth >= startDepth) break;
   }
 
   if (myGen !== aiSearchGen) return;
 
-  if (bestPath && bestPath.length > 0) {
+  if (bestPath.length > 0) {
     autoPlan = bestPath;
     if (!planInstalled) autoPlanStep = 1;
     if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
-  setMessage(`🤖 完成！全Q最優 ${bestCl}/${numCombos} 組（${ops} 步）`, true);
+  setMessage(`🤖 完成！分段最優 ${bestCl}/${numCombos} 組（${ops} 步）`, true);
   aiComputing = false;
 }
 
