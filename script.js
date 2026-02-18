@@ -234,56 +234,97 @@ function findBestColumn() {
     landRows.push(lr);
   }
 
+  // 預掃描每一行的「局部 combo」：哪些 combo 在哪一行已有部分匹配
+  // rowPartials[row] = [{ ci, startCol, matched }]
+  const rowPartials = [];
+  for (let row = 0; row < ROWS; row++) {
+    const list = [];
+    for (let ci = 0; ci < comboList.length; ci++) {
+      const combo = comboList[ci];
+      for (let sc = 0; sc <= COLS - combo.length; sc++) {
+        let matched = 0;
+        let blocked = false;
+        for (let i = 0; i < combo.length; i++) {
+          const cell = board[row][sc + i];
+          if (cell && cell.word === combo[i]) matched++;
+          else if (cell !== null) { blocked = true; break; }
+        }
+        if (!blocked && matched > 0) {
+          list.push({ ci, startCol: sc, matched });
+        }
+      }
+    }
+    rowPartials.push(list);
+  }
+
   for (let col = 0; col < COLS; col++) {
     const landRow = landRows[col];
-    if (landRow < 0) continue; // 滿了
+    if (landRow < 0) continue;
 
-    let colScore = 0;
+    let comboScore = 0; // 取最大值（不累加）
 
+    // ─── A. 落點行的 combo 匹配 ───
     for (let ci = 0; ci < comboList.length; ci++) {
       const combo = comboList[ci];
       for (let wi = 0; wi < combo.length; wi++) {
         if (combo[wi] !== word) continue;
-        const startCol = col - wi;
-        if (startCol < 0 || startCol + combo.length > COLS) continue;
+        const sc = col - wi;
+        if (sc < 0 || sc + combo.length > COLS) continue;
 
-        let matchCount = 0;
-        let possible = true;
-        let alignedEmpty = 0;   // 空格但落點高度一致
-        let totalEmpty = 0;     // 空格數
-
+        let matchCount = 0, possible = true;
+        let alignedEmpty = 0, totalEmpty = 0;
         for (let i = 0; i < combo.length; i++) {
-          const cc = startCol + i;
+          const cc = sc + i;
           if (i === wi) { matchCount++; continue; }
           const cell = board[landRow][cc];
           if (cell && cell.word === combo[i]) {
             matchCount++;
           } else if (cell !== null) {
-            possible = false;
-            break;
+            possible = false; break;
           } else {
-            // 格子是空的 → 看該欄的落點高度是否對齊
             totalEmpty++;
             if (landRows[cc] === landRow) alignedEmpty++;
           }
         }
         if (!possible) continue;
 
+        let s = 0;
         if (matchCount >= combo.length) {
-          colScore += 1000; // 直接完成
+          s = 2000; // 直接完成
         } else {
-          // 已匹配的字越多越好
-          colScore += matchCount * 50;
-          // 空格落點對齊 → 未來放上去會在同一行
-          colScore += alignedEmpty * 30;
-          // 所有剩餘空格都對齊 → 此 combo 完全可建
-          if (totalEmpty > 0 && alignedEmpty === totalEmpty) {
-            colScore += 80;
-          }
+          s = matchCount * 80 + alignedEmpty * 40;
+          if (totalEmpty > 0 && alignedEmpty === totalEmpty) s += 120;
         }
+        comboScore = Math.max(comboScore, s);
       }
     }
 
+    // ─── B.「正確欄位」獎勵：即使落點行不對齊，
+    //       放在 combo 對應的欄位，未來消除後重力會讓字掉到正確行 ───
+    for (let ci = 0; ci < comboList.length; ci++) {
+      const combo = comboList[ci];
+      for (let wi = 0; wi < combo.length; wi++) {
+        if (combo[wi] !== word) continue;
+        const sc = col - wi;
+        if (sc < 0 || sc + combo.length > COLS) continue;
+        comboScore += 5;
+      }
+    }
+
+    // ─── C. 阻擋懲罰：若落點行已有別組 combo 的局部匹配，
+    //       而本字會佔據該 combo 需要的格子，重罰 ───
+    let blockPenalty = 0;
+    for (const p of rowPartials[landRow]) {
+      const combo = comboList[p.ci];
+      if (col < p.startCol || col >= p.startCol + combo.length) continue;
+      const wi = col - p.startCol;
+      if (combo[wi] !== word) {
+        // 這個字會擋住這組局部 combo
+        blockPenalty = Math.max(blockPenalty, p.matched * 60);
+      }
+    }
+
+    let colScore = comboScore - blockPenalty;
     // 偏好低處放置
     colScore += landRow * 2;
     // 微偏好中間
