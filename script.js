@@ -320,7 +320,56 @@ function findBestColumn() {
     comboWeight[ci] = 1 + progress * 2.5 + proximity * 1.5;           // 1~5
   }
 
-  // ── 4. 評估每一欄 ──
+  // ── 4. 戰略規劃：全局 startCol + 堆疊層消 ──
+  //   所有 combo 共用同一個 startCol，字在正確欄位上下堆疊，
+  //   底層消除 → 重力讓上層掉落 → 連鎖消除。
+
+  // 4a. 選最佳全局 startCol：讓最多高權重 combo 使用、且與棋盤現狀吻合
+  let bestGSC = 0, bestGSCScore = -Infinity;
+  for (let gsc = 0; gsc < COLS; gsc++) {
+    let s = 0;
+    for (let ci = 0; ci < comboList.length; ci++) {
+      if (gsc + comboList[ci].length <= COLS) s += comboWeight[ci];
+    }
+    // 若棋盤上已有局部 combo 在此 startCol，加分
+    for (let row = 0; row < ROWS; row++) {
+      for (const p of rowPartials[row]) {
+        if (p.startCol === gsc) s += p.matched * comboWeight[p.ci] * 2;
+      }
+    }
+    if (s > bestGSCScore) { bestGSCScore = s; bestGSC = gsc; }
+  }
+
+  // 4b. 保留欄位集合（bestGSC 下所有可完成 combo 佔用的欄位）
+  const reservedCols = new Set();
+  for (let ci = 0; ci < comboList.length; ci++) {
+    const combo = comboList[ci];
+    if (bestGSC + combo.length <= COLS) {
+      for (let i = 0; i < combo.length; i++) reservedCols.add(bestGSC + i);
+    }
+  }
+
+  // 4c. 當前字的「戰略目標欄」：從最高權重 combo 決定
+  let targetCol = -1, targetCW = 0;
+  for (let ci = 0; ci < comboList.length; ci++) {
+    const combo = comboList[ci];
+    if (bestGSC + combo.length > COLS) continue;
+    const cw = comboWeight[ci];
+    for (let wi = 0; wi < combo.length; wi++) {
+      if (combo[wi] === word && cw > targetCW) {
+        targetCol = bestGSC + wi;
+        targetCW = cw;
+      }
+    }
+  }
+
+  // 4d. 計算連鎖深度：有多少 combo 使用 bestGSC 且能完成
+  let stackDepth = 0;
+  for (let ci = 0; ci < comboList.length; ci++) {
+    if (bestGSC + comboList[ci].length <= COLS && comboWeight[ci] > 1) stackDepth++;
+  }
+
+  // ── 5. 評估每一欄 ──
   for (let col = 0; col < COLS; col++) {
     const landRow = landRows[col];
     if (landRow < 0) continue;
@@ -364,19 +413,7 @@ function findBestColumn() {
       }
     }
 
-    // ─ B. 正確欄位獎勵（重力掉落後會對齊，權重放大）─
-    for (let ci = 0; ci < comboList.length; ci++) {
-      const combo = comboList[ci];
-      const w = comboWeight[ci];
-      for (let wi = 0; wi < combo.length; wi++) {
-        if (combo[wi] !== word) continue;
-        const sc = col - wi;
-        if (sc < 0 || sc + combo.length > COLS) continue;
-        comboScore += Math.round(5 * w);
-      }
-    }
-
-    // ─ C. 阻擋懲罰（擋住高權重 combo 罰更重）─
+    // ─ B. 阻擋懲罰（擋住高權重 combo 罰更重）─
     let blockPenalty = 0;
     for (const p of rowPartials[landRow]) {
       const combo = comboList[p.ci];
@@ -388,7 +425,20 @@ function findBestColumn() {
       }
     }
 
-    let colScore = comboScore - blockPenalty;
+    // ─ C. 戰略堆疊獎勵 ─
+    //   ‧ 放在目標欄 → 大加分（連鎖越深獎勵越高）
+    //   ‧ 非 combo 字佔保留欄 → 扣分
+    let strategyBonus = 0;
+    if (targetCol >= 0 && col === targetCol) {
+      // 連鎖深度倍率：3層=1.8x, 2層=1.4x, 1層=1x
+      const cascadeMul = 1 + (stackDepth - 1) * 0.4;
+      strategyBonus = Math.round(300 * targetCW * cascadeMul);
+    } else if (targetCol < 0 && reservedCols.has(col)) {
+      // 這個字不屬於任何規劃中的 combo，卻放在保留欄 → 扣分
+      strategyBonus = -200;
+    }
+
+    let colScore = comboScore + strategyBonus - blockPenalty;
     colScore += landRow * 2;
     colScore -= Math.abs(col - (COLS - 1) / 2) * 0.5;
 
