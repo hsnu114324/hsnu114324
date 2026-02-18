@@ -410,7 +410,11 @@ async function runAISearch(word) {
 
   // ── 偵錯：步驟追蹤 ──
   const debugSteps = []; // [{step, word, inSize, outSize, dedup, pruned, cleared, fixed, mem, event}]
+  let debugP1Board = null;     // Phase1 前 7 步後的盤面快照
+  let debugP1Steps = [];       // Phase1 各步落點 [{step,word,col,row}]
+  let debugFinalBoard = null;  // 目前最佳路徑對應的最終盤面
 
+  // 純文字盤面（供 lastDebugSample 備用）
   function flatToDebugText(flat) {
     const lines = [];
     for (let r = 0; r < ROWS; r++) {
@@ -422,6 +426,58 @@ async function runAISearch(word) {
       lines.push(cs.join(" "));
     }
     return lines.join("\n");
+  }
+
+  // ── 圖示盤面（box-drawing 格線）──
+  // cellW: 每格顯示寬度（字元數）；label: 可選的二維覆蓋標籤 Map<r*COLS+c, string>
+  function flatToGridText(flat, cellW, label) {
+    cellW = cellW || 5;
+    const H = "─".repeat(cellW);
+    const top    = "┌" + Array.from({length:COLS}, () => H).join("┬") + "┐";
+    const mid    = "├" + Array.from({length:COLS}, () => H).join("┼") + "┤";
+    const bot    = "└" + Array.from({length:COLS}, () => H).join("┴") + "┘";
+    const colHdr = " " + Array.from({length:COLS}, (_,c) => String(c).padStart(Math.floor(cellW/2)+1).padEnd(cellW)).join(" ");
+
+    const rows = [colHdr, top];
+    for (let r = 0; r < ROWS; r++) {
+      const cells = [];
+      for (let c = 0; c < COLS; c++) {
+        let txt;
+        if (label && label.has(r * COLS + c)) {
+          txt = label.get(r * COLS + c);
+        } else {
+          const v = flat[r * COLS + c];
+          txt = v === 0 ? "" : (_iToW[v] || String(v));
+        }
+        // 置中對齊
+        if (txt.length >= cellW) txt = txt.slice(0, cellW);
+        const pad = cellW - txt.length;
+        const lp = Math.floor(pad / 2), rp = pad - lp;
+        cells.push(" ".repeat(lp) + txt + " ".repeat(rp));
+      }
+      rows.push("│" + cells.join("│") + "│");
+      if (r < ROWS - 1) rows.push(mid);
+    }
+    rows.push(bot);
+    return rows.join("\n");
+  }
+
+  // ── 步驟順序圖（在空白盤面上顯示 ①②…編號）──
+  function stepMapToGridText(steps, cellW) {
+    cellW = cellW || 5;
+    const CIRCLE = ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮"];
+    // 建立空板（行優先）
+    const flat = new Uint8Array(ROWS * COLS);
+    const label = new Map();
+    for (const s of steps) {
+      if (s.row < 0 || s.row >= ROWS || s.col < 0 || s.col >= COLS) continue;
+      const idx = s.row * COLS + s.col;
+      const num = CIRCLE[s.step - 1] || String(s.step);
+      // 短字=步號，後跟截短字
+      const wShort = (s.word || "").slice(0, cellW - 2);
+      label.set(idx, num + wShort.slice(0, cellW - 1));
+    }
+    return flatToGridText(flat, cellW, label);
   }
 
   function buildDebugDiagram(currentStep, bestBoard) {
@@ -483,10 +539,24 @@ async function runAISearch(word) {
     } catch (e) {}
     lines.push(`最佳: ${bestCl}/${numCombos}${fixSummary}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
 
-    // 最佳盤面
-    if (bestBoard) {
-      lines.push("\n最佳盤面:");
-      lines.push(flatToDebugText(bestBoard));
+    // ── Phase1 前 7 步落點盤面 ──
+    if (debugP1Board || debugP1Steps.length > 0) {
+      lines.push("\n── Phase1 前 7 步落點 ──");
+      // 左：步號圖；右：落子後盤面（側排顯示，各 6 欄寬）
+      if (debugP1Steps.length > 0) {
+        lines.push("落點順序 (①②…):");
+        lines.push(stepMapToGridText(debugP1Steps, 6));
+      }
+      if (debugP1Board) {
+        lines.push("落子後盤面:");
+        lines.push(flatToGridText(debugP1Board, 6));
+      }
+    }
+
+    // ── 預估最終盤面 ──
+    if (debugFinalBoard) {
+      lines.push("\n── 預估最終盤面 ──");
+      lines.push(flatToGridText(debugFinalBoard, 6));
     }
 
     // 最新消除樣本
@@ -556,8 +626,8 @@ async function runAISearch(word) {
       if (!planInstalled) { autoPlanStep = 1; planInstalled = true; }
       if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
       if (debugMode) {
-        // tryUpdate 不直接 setDebugText，交給 buildDebugDiagram 統一顯示
-        buildDebugDiagram(0, finalBoard);
+        debugFinalBoard = finalBoard.slice(); // 儲存最新最佳路徑的最終盤面
+        buildDebugDiagram(0, null);
       }
       return cleared === numCombos;
     }
@@ -615,6 +685,7 @@ async function runAISearch(word) {
     if (lr < 0) { p1Ok = false; break; }
 
     sf[lr * COLS + col] = wIdx;
+    if (debugMode) debugP1Steps.push({ step: s + 1, word: _iToW[wIdx], col, row: lr });
     const bCl = cl;
     const bB = debugMode ? sf.slice() : null;
     cl = simClear(sf, _cIdx, cl);
@@ -640,7 +711,8 @@ async function runAISearch(word) {
     setMessage(`🤖 BFS ${s + 1}/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
   }
 
-  // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
+  // Phase 1 結束 → 儲存 Phase1 盤面快照，並用 Phase 1 的結果更新
+  if (debugMode) debugP1Board = sf.slice();
   if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
 
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
@@ -929,23 +1001,7 @@ async function runAISearch(word) {
   const peakMem = estimateMemoryStr(peakStates);
   setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | 記憶體 ${peakMem}`, true);
   if (debugMode) {
-    // 取最佳盤面：模擬 bestPath 以重建最終盤面
-    let finalBestBoard = null;
-    if (bestPath.length > 0) {
-      const fb = f0.slice();
-      let fbCl = initCl;
-      for (const m of bestPath) {
-        const wI = _wToI.get(m.word) || 0;
-        let lr = -1;
-        for (let r = ROWS - 1; r >= 0; r--) {
-          if (fb[r * COLS + m.col] === 0) { lr = r; break; }
-        }
-        if (lr >= 0) fb[lr * COLS + m.col] = wI;
-        fbCl = simClear(fb, _cIdx, fbCl);
-      }
-      finalBestBoard = fb;
-    }
-    buildDebugDiagram(0, finalBestBoard);
+    buildDebugDiagram(0, null);
     const cur = debugBoxEl.textContent || "";
     setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms, 峰值${peakStates}態`);
   }
