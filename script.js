@@ -389,13 +389,14 @@ async function runAISearch(word) {
   const numCombos = comboList.length;
   const TC = ROWS * COLS;
 
-  // 計算狀態訊息：統一只顯示「步數 + 記憶體」
-  function calcMemStr(states) {
+  // 記憶體估算（每個狀態 ≈ board + key string + Map entry + linked list）
+  let peakStates = 1;
+  function estimateMemoryStr(states) {
     const bytes = states * (TC * 3 + 300);
     if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + "MB";
     return (bytes / 1024).toFixed(0) + "KB";
   }
-  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
+  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -502,7 +503,7 @@ async function runAISearch(word) {
 
   if (activeCI.length === 0) {
     aiComputing = false;
-    setMessage(`🤖 BFS 0/0 | 記憶體 ${calcMemStr(1)}`, true);
+    setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
     return;
   }
 
@@ -564,7 +565,7 @@ async function runAISearch(word) {
   }
 
   const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
-  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
+  setMessage(`🤖 BFS 0/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
   if (debugMode) setDebugText(`優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
@@ -636,19 +637,11 @@ async function runAISearch(word) {
       });
     }
     p1Path.push({ word: fullSeq[s], col });
-    setMessage(`🤖 BFS ${s + 1}/${totalSteps} | 記憶體 ${calcMemStr(1)}`, true);
+    setMessage(`🤖 BFS ${s + 1}/${totalSteps} | 記憶體 ${estimateMemoryStr(1)}`, true);
   }
 
   // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
   if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
-
-  // 記憶體估算（每個狀態 ≈ board + key string + Map entry + linked list）
-  let peakStates = 1;
-  function estimateMemoryStr(size) {
-    const bytes = size * (TC * 3 + 300);
-    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + 'MB';
-    return (bytes / 1024).toFixed(0) + 'KB';
-  }
 
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
     // 偵錯：顯示 Phase 1 完成狀態
@@ -936,8 +929,23 @@ async function runAISearch(word) {
   const peakMem = estimateMemoryStr(peakStates);
   setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | 記憶體 ${peakMem}`, true);
   if (debugMode) {
-    buildDebugDiagram(0, bestPath.length > 0 ? null : null);
-    // 在圖表末尾追加完成資訊
+    // 取最佳盤面：模擬 bestPath 以重建最終盤面
+    let finalBestBoard = null;
+    if (bestPath.length > 0) {
+      const fb = f0.slice();
+      let fbCl = initCl;
+      for (const m of bestPath) {
+        const wI = _wToI.get(m.word) || 0;
+        let lr = -1;
+        for (let r = ROWS - 1; r >= 0; r--) {
+          if (fb[r * COLS + m.col] === 0) { lr = r; break; }
+        }
+        if (lr >= 0) fb[lr * COLS + m.col] = wI;
+        fbCl = simClear(fb, _cIdx, fbCl);
+      }
+      finalBestBoard = fb;
+    }
+    buildDebugDiagram(0, finalBestBoard);
     const cur = debugBoxEl.textContent || "";
     setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms, 峰值${peakStates}態`);
   }
