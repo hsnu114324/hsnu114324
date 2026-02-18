@@ -232,11 +232,11 @@ function nextWord() {
   return wordQueue.shift();
 }
 
-// ── 自動模式 AI（Beam Search 全域最佳化 + 全局規劃快取）──
-// 一次性模擬整場 wordQueue 的所有步驟，找出「消掉全部 combo」的最優路徑。
-// 計畫快取後，後續每步 O(1) 直接回傳。
-
-const BEAM_WIDTH = 100; // 同時追蹤的最優路徑數
+// ── 自動模式 AI（完全最優解 — 狀態空間全搜索）──
+// 窮舉所有可能的下法，只靠「棋盤狀態去重」來壓縮搜索空間。
+// 保證找到能消掉最多 combo 的全局最佳路徑。
+// 數學原理：兩條路徑若到達相同的 (棋盤, 已消除combo) 狀態，
+//           它們的未來完全等價，只需保留一條。
 
 // 複製棋盤（存純字串，相容真實棋盤 {word,color} 及模擬棋盤字串）
 function cloneBoard(b) {
@@ -304,61 +304,18 @@ function boardKey(b, cleared) {
   return k;
 }
 
-// 評估函式：以「消掉全部 combo」為壓倒性最高目標
-function scoreState(b, cleared, combos) {
-  const total = combos.length;
-
-  // 第一層：已消除 combo 數（壓倒性權重）
-  let s = cleared.size * 1000000;
-
-  // 全清 → 特大獎勵 + 剩餘空間
-  if (cleared.size >= total) {
-    s += 5000000;
-    for (let c = 0; c < COLS; c++) {
-      const lr = simLandRow(b, c);
-      s += (lr >= 0 ? lr + 1 : 0) * 100;
-    }
-    return s;
-  }
-
-  // 第二層：各 combo 局部進度（立方獎勵，越接近完成分越陡）
-  for (let ci = 0; ci < combos.length; ci++) {
-    if (cleared.has(ci)) continue;
-    const combo = combos[ci];
-    let bestM = 0;
-    for (let row = 0; row < ROWS; row++) {
-      for (let sc = 0; sc <= COLS - combo.length; sc++) {
-        let matched = 0, blocked = false;
-        for (let i = 0; i < combo.length; i++) {
-          if (b[row][sc + i] === combo[i]) matched++;
-          else if (b[row][sc + i] !== null) { blocked = true; break; }
-        }
-        if (!blocked) bestM = Math.max(bestM, matched);
-      }
-    }
-    s += bestM * bestM * bestM * 100;
-  }
-
-  // 第三層：剩餘空間（防溢出）
-  for (let c = 0; c < COLS; c++) {
-    const lr = simLandRow(b, c);
-    s += (lr >= 0 ? lr + 1 : -ROWS * 2) * 3;
-  }
-  return s;
-}
-
 // 清除快取計畫
 function clearAutoPlan() {
   autoPlan = [];
   autoPlanStep = 0;
 }
 
-// Beam Search 主決策（含全局規劃快取）
+// 完全最優解：狀態空間全搜索（含全局規劃快取）
 function findBestColumn() {
   if (!activeBlock) return Math.floor(COLS / 2);
   const word = activeBlock.word;
 
-  // ── 檢查快取：計畫有效且字匹配 → 直接回傳 ──
+  // ── 檢查快取：計畫有效且字匹配 → O(1) 直接回傳 ──
   if (autoPlan.length > 0 && autoPlanStep < autoPlan.length) {
     const planned = autoPlan[autoPlanStep];
     if (planned.word === word) {
@@ -368,33 +325,35 @@ function findBestColumn() {
     clearAutoPlan(); // 字不匹配 → 重新規劃
   }
 
-  // ── 計算整場最佳策略 ──
+  // ── 窮舉整場最佳策略 ──
 
   // 建立完整發牌序列：當前字 + wordQueue（只留活躍 combo 的字）
   const fullSeq = [word];
   for (const w of wordQueue) {
+    let active = false;
     for (let ci = 0; ci < comboList.length; ci++) {
       if (!clearedCombos.has(ci) && comboList[ci].includes(w)) {
-        fullSeq.push(w);
+        active = true;
         break;
       }
     }
+    if (active) fullSeq.push(w);
   }
 
-  // 初始 beam
-  let beam = [
-    {
-      board: cloneBoard(board),
-      cleared: new Set(clearedCombos),
-      path: [], // [{word, col}, ...]
-    },
-  ];
+  console.log(`[AI] 開始全搜索：${fullSeq.length} 步，${comboList.length} 組 combo`);
+  const t0 = performance.now();
+
+  // 初始狀態集合：Map<stateKey, {board, cleared, path}>
+  const b0 = cloneBoard(board);
+  const c0 = new Set(clearedCombos);
+  let states = new Map();
+  states.set(boardKey(b0, c0), { board: b0, cleared: c0, path: [] });
 
   for (let step = 0; step < fullSeq.length; step++) {
     const w = fullSeq[step];
-    const candidates = [];
+    const nextStates = new Map();
 
-    for (const state of beam) {
+    for (const state of states.values()) {
       // 這個字在此狀態下是否還需要
       let needed = false;
       for (let ci = 0; ci < comboList.length; ci++) {
@@ -405,46 +364,79 @@ function findBestColumn() {
       }
 
       if (!needed) {
-        candidates.push(state);
+        // 字不需要 → 狀態直接帶入下一步
+        const key = boardKey(state.board, state.cleared);
+        if (!nextStates.has(key)) {
+          nextStates.set(key, state);
+        }
         continue;
       }
 
-      // 展開所有 6 欄
+      // 窮舉所有欄位（無剪枝）
       for (let col = 0; col < COLS; col++) {
         const lr = simLandRow(state.board, col);
-        if (lr < 0) continue;
+        if (lr < 0) continue; // 此欄滿了
 
         const nb = cloneBoard(state.board);
         nb[lr][col] = w;
         const nc = new Set(state.cleared);
         simClear(nb, comboList, nc);
 
-        candidates.push({
-          board: nb,
-          cleared: nc,
-          path: [...state.path, { word: w, col }],
-        });
+        const key = boardKey(nb, nc);
+        if (!nextStates.has(key)) {
+          nextStates.set(key, {
+            board: nb,
+            cleared: nc,
+            path: [...state.path, { word: w, col }],
+          });
+        } else {
+          // 相同棋盤狀態 → 保留消除更多的（或空間更多的）
+          const existing = nextStates.get(key);
+          if (nc.size > existing.cleared.size) {
+            nextStates.set(key, {
+              board: nb,
+              cleared: nc,
+              path: [...state.path, { word: w, col }],
+            });
+          }
+        }
       }
     }
 
-    // 評分 + 去重 + 剪枝
-    const seen = new Map();
-    for (const c of candidates) {
-      c._score = scoreState(c.board, c.cleared, comboList);
-      const key = boardKey(c.board, c.cleared);
-      const existing = seen.get(key);
-      if (!existing || c._score > existing._score) {
-        seen.set(key, c);
-      }
-    }
-    const unique = [...seen.values()];
-    unique.sort((a, b) => b._score - a._score);
-    beam = unique.slice(0, BEAM_WIDTH);
+    states = nextStates;
+    console.log(`[AI] 第 ${step + 1}/${fullSeq.length} 步 "${w}"：${states.size} 個唯一狀態`);
   }
 
-  // 提取最佳路徑 → 快取整場計畫
-  if (beam.length > 0 && beam[0].path.length > 0) {
-    autoPlan = beam[0].path;
+  // ── 從所有最終狀態中選出消掉最多 combo 的最優解 ──
+  let bestPath = null;
+  let bestCleared = -1;
+  let bestSpace = -1;
+
+  for (const state of states.values()) {
+    const cl = state.cleared.size;
+    // 計算剩餘空間（用於同分時 tiebreak）
+    let space = 0;
+    for (let c = 0; c < COLS; c++) {
+      const lr = simLandRow(state.board, c);
+      space += lr >= 0 ? lr + 1 : 0;
+    }
+
+    if (cl > bestCleared || (cl === bestCleared && space > bestSpace)) {
+      bestCleared = cl;
+      bestSpace = space;
+      bestPath = state.path;
+    }
+  }
+
+  const elapsed = (performance.now() - t0).toFixed(1);
+  console.log(
+    `[AI] 搜索完成：${elapsed}ms，最優解消除 ${bestCleared}/${comboList.length} 組 combo，` +
+    `探索 ${states.size} 個最終狀態`
+  );
+
+  // 快取整場計畫
+  if (bestPath && bestPath.length > 0) {
+    autoPlan = bestPath;
     autoPlanStep = 1; // 第 0 步是當前這步
     return autoPlan[0].col;
   }
