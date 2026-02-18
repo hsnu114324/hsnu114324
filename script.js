@@ -417,26 +417,25 @@ async function runAISearch(word) {
     }
   }
 
-  // ── Phase 1: 分析前 7 個字 ──
+  // ── 所有 combo 固定起始欄 = 0（全部靠左堆疊） ──
   const P1 = Math.min(7, totalSteps);
-  const comboFreq = new Uint8Array(numCombos);
-  for (let s = 0; s < P1; s++) {
-    const ci = wordToCi[seqIdx[s]];
-    if (ci >= 0) comboFreq[ci]++;
-  }
 
-  // 優先 combo = 前 7 中出現最多的
-  let priCI = -1, priMax = 0;
+  // 為每個 combo word 計算固定欄位（combo 起始欄 0 + 字在 combo 中的位置）
+  const wordFixedCol = new Int8Array(_iToW.length).fill(-1);
+  let comboMaxEnd = 0; // combo 佔用的最右欄 +1
   for (const ci of activeCI) {
-    if (comboFreq[ci] > priMax) { priMax = comboFreq[ci]; priCI = ci; }
-  }
-
-  // 優先 combo 起始欄：從 col 0 開始（放左邊）
-  const priStarts = [];
-  if (priCI >= 0) {
-    priStarts.push(0); // combo 放最左邊
-  } else {
-    priStarts.push(-1);
+    const combo = _cIdx[ci];
+    const clen = combo.length;
+    if (clen > comboMaxEnd) comboMaxEnd = clen;
+    for (let p = 0; p < clen; p++) {
+      const w = combo[p];
+      const fixedCol = 0 + p; // 所有 combo 從 col 0 開始
+      if (wordFixedCol[w] === -1) {
+        wordFixedCol[w] = fixedCol;
+      } else if (wordFixedCol[w] !== fixedCol) {
+        wordFixedCol[w] = -2; // 衝突（同一字在不同 combo 的不同位置）→ 不固定
+      }
+    }
   }
 
   // 更新最佳結果
@@ -478,85 +477,71 @@ async function runAISearch(word) {
     return false;
   }
 
-  setMessage(`🤖 優先組合 #${priCI >= 0 ? priCI + 1 : "無"}（${priStarts.length} 起始欄）`, true);
+  setMessage(`🤖 ${activeCI.length} 組 combo 固定左側（佔 col 0~${comboMaxEnd - 1}）`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
-  // ── 嘗試每個優先起始欄 ──
-  for (const psc of priStarts) {
-    if (myGen !== aiSearchGen) return;
+  // Phase 1: 啟發式模擬前 P1 步
+  const sf = f0.slice();
+  let cl = initCl;
+  const p1Path = [];
+  let p1Ok = true;
 
-    // Phase 1: 啟發式模擬前 P1 步
-    const sf = f0.slice();
-    let cl = initCl;
-    const p1Path = [];
-    let p1Ok = true;
+  for (let s = 0; s < P1; s++) {
+    const wIdx = seqIdx[s];
+    const ci = wordToCi[wIdx];
+    const fc = wordFixedCol[wIdx];
+    let col;
 
-    for (let s = 0; s < P1; s++) {
-      const wIdx = seqIdx[s];
-      const ci = wordToCi[wIdx];
-      const pos = wordToPos[wIdx];
-      let col;
-
-      if (ci === priCI && psc >= 0 && !(cl & (1 << priCI))) {
-        col = psc + pos; // 優先 combo → 指定位置
-      } else {
-        // Garbage → 避開優先 combo 佔用的欄位，從右往左找最空欄
-        const priLen = priCI >= 0 ? _cIdx[priCI].length : 0;
-        const priEnd = psc >= 0 ? psc + priLen : 0; // 優先 combo 佔 [psc, priEnd)
-        const priActive = priCI >= 0 && !(cl & (1 << priCI));
-        let mh = -1; col = COLS - 1;
+    if (fc >= 0 && ci >= 0 && !(cl & (1 << ci))) {
+      col = fc; // combo 字 → 固定欄位
+    } else {
+      // Garbage / 已消除 combo / 衝突字 → 避開 combo 佔用欄，從右往左找最空
+      let mh = -1; col = COLS - 1;
+      for (let c = COLS - 1; c >= 0; c--) {
+        const anyComboActive = popcount(cl) < numCombos;
+        if (anyComboActive && c < comboMaxEnd) continue;
+        let h = 0;
+        for (let r = 0; r < ROWS; r++) {
+          if (sf[r * COLS + c] === 0) h++; else break;
+        }
+        if (h > mh) { mh = h; col = c; }
+      }
+      // fallback：所有非 combo 欄都滿了
+      if (mh < 0) {
         for (let c = COLS - 1; c >= 0; c--) {
-          // 跳過優先 combo 佔用的欄位
-          if (priActive && c >= psc && c < priEnd) continue;
           let h = 0;
           for (let r = 0; r < ROWS; r++) {
             if (sf[r * COLS + c] === 0) h++; else break;
           }
           if (h > mh) { mh = h; col = c; }
         }
-        // 如果所有非 combo 欄都滿了，fallback 到任意最空欄
-        if (mh < 0) {
-          for (let c = COLS - 1; c >= 0; c--) {
-            let h = 0;
-            for (let r = 0; r < ROWS; r++) {
-              if (sf[r * COLS + c] === 0) h++; else break;
-            }
-            if (h > mh) { mh = h; col = c; }
-          }
-        }
       }
-
-      let lr = -1;
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (sf[r * COLS + col] === 0) { lr = r; break; }
-      }
-      if (lr < 0) { p1Ok = false; break; }
-
-      sf[lr * COLS + col] = wIdx;
-      const bCl = cl;
-      const bB = debugMode ? sf.slice() : null;
-      cl = simClear(sf, _cIdx, cl);
-      if (debugMode && bB && cl !== bCl) {
-        lastDebugSample =
-          `消除 (+${popcount(cl) - popcount(bCl)} 組)\n` +
-          `落: ${_iToW[wIdx]} → col ${col}\n` +
-          `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(sf)}`;
-      }
-      p1Path.push({ word: fullSeq[s], col });
     }
 
-    if (!p1Ok) continue;
-
-    // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
-    tryUpdate(sf, cl, [...p1Path]);
-
-    // Phase 1 涵蓋全部步驟
-    if (P1 >= totalSteps) {
-      if (bestCl === numCombos) break;
-      continue;
+    let lr = -1;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (sf[r * COLS + col] === 0) { lr = r; break; }
     }
+    if (lr < 0) { p1Ok = false; break; }
 
+    sf[lr * COLS + col] = wIdx;
+    const bCl = cl;
+    const bB = debugMode ? sf.slice() : null;
+    cl = simClear(sf, _cIdx, cl);
+    if (debugMode && bB && cl !== bCl) {
+      lastDebugSample =
+        `消除 (+${popcount(cl) - popcount(bCl)} 組)\n` +
+        `落: ${_iToW[wIdx]} → col ${col}\n` +
+        `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(sf)}`;
+    }
+    p1Path.push({ word: fullSeq[s], col });
+  }
+
+  // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
+  if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
+
+  if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
     // 偵錯：顯示 Phase 1 盤面（含落子標記）
     if (debugMode) {
       setDebugText(
@@ -606,16 +591,15 @@ async function runAISearch(word) {
       const wordStr = fullSeq[p2Start + d];
       const nextFrontier = new Map();
 
-      // 剪枝：屬於優先 combo 且尚未消除 → 只嘗試指定欄
+      // 剪枝：所有 combo 字有固定欄位 → 只嘗試該欄
       const wCi = wordToCi[wIdx];
-      const wPos = wordToPos[wIdx];
-      const determined = (wCi === priCI && psc >= 0 && wPos >= 0);
+      const fc = wordFixedCol[wIdx]; // >=0: 固定欄, -1: 無 combo, -2: 衝突
 
       for (const [, state] of frontier) {
-        // 如果該 combo 已在此狀態中被消除，就不再限制
-        const useDetermined = determined && !(state.cl & (1 << priCI));
-        const colStart = useDetermined ? (psc + wPos) : 0;
-        const colEnd = useDetermined ? (psc + wPos + 1) : COLS;
+        // combo 字且 combo 尚未消除 → 只嘗試固定欄；否則全搜索
+        const useDetermined = fc >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
+        const colStart = useDetermined ? fc : 0;
+        const colEnd = useDetermined ? fc + 1 : COLS;
 
         for (let col = colStart; col < colEnd; col++) {
           // 找落點
@@ -703,8 +687,7 @@ async function runAISearch(word) {
       if (myGen !== aiSearchGen) return;
     }
 
-    if (bestCl === numCombos) break;
-  }
+  } // end Phase 2
 
   if (myGen !== aiSearchGen) return;
 
