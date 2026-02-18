@@ -364,6 +364,8 @@ async function runAISearch(word) {
   aiComputing = true;
   buildWordIndex();
 
+  const t0 = performance.now();
+
   const fullSeq = [word, ...wordQueue];
   const seqIdx = Uint8Array.from(fullSeq.map(w => _wToI.get(w) || 0));
   const totalSteps = fullSeq.length;
@@ -556,9 +558,10 @@ async function runAISearch(word) {
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
+  const elapsed = (performance.now() - t0).toFixed(1);
   const method = enumerate ? `完整枚舉 ${totalLayouts}` : `隨機取樣 ${MAX_LAYOUTS}`;
   const result = perfect ? "全消 ✓" : `${bestCl}/${numCombos} 組`;
-  setMessage(`🤖 完成！${method} 版型 → ${result}`, true);
+  setMessage(`🤖 完成！${method} 版型 → ${result}（${elapsed} ms）`, true);
   aiComputing = false;
 }
 
