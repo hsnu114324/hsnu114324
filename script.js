@@ -56,6 +56,7 @@ const AUTO_MOVE_MS = 100;   // AI 每步間隔 ms
 let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
 let autoPlanStep = 0;        // 目前執行到第幾步
 let aiComputing = false;     // AI 正在計算中
+let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -310,20 +311,38 @@ function popcount(n) {
 
 function clearAutoPlan() { autoPlan = []; autoPlanStep = 0; }
 
+// 快速猜測：選最空的欄（O(ROWS×COLS)，<0.1ms）
+function quickGuessCol() {
+  let bestCol = Math.floor(COLS / 2), bestH = -1;
+  for (let c = 0; c < COLS; c++) {
+    let h = 0;
+    for (let r = 0; r < ROWS; r++) {
+      if (board[r][c] === null) h++; else break;
+    }
+    if (h > bestH) { bestH = h; bestCol = c; }
+  }
+  return bestCol;
+}
+
 function findBestColumn() {
   if (!activeBlock) return Math.floor(COLS / 2);
   const word = activeBlock.word;
+
+  // 快取命中 → O(1)
   if (autoPlan.length > 0 && autoPlanStep < autoPlan.length) {
     const planned = autoPlan[autoPlanStep];
     if (planned.word === word) { autoPlanStep++; return planned.col; }
     clearAutoPlan();
   }
+
+  // 啟動背景搜索 + 立刻回傳初步猜測（不凍結）
   runAISearch(word);
-  return -1;
+  return quickGuessCol();
 }
 
-// ── 非同步迭代式 DFS（完全避免 generator / GC）──
+// ── 非同步迭代式 DFS（一邊計算一邊移動，不凍結畫面）──
 async function runAISearch(word) {
+  const myGen = ++aiSearchGen;   // 世代號，用於取消舊搜索
   aiComputing = true;
   buildWordIndex();
 
@@ -342,20 +361,21 @@ async function runAISearch(word) {
   const TC = ROWS * COLS;
 
   setMessage(`🤖 搜索中...`, true);
-  await new Promise(r => requestAnimationFrame(r));
+  await new Promise(r => setTimeout(r, 0));
+  if (myGen !== aiSearchGen) return; // 已被取消
 
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
   const f0 = boardToFlat(board);
 
-  // ── O(1) needed check 預計算：wcMask[wIdx] = 哪些 combo 用到此字 ──
+  // ── O(1) needed check 預計算 ──
   const wcMask = new Uint32Array(_iToW.length);
   for (let ci = 0; ci < numCombos; ci++) {
     const combo = _cIdx[ci];
     for (let i = 0; i < combo.length; i++) wcMask[combo[i]] |= (1 << ci);
   }
 
-  // ── Upper-bound 剪枝預計算：ccFrom[step] = 從 step 起還可能完成的 combo ──
+  // ── Upper-bound 剪枝預計算 ──
   const ccFrom = new Uint32Array(totalSteps + 1);
   {
     const rem = new Uint16Array(_iToW.length);
@@ -373,37 +393,35 @@ async function runAISearch(word) {
     }
   }
 
-  // ── 預分配記憶體池（全部 typed array，零 GC）──
+  // ── 預分配記憶體池 ──
   const maxD = totalSteps + 1;
-  const pool = new Uint8Array(maxD * TC);   // board pool ~768 B
+  const pool = new Uint8Array(maxD * TC);
   pool.set(f0, 0);
-  const sCol = new Int8Array(maxD);          // -2=init, 0-5=next col, 6=done
-  const sCl  = new Uint32Array(maxD);        // cleared mask
-  const sP   = new Int8Array(maxD);          // path: col chosen (-1=skip)
+  const sCol = new Int8Array(maxD);
+  const sCl  = new Uint32Array(maxD);
+  const sP   = new Int8Array(maxD);
   sCol[0] = -2; sCl[0] = initCl;
 
-  // ── 雜湊表 1024 entries = 4 KB ──
-  const HT_MASK = 0x3FF;  // 1023
+  const HT_MASK = 0x3FF;
   const ht = new Uint32Array(1024);
 
   let bestCl = -1, bestSp = -1, bestPath = null;
   let ops = 0, depth = 0;
 
   while (depth >= 0) {
-    if (!autoMode) break;
+    if (myGen !== aiSearchGen) return; // 世代不符 → 取消
     const off = depth * TC;
     const cl = sCl[depth];
 
     if (sCol[depth] === -2) {
-      // ── 首次進入此深度 ──
       ops++;
       if (ops % 2000 === 0) {
         setMessage(`🤖 搜索中 ${ops} 步（最佳 ${Math.max(0, bestCl)}/${numCombos}）`, true);
         await new Promise(r => setTimeout(r, 0));
-        if (!autoMode) break;
+        if (myGen !== aiSearchGen) return; // yield 後再檢查一次
       }
 
-      // 內聯雜湊計算 + 去重（省掉函式呼叫開銷）
+      // 內聯雜湊去重
       let h = 0x811c9dc5;
       h = Math.imul(h ^ (depth * 397), 0x01000193);
       for (let i = off, e = off + TC; i < e; i++) h = Math.imul(h ^ pool[i], 0x01000193);
@@ -432,24 +450,27 @@ async function runAISearch(word) {
           for (let d = 0; d < totalSteps; d++)
             if (sP[d] >= 0) path.push({ word: fullSeq[d], col: sP[d] });
           bestPath = path;
+          // ⬇ 即時更新目標欄：搜索中也能移動方塊
+          if (myGen === aiSearchGen && autoMode && path.length > 0) {
+            autoTargetCol = path[0].col;
+          }
         }
         depth--; continue;
       }
 
-      // Upper-bound 剪枝：若最好情況也不超過已知最優 → 剪掉
+      // Upper-bound 剪枝
       if (popcount(cl | ccFrom[depth]) <= bestCl) { depth--; continue; }
 
       // O(1) needed check
       const wIdx = seqIdx[depth];
       if ((wcMask[wIdx] & ~cl) === 0) {
-        // 此字已無需要 → 跳過，棋盤不變
         const nx = (depth + 1) * TC;
         pool.copyWithin(nx, off, off + TC);
         sCl[depth + 1] = cl; sCol[depth + 1] = -2; sP[depth] = -1;
-        sCol[depth] = COLS; // 標記完成
+        sCol[depth] = COLS;
         depth++; continue;
       }
-      sCol[depth] = 0; // 從欄 0 開始嘗試
+      sCol[depth] = 0;
     }
 
     // ── 嘗試下一欄 ──
@@ -457,17 +478,14 @@ async function runAISearch(word) {
     const wIdx = seqIdx[depth];
     while (sCol[depth] < COLS) {
       const col = sCol[depth]++;
-      // 內聯 landing row
       let lr = -1;
       for (let r = ROWS - 1; r >= 0; r--)
         if (pool[off + r * COLS + col] === 0) { lr = r; break; }
-      if (lr < 0) continue; // 欄滿
+      if (lr < 0) continue;
 
-      // 複製棋盤到下一層（copyWithin = 原生 memcpy，零分配）
       const nx = (depth + 1) * TC;
       pool.copyWithin(nx, off, off + TC);
       pool[nx + lr * COLS + col] = wIdx;
-      // simClear 直接操作 subarray view（零分配）
       const nc = simClear(pool.subarray(nx, nx + TC), _cIdx, cl);
 
       sP[depth] = col; sCl[depth + 1] = nc; sCol[depth + 1] = -2;
@@ -479,12 +497,18 @@ async function runAISearch(word) {
         for (let d = 0; d < depth; d++)
           if (sP[d] >= 0) path.push({ word: fullSeq[d], col: sP[d] });
         bestCl = numCombos; bestPath = path;
-        depth = -1; // 結束搜索
+        if (myGen === aiSearchGen && autoMode && path.length > 0) {
+          autoTargetCol = path[0].col;
+        }
+        depth = -1;
       }
       break;
     }
-    if (!found) depth--; // 回溯
+    if (!found) depth--;
   }
+
+  // ── 搜索完成：只有本世代才寫入結果 ──
+  if (myGen !== aiSearchGen) return;
 
   if (bestPath && bestPath.length > 0) {
     autoPlan = bestPath;
@@ -502,10 +526,13 @@ function toggleAutoMode() {
   autoBtn.textContent = autoMode ? "手動" : "自動";
   autoBtn.classList.toggle("active", autoMode);
   if (autoMode && activeBlock) {
+    aiSearchGen++;          // 取消舊搜索
+    aiComputing = false;
     clearAutoPlan();
-    autoTargetCol = findBestColumn(); // 快取命中→同步；否則啟動非同步搜索
+    autoTargetCol = findBestColumn();
     autoLastMoveTime = 0;
   } else {
+    aiSearchGen++;          // 取消舊搜索
     autoTargetCol = -1;
     aiComputing = false;
     clearAutoPlan();
@@ -885,9 +912,9 @@ function gameLoop(ts) {
     return;
   }
 
-  // AI 計算中或動畫播放中 → 暫停掉落
-  if (aiComputing || animating) {
-    lastTick = ts; // 重置計時，避免恢復後瞬間掉一大段
+  // 動畫播放中 → 暫停掉落（AI 計算中不再凍結）
+  if (animating) {
+    lastTick = ts;
   } else {
     if (!lastTick) lastTick = ts;
     if (ts - lastTick >= FALL_MS) {
@@ -895,16 +922,19 @@ function gameLoop(ts) {
       lastTick = ts;
     }
 
-    // 自動模式：AI 移動 + 落下
+    // 自動模式：一邊計算一邊移動
     if (autoMode && activeBlock) {
       if (autoTargetCol < 0) autoTargetCol = findBestColumn();
       if (autoTargetCol >= 0 && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
         if (activeBlock.col !== autoTargetCol) {
+          // 向目標欄移動（計算中也能移動）
           moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
-        } else {
+        } else if (!aiComputing) {
+          // 已到目標欄且 AI 計算完成 → 落下
           hardDrop();
           autoTargetCol = -1;
         }
+        // 若到目標欄但 AI 仍在計算 → 等待（方塊自然掉落）
         autoLastMoveTime = ts;
       }
     }
@@ -929,6 +959,7 @@ function restartGame() {
   wordQueue = [];
   autoTargetCol = -1;
   autoLastMoveTime = 0;
+  aiSearchGen++;            // 取消舊搜索
   aiComputing = false;
   clearAutoPlan();
   scoreEl.textContent = "0";
