@@ -1105,13 +1105,18 @@ async function runAISearch(word) {
         const p = pruneFrontier(0.75);  // 輕度：保留 75%
         if (p > 0) stepEvent += (stepEvent ? " " : "") + `✂剪枝(60%) -${p}態`;
       }
-      // ── 記憶體壓縮：重置池，只保留 frontier + 前綴路徑 ──
-      // 決策已存在 autoPlan 中，壓縮後可繼續搜索
-      if (bfsPool.count / BFS_POOL_MAX > 0.50 && bfsPool.count > bfsPool.fALen * 2) {
+      // ── 記憶體壓縮 + 每 7 步決策入 Q ──
+      // 每 7 步 BFS 強制壓縮：決策已由 tryUpdate 寫入 autoPlan，
+      // 壓縮後釋放記憶體，讓下一輪 7 步可用完整池空間
+      const isChunkEnd = ((d + 1) % 7 === 0);
+      const needCompress = isChunkEnd
+        || (bfsPool.count / BFS_POOL_MAX > 0.50 && bfsPool.count > bfsPool.fALen * 2);
+      if (needCompress && bfsPool.count > bfsPool.fALen) {
         const compacted = compactPoolToFrontier();
         if (compacted > 0) {
-          stepEvent += (stepEvent ? " " : "") + `🗜️壓縮-${compacted}態`;
-          poolFull = false; // 池已清理，可繼續搜索
+          const tag = isChunkEnd ? `📦決策入Q` : `🗜️壓縮`;
+          stepEvent += (stepEvent ? " " : "") + `${tag}-${compacted}態`;
+          poolFull = false;
         }
       }
       if (poolFull) stepEvent += (stepEvent ? " " : "") + "⚠池滿";
@@ -1564,14 +1569,12 @@ function gameLoop(ts) {
       lastTick = ts;
     }
 
-    // 自動模式：只做水平移動，不加速掉落，所有時間用於未來決策計算
+    // 自動模式：只做水平移動，完全不加速，所有掉落時間留給 BFS 計算
     if (autoMode && activeBlock) {
       if (autoTargetCol < 0) autoTargetCol = findBestColumn();
-      if (autoTargetCol >= 0 && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
-        if (activeBlock.col !== autoTargetCol) {
-          moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
-        }
-        // 到目標欄後完全依靠正常掉落速度，爭取最大計算時間
+      if (autoTargetCol >= 0 && activeBlock.col !== autoTargetCol
+          && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
+        moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
         autoLastMoveTime = ts;
       }
     }
