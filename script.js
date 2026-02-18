@@ -492,20 +492,10 @@ async function runAISearch(word) {
     const lines = [];
     lines.push("═══ BFS 搜索狀態 ═══");
 
-    // combo 固定資訊
-    const fixedInfoArr = [];
-    try {
-      if (fixedSet && fixedSet.size > 0) {
-        for (const ci of fixedSet) {
-          const name = _cIdx[ci].map(w => _iToW[w]).join(",");
-          fixedInfoArr.push(`#${ci + 1}(${name})`);
-        }
-      }
-    } catch (e) { /* fixedSet 尚未定義 */ }
-    if (fixedInfoArr.length) lines.push("固定: " + fixedInfoArr.join(" "));
-    else if (priCI >= 0) {
+    // combo 固定資訊（僅 Phase 1 固定的 priCI）
+    if (priCI >= 0) {
       const name = _cIdx[priCI].map(w => _iToW[w]).join(",");
-      lines.push("優先: #" + (priCI + 1) + "(" + name + ") → col 0~" + (comboMaxEnd - 1));
+      lines.push("固定: #" + (priCI + 1) + "(" + name + ") → col 0~" + (comboMaxEnd - 1));
     }
 
     // 找出 bar chart 的最大值（用於縮放）
@@ -537,13 +527,7 @@ async function runAISearch(word) {
     }
 
     lines.push("─".repeat(60));
-    // 固定狀態
-    let fixSummary = "";
-    try {
-      if (fixedSet && fixedSet.size > 0) {
-        fixSummary = `  固定: ${fixedSet.size}/${activeCI.length}組`;
-      }
-    } catch (e) {}
+    const fixSummary = priCI >= 0 ? `  固定: #${priCI + 1}` : "";
     lines.push(`最佳: ${bestCl}/${numCombos}${fixSummary}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
 
     // ── Phase1 前 7 步落點盤面 ──
@@ -732,53 +716,15 @@ async function runAISearch(word) {
       buildDebugDiagram();
     }
 
-    // ── Phase 2: 全搜索 BFS + 漸進剪枝 ──
-    // 固定 combo 字只嘗試固定欄，其餘字嘗試所有欄（全搜索）
-    // 每消除一組 combo 後固定下一組 + 主動清理記憶體
+    // ── Phase 2: 全搜索 BFS ──
+    // Phase 1 固定的 combo 字只嘗試固定欄，其餘字嘗試所有欄（全搜索）
+    // 消除新 combo 時主動清理落後狀態，縮小記憶體
     // Phase 2 在 Phase 1 方塊掉落期間即開始計算（偷跑）
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
     const MAX_STATES = 500000;
 
-    // 動態固定欄位表（隨 combo 消除逐步擴展）
-    const dynFixed = wordFixedCol.slice();
-    const fixedSet = new Set(); // 已固定的 combo index
-    if (priCI >= 0) fixedSet.add(priCI);
     let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
-    // 追蹤所有已固定 combo 佔用的最右欄 +1（用於 pruneFrontier 判斷堵死）
-    let fixedMaxEnd = comboMaxEnd;
-
-    // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定；回傳新固定的 combo index（-1=無）
-    function fixNextCombo(fromStep) {
-      const freq = new Uint8Array(numCombos);
-      for (let s = fromStep; s < totalSteps; s++) {
-        const ci2 = wordToCi[seqIdx[s]];
-        if (ci2 >= 0 && !fixedSet.has(ci2)) freq[ci2]++;
-      }
-      let nextCI = -1, nextMax = 0;
-      for (const ci2 of activeCI) {
-        if (!fixedSet.has(ci2) && freq[ci2] > nextMax) {
-          nextMax = freq[ci2]; nextCI = ci2;
-        }
-      }
-      if (nextCI >= 0) {
-        fixedSet.add(nextCI);
-        const combo = _cIdx[nextCI];
-        for (let p = 0; p < combo.length; p++) {
-          if (dynFixed[combo[p]] === -1) dynFixed[combo[p]] = p;
-        }
-        // 更新佔用欄位範圍
-        if (combo.length > fixedMaxEnd) fixedMaxEnd = combo.length;
-        if (debugMode) {
-          const name = combo.map(w => _iToW[w]).join(",");
-          setDebugText(
-            `新剪枝: combo #${nextCI + 1}（${name}）固定 col 0~${combo.length - 1}\n` +
-            `已固定 ${fixedSet.size}/${activeCI.length} 組，combo 佔用 col 0~${fixedMaxEnd - 1}`
-          );
-        }
-      }
-      return nextCI;
-    }
 
     // ── 主動清理 frontier：移除落後或被堵死的狀態 ──
     function pruneFrontier() {
@@ -787,11 +733,10 @@ async function runAISearch(word) {
         const sc = popcount(state.cl);
         // 1) 落後超過 1 個 combo → 淘汰（不可能追上最佳）
         if (sc < prevBestCleared - 1) { keysToRemove.push(key); continue; }
-        // 2) 檢查已固定 combo 的欄位是否被堵死
-        let blocked = false;
-        for (const ci of fixedSet) {
-          if (state.cl & (1 << ci)) continue; // 此 combo 已消除，不用檢查
-          const combo = _cIdx[ci];
+        // 2) 檢查 Phase 1 固定的 combo 欄位是否被堵死
+        if (priCI >= 0 && !(state.cl & (1 << priCI))) {
+          const combo = _cIdx[priCI];
+          let blocked = false;
           for (let p = 0; p < combo.length; p++) {
             let hasSpace = false;
             for (let r = 0; r < ROWS; r++) {
@@ -799,9 +744,8 @@ async function runAISearch(word) {
             }
             if (!hasSpace) { blocked = true; break; }
           }
-          if (blocked) break;
+          if (blocked) { keysToRemove.push(key); continue; }
         }
-        if (blocked) keysToRemove.push(key);
       }
       for (const key of keysToRemove) frontier.delete(key);
       return keysToRemove.length;
@@ -843,9 +787,9 @@ async function runAISearch(word) {
       const wordStr = fullSeq[p2Start + d];
       const nextFrontier = new Map();
 
-      // 剪枝：已固定 combo 的字 → 只嘗試固定欄；其他字全搜索
+      // Phase 1 固定的 combo 字 → 只嘗試固定欄；其他字全搜索
       const wCi = wordToCi[wIdx];
-      const fc2 = dynFixed[wIdx]; // >=0: 固定欄, -1: 未固定
+      const fc2 = wordFixedCol[wIdx]; // >=0: Phase1 固定欄, -1: 未固定
 
       let statesDone = 0; // 本步已處理的狀態數
       const totalInFrontier = frontier.size;
@@ -930,21 +874,16 @@ async function runAISearch(word) {
         tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
       }
 
-      // ── 漸進剪枝：如果最佳狀態消除了新的 combo → 固定下一組 + 主動清理 frontier ──
+      // ── 消除檢測：如果最佳狀態消除了新的 combo → 主動清理 frontier ──
       let stepPruned = 0;
       let stepEvent = "";
       if (stepBestCl > prevBestCleared) {
         const clDelta = stepBestCl - prevBestCleared;
         prevBestCleared = stepBestCl;
-        const newCI = fixNextCombo(p2Start + d + 1);
         // 主動清理：移除落後 / 被堵死的狀態，縮小記憶體
         stepPruned = pruneFrontier();
         peakStates = Math.max(peakStates, frontier.size);
         stepEvent = `★消除+${clDelta}`;
-        if (newCI >= 0) {
-          const cname = _cIdx[newCI].map(w => _iToW[w]).join(",");
-          stepEvent += ` 固定#${newCI + 1}`;
-        }
         if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
 
@@ -977,7 +916,7 @@ async function runAISearch(word) {
           step: P1 + d + 1, word: _iToW[wIdx],
           inSize: totalInFrontier, outSize: frontier.size,
           dedup: Math.max(0, dedupCount), pruned: stepPruned + capPruned,
-          cleared: stepBestCl, fixed: fixedSet.size,
+          cleared: stepBestCl, fixed: priCI >= 0 ? 1 : 0,
           mem: estimateMemoryStr(frontier.size),
           event: stepEvent || (isCombo ? "combo" : "")
         });
