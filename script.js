@@ -375,7 +375,7 @@ async function runAISearch(word) {
 
   const totalSteps = fullSeq.length;
   setMessage(`🤖 計算中 0/${totalSteps} 步...`, true);
-  await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出訊息
+  await new Promise((r) => requestAnimationFrame(r)); // 等瀏覽器畫出訊息
 
   // clearedCombos → 位元遮罩
   let initCl = 0;
@@ -427,11 +427,9 @@ async function runAISearch(word) {
 
     states = nextStates;
 
-    // 更新進度 + yield 給瀏覽器
+    // 每一步都更新進度 + 等瀏覽器重繪
     setMessage(`🤖 計算中 ${step + 1}/${totalSteps} 步（${states.size} 狀態）...`, true);
-    if ((step & 3) === 0) {
-      await new Promise((r) => setTimeout(r, 0));
-    }
+    await new Promise((r) => requestAnimationFrame(r));
   }
 
   // ── 從所有最終狀態選最優解 ──
