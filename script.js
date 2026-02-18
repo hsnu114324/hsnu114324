@@ -504,14 +504,15 @@ async function runAISearch(word) {
     const barMax = 20; // bar 最大字元寬度
 
     // 表頭
-    lines.push("步  字       分支圖                  入→出    事件");
-    lines.push("─".repeat(60));
+    lines.push("步  字       分支圖                  入→出      記憶體    事件");
+    lines.push("─".repeat(72));
 
     for (const s of debugSteps) {
       const barLen = Math.max(1, Math.round(s.outSize / maxSize * barMax));
       const bar = "█".repeat(barLen) + "░".repeat(barMax - barLen);
       const wordStr = (s.word || "?").padEnd(8).slice(0, 8);
-      const sizeStr = `${s.inSize}→${s.outSize}`.padEnd(10);
+      const sizeStr = `${s.inSize}→${s.outSize}`.padEnd(12);
+      const memStr = (s.mem || "").padEnd(8);
 
       let event = "";
       if (s.event) event = s.event;
@@ -523,10 +524,10 @@ async function runAISearch(word) {
       }
 
       const stepStr = String(s.step).padStart(2);
-      lines.push(`${stepStr}  ${wordStr} [${bar}] ${sizeStr} ${event}`);
+      lines.push(`${stepStr}  ${wordStr} [${bar}] ${sizeStr} ${memStr} ${event}`);
     }
 
-    lines.push("─".repeat(60));
+    lines.push("─".repeat(72));
     const fixSummary = priCI >= 0 ? `  固定: #${priCI + 1}` : "";
     lines.push(`最佳: ${bestCl}/${numCombos}${fixSummary}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
 
@@ -694,7 +695,7 @@ async function runAISearch(word) {
       debugSteps.push({
         step: s + 1, word: _iToW[wIdx], inSize: 1, outSize: 1,
         dedup: 0, pruned: 0, cleared: popcount(cl), fixed: 0,
-        mem: "P1", event: ev
+        mem: estimateMemoryStr(1), event: ev
       });
     }
     p1Path.push({ word: fullSeq[s], col });
