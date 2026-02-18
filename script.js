@@ -817,6 +817,9 @@ async function runAISearch(word) {
       return -1; // 雜湊表滿（不應發生）
     }
 
+    // ── 壓縮前綴路徑（compactPool 後，根節點的完整路徑存在這裡）──
+    let compactedPrefixes = new Map();
+
     function poolPath(stateIdx) {
       const moves = [];
       let idx = stateIdx;
@@ -825,6 +828,9 @@ async function runAISearch(word) {
         idx = bfsPool.parentIdx[idx];
       }
       moves.reverse();
+      // 如果此根節點是壓縮後重建的，使用其前綴路徑
+      const prefix = compactedPrefixes.get(idx);
+      if (prefix) return [...prefix, ...moves];
       return [...p1Path, ...moves];
     }
 
@@ -833,6 +839,68 @@ async function runAISearch(word) {
       const pct = Math.round(bfsPool.count / BFS_POOL_MAX * 100);
       if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)}MB (${pct}%)`;
       return `${(bytes / 1024).toFixed(0)}KB (${pct}%)`;
+    }
+
+    // ── 池壓縮：淘汰弱狀態、重置池、繼續搜索 ──
+    const POOL_COMPACT_THRESHOLD = 0.75; // 75% 使用率時觸發預防性壓縮
+    const POOL_COMPACT_KEEP = 0.5;       // 保留前 50% 最佳狀態
+
+    function compactPool() {
+      const fLen = bfsPool.fALen;
+      if (fLen <= 1) return { freed: 0, before: fLen, after: fLen };
+
+      // 評分：消除數 * 10000 + 剩餘空間
+      const scored = new Array(fLen);
+      for (let i = 0; i < fLen; i++) {
+        const idx = bfsPool.frontierA[i];
+        const cleared = popcount(bfsPool.cl[idx]);
+        let space = 0;
+        const base = idx * TC;
+        for (let c = 0; c < COLS; c++)
+          for (let r = ROWS - 1; r >= 0; r--)
+            if (bfsPool.boards[base + r * COLS + c] === 0) { space += r + 1; break; }
+        scored[i] = { i, idx, score: cleared * 10000 + space };
+      }
+
+      // 依分數排序，保留前 50%
+      scored.sort((a, b) => b.score - a.score);
+      const keepCount = Math.max(1, Math.floor(fLen * POOL_COMPACT_KEEP));
+
+      // 儲存存活狀態的資料與完整路徑
+      const survivors = new Array(keepCount);
+      for (let k = 0; k < keepCount; k++) {
+        const { idx } = scored[k];
+        survivors[k] = {
+          board: bfsPool.boards.slice(idx * TC, (idx + 1) * TC),
+          cl:       bfsPool.cl[idx],
+          firstCol: bfsPool.firstCol[idx],
+          path:     poolPath(idx),
+        };
+      }
+
+      const beforeCount = bfsPool.count;
+
+      // 重置池（清空所有狀態和雜湊表）
+      resetBFSPool();
+      compactedPrefixes.clear();
+
+      // 重新插入存活狀態為新的根節點
+      for (let i = 0; i < keepCount; i++) {
+        const s = survivors[i];
+        const newIdx = bfsPool.count;
+        bfsPool.boards.set(s.board, newIdx * TC);
+        bfsPool.cl[newIdx]       = s.cl;
+        bfsPool.firstCol[newIdx] = s.firstCol;
+        bfsPool.parentIdx[newIdx] = -1;
+        bfsPool.moveWord[newIdx]  = 0;
+        bfsPool.moveCol[newIdx]   = 0;
+        bfsPool.count++;
+        compactedPrefixes.set(newIdx, s.path);
+        bfsPool.frontierA[i] = newIdx;
+      }
+      bfsPool.fALen = keepCount;
+
+      return { freed: beforeCount - bfsPool.count, before: fLen, after: keepCount };
     }
 
     // 插入根狀態（Phase 1 結束盤面）
@@ -853,7 +921,7 @@ async function runAISearch(word) {
     const YIELD_INTERVAL = 5000;
     const tempBoard = new Uint8Array(TC);
 
-    for (let d = 0; d < p2Len && !perfect && !poolFull; d++) {
+    for (let d = 0; d < p2Len && !perfect; d++) {
       if (myGen !== aiSearchGen) return;
 
       const wIdx = seqIdx[p2Start + d];
@@ -979,7 +1047,13 @@ async function runAISearch(word) {
         stepEvent = `★消除+${clDelta}`;
         if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
-      if (poolFull) stepEvent += (stepEvent ? " " : "") + "⚠池滿";
+      // ── 池壓縮：池滿或超過閾值時，淘汰弱狀態、重置池、繼續搜索 ──
+      if (poolFull || bfsPool.count > BFS_POOL_MAX * POOL_COMPACT_THRESHOLD) {
+        const tag = poolFull ? "⚠池滿" : "⚡閾值";
+        const cr = compactPool();
+        stepEvent += (stepEvent ? " " : "") + `♻壓縮(${tag}) ${cr.before}→${cr.after}態`;
+        poolFull = false;
+      }
 
       // 偵錯
       if (debugMode) {
