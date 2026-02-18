@@ -25,7 +25,6 @@ const progressEl = document.getElementById("progress");
 const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restartBtn");
 const autoBtn = document.getElementById("autoBtn");
-const debugBtn = document.getElementById("debugBtn");
 const debugBoxEl = document.getElementById("debugBox");
 const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
@@ -57,7 +56,8 @@ let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
 let autoPlanStep = 0;        // 目前執行到第幾步
 let aiComputing = false;     // AI 正在計算中
 let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
-let debugMode = false;
+let debugMode = localStorage.getItem("word_tetris_debug_v1") === "1";
+let blockCount = 0;  // 已落下的方塊數
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -182,9 +182,8 @@ function setDebugText(text) {
   debugBoxEl.textContent = text || "";
 }
 
-function toggleDebugMode() {
-  debugMode = !debugMode;
-  if (debugBtn) debugBtn.classList.toggle("active", debugMode);
+function initDebugMode() {
+  debugMode = localStorage.getItem("word_tetris_debug_v1") === "1";
   if (debugBoxEl) {
     debugBoxEl.classList.toggle("show", debugMode);
     if (!debugMode) debugBoxEl.textContent = "";
@@ -1287,6 +1286,12 @@ function spawnBlock() {
     color: nextWordColor(word),
   };
 
+  blockCount++;
+  // 第 7 子後才開放自動按鈕
+  if (blockCount >= 7 && autoBtn.disabled) {
+    autoBtn.disabled = false;
+  }
+
   if (board[0][activeBlock.col] !== null) {
     running = false;
     setMessage("遊戲結束：方塊堆到最上方", false);
@@ -1701,10 +1706,17 @@ function restartGame() {
   nextWordQueue = [];
   autoTargetCol = -1;
   autoLastMoveTime = 0;
+  blockCount = 0;
   aiSearchGen++;            // 取消舊搜索
   aiComputing = false;
   clearAutoPlan();
-  if (debugMode) setDebugText("");
+  // 重讀偵錯模式（可能在設定頁面改過）
+  initDebugMode();
+  // 重置自動模式
+  autoMode = false;
+  autoBtn.textContent = "自動";
+  autoBtn.classList.remove("active");
+  autoBtn.disabled = true;  // 第 7 子後才開放
   scoreEl.textContent = "0";
   updateProgress();
 

@@ -1,5 +1,6 @@
 const STORAGE_KEY = "word_tetris_rows_v1";
 const PICK_KEY = "word_tetris_pick_count_v1";
+const DEBUG_KEY = "word_tetris_debug_v1";
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
@@ -91,6 +92,7 @@ const saveBtn = document.getElementById("saveBtn");
 const resetBtn = document.getElementById("resetBtn");
 const pickCountInput = document.getElementById("pickCount");
 const totalCountEl = document.getElementById("totalCount");
+const debugToggle = document.getElementById("debugToggle");
 
 let rows = loadRows();
 let pickCount = loadPickCount();
@@ -247,6 +249,7 @@ function saveRows() {
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
   localStorage.setItem(PICK_KEY, String(pickCount));
+  localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
 
   const pickText = pickCount === 0
     ? "全部"
@@ -272,5 +275,6 @@ newRowInput.addEventListener("keydown", (event) => {
 
 preventZoom();
 pickCountInput.value = pickCount;
+debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
 renderRows();
 

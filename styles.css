@@ -85,15 +85,12 @@ body {
   border-color: #e47c3a;
 }
 
-#debugBtn {
-  background: #3a446f;
-  border-color: #6f7ebf;
-  min-width: 40px;
-}
-
-#debugBtn.active {
-  background: #5e4b16;
-  border-color: #b6953f;
+#autoBtn:disabled {
+  background: #2a2e3e;
+  border-color: #444;
+  color: #666;
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .score-chip {
