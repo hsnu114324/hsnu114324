@@ -467,7 +467,14 @@ async function runAISearch(word) {
     }
 
     lines.push("─".repeat(60));
-    lines.push(`最佳: ${bestCl}/${numCombos}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
+    // 固定狀態
+    let fixSummary = "";
+    try {
+      if (fixedSet && fixedSet.size > 0) {
+        fixSummary = `  固定: ${fixedSet.size}/${activeCI.length}組`;
+      }
+    } catch (e) {}
+    lines.push(`最佳: ${bestCl}/${numCombos}${fixSummary}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
 
     // 最佳盤面
     if (bestBoard) {
@@ -551,7 +558,8 @@ async function runAISearch(word) {
   }
 
   const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
-  setMessage(`🤖 優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`, true);
+  setMessage(`🤖 Phase1 計算中...`, true);
+  if (debugMode) setDebugText(`優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -812,9 +820,8 @@ async function runAISearch(word) {
         statesDone++;
         if (statesDone % YIELD_INTERVAL === 0) {
           const pct = Math.round(statesDone / totalInFrontier * 100);
-          const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";
           const mem = estimateMemoryStr(nextFrontier.size);
-          setMessage(`🤖 步${d + 1}/${p2Len} ${pct}%（→${nextFrontier.size}態 ${mem}，${fixedInfo}，最佳${bestCl}/${numCombos}）`, true);
+          setMessage(`🤖 步${d + 1}/${p2Len} ${pct}% | ${nextFrontier.size}態 ${mem} | 最佳${bestCl}/${numCombos}`, true);
           await new Promise(r => setTimeout(r, 0));
           if (myGen !== aiSearchGen) return;
         }
@@ -900,9 +907,8 @@ async function runAISearch(word) {
         buildDebugDiagram(d + 1, stepBestState ? stepBestState.board : null);
       }
 
-      const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";
       const mem = estimateMemoryStr(frontier.size);
-      setMessage(`🤖 步${d + 1}/${p2Len}（${frontier.size}態 ${mem}，${fixedInfo}，最佳${bestCl}/${numCombos}）`, true);
+      setMessage(`🤖 步${d + 1}/${p2Len} | ${frontier.size}態 ${mem} | 最佳${bestCl}/${numCombos}`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
@@ -921,7 +927,13 @@ async function runAISearch(word) {
 
   const elapsed = (performance.now() - t0).toFixed(1);
   const peakMem = estimateMemoryStr(peakStates);
-  setMessage(`🤖 完成！${bestCl}/${numCombos} 組（${ops}節點，峰值${peakStates}態 ${peakMem}，${elapsed}ms）`, true);
+  setMessage(`🤖 完成 ${bestCl}/${numCombos} | 峰值${peakStates}態 ${peakMem} | ${elapsed}ms`, true);
+  if (debugMode) {
+    buildDebugDiagram(0, bestPath.length > 0 ? null : null);
+    // 在圖表末尾追加完成資訊
+    const cur = debugBoxEl.textContent || "";
+    setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms, 峰值${peakStates}態`);
+  }
   aiComputing = false;
 }
 
