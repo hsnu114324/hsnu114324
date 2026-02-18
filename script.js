@@ -828,9 +828,18 @@ async function runAISearch(word) {
         idx = bfsPool.parentIdx[idx];
       }
       moves.reverse();
-      // 如果此根節點是壓縮後重建的，使用其前綴路徑
-      const prefix = compactedPrefixes.get(idx);
-      if (prefix) return [...prefix, ...moves];
+      // 如果此根節點是壓縮後重建的，從 Int8Array cols 還原完整路徑
+      const prefixCols = compactedPrefixes.get(idx);
+      if (prefixCols) {
+        const result = new Array(prefixCols.length + moves.length);
+        for (let i = 0; i < prefixCols.length; i++) {
+          result[i] = { word: fullSeq[i] || "?", col: prefixCols[i] };
+        }
+        for (let i = 0; i < moves.length; i++) {
+          result[prefixCols.length + i] = moves[i];
+        }
+        return result;
+      }
       return [...p1Path, ...moves];
     }
 
@@ -849,9 +858,12 @@ async function runAISearch(word) {
       const fLen = bfsPool.fALen;
       if (fLen <= 1) return { freed: 0, before: fLen, after: fLen };
 
-      // 評分：消除數 * 10000 + 剩餘空間
-      const scored = new Array(fLen);
+      // ── 第 1 步：評分（只用 typed array，不建 JS 物件）──
+      const scores = new Float64Array(fLen);
+      // 用 sortIdx 記錄排序後的 frontier 索引
+      const sortIdx = new Int32Array(fLen);
       for (let i = 0; i < fLen; i++) {
+        sortIdx[i] = i;
         const idx = bfsPool.frontierA[i];
         const cleared = popcount(bfsPool.cl[idx]);
         let space = 0;
@@ -859,48 +871,78 @@ async function runAISearch(word) {
         for (let c = 0; c < COLS; c++)
           for (let r = ROWS - 1; r >= 0; r--)
             if (bfsPool.boards[base + r * COLS + c] === 0) { space += r + 1; break; }
-        scored[i] = { i, idx, score: cleared * 10000 + space };
+        scores[i] = cleared * 10000 + space;
       }
 
-      // 依分數排序，保留前 50%
-      scored.sort((a, b) => b.score - a.score);
+      // 依分數排序（降序），保留前 50%
+      sortIdx.sort((a, b) => scores[b] - scores[a]);
       const keepCount = Math.max(1, Math.floor(fLen * POOL_COMPACT_KEEP));
 
-      // 儲存存活狀態的資料與完整路徑
-      const survivors = new Array(keepCount);
+      // ── 第 2 步：用 typed array 暫存存活狀態的盤面資料 ──
+      // 只拷貝 board + cl + firstCol，路徑用壓縮格式（Int8Array of cols）
+      const tmpBoards = new Uint8Array(keepCount * TC);
+      const tmpCl = new Uint32Array(keepCount);
+      const tmpFC = new Int8Array(keepCount);
+      // 路徑壓縮：只存每步的 col (Int8)，word 可從 fullSeq 還原
+      const tmpPaths = new Array(keepCount); // 路徑仍需 JS 陣列，但用輕量格式
+
       for (let k = 0; k < keepCount; k++) {
-        const { idx } = scored[k];
-        survivors[k] = {
-          board: bfsPool.boards.slice(idx * TC, (idx + 1) * TC),
-          cl:       bfsPool.cl[idx],
-          firstCol: bfsPool.firstCol[idx],
-          path:     poolPath(idx),
-        };
+        const fi = sortIdx[k];
+        const idx = bfsPool.frontierA[fi];
+        tmpBoards.set(bfsPool.boards.subarray(idx * TC, (idx + 1) * TC), k * TC);
+        tmpCl[k] = bfsPool.cl[idx];
+        tmpFC[k] = bfsPool.firstCol[idx];
+        // 壓縮路徑：只存 col 的 Int8Array（word 可從步驟順序還原）
+        tmpPaths[k] = compactPathCols(idx);
       }
 
       const beforeCount = bfsPool.count;
 
-      // 重置池（清空所有狀態和雜湊表）
+      // ── 第 3 步：重置池 ──
       resetBFSPool();
       compactedPrefixes.clear();
 
-      // 重新插入存活狀態為新的根節點
+      // ── 第 4 步：重新插入存活狀態 ──
       for (let i = 0; i < keepCount; i++) {
-        const s = survivors[i];
         const newIdx = bfsPool.count;
-        bfsPool.boards.set(s.board, newIdx * TC);
-        bfsPool.cl[newIdx]       = s.cl;
-        bfsPool.firstCol[newIdx] = s.firstCol;
+        bfsPool.boards.set(tmpBoards.subarray(i * TC, (i + 1) * TC), newIdx * TC);
+        bfsPool.cl[newIdx]        = tmpCl[i];
+        bfsPool.firstCol[newIdx]  = tmpFC[i];
         bfsPool.parentIdx[newIdx] = -1;
         bfsPool.moveWord[newIdx]  = 0;
         bfsPool.moveCol[newIdx]   = 0;
         bfsPool.count++;
-        compactedPrefixes.set(newIdx, s.path);
+        compactedPrefixes.set(newIdx, tmpPaths[i]);
         bfsPool.frontierA[i] = newIdx;
       }
       bfsPool.fALen = keepCount;
 
       return { freed: beforeCount - bfsPool.count, before: fLen, after: keepCount };
+    }
+
+    // 壓縮路徑：回傳 Int8Array（只存 col），記憶體極小
+    function compactPathCols(stateIdx) {
+      const cols = [];
+      let idx = stateIdx;
+      while (idx >= 0 && bfsPool.parentIdx[idx] >= 0) {
+        cols.push(bfsPool.moveCol[idx]);
+        idx = bfsPool.parentIdx[idx];
+      }
+      cols.reverse();
+      // 如果此根有前綴，拼接
+      const prefix = compactedPrefixes.get(idx);
+      if (prefix) {
+        const merged = new Int8Array(prefix.length + cols.length);
+        merged.set(prefix);
+        for (let i = 0; i < cols.length; i++) merged[prefix.length + i] = cols[i];
+        return merged;
+      }
+      // Phase 1 前綴 → 用 p1Path 的 col
+      const p1Cols = p1Path.map(m => m.col);
+      const merged = new Int8Array(p1Cols.length + cols.length);
+      for (let i = 0; i < p1Cols.length; i++) merged[i] = p1Cols[i];
+      for (let i = 0; i < cols.length; i++) merged[p1Cols.length + i] = cols[i];
+      return merged;
     }
 
     // 插入根狀態（Phase 1 結束盤面）
