@@ -27,6 +27,8 @@ const progressEl = document.getElementById("progress");
 const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restartBtn");
 const autoBtn = document.getElementById("autoBtn");
+const debugBtn = document.getElementById("debugBtn");
+const debugBoxEl = document.getElementById("debugBox");
 const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
@@ -57,6 +59,7 @@ let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
 let autoPlanStep = 0;        // 目前執行到第幾步
 let aiComputing = false;     // AI 正在計算中
 let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
+let debugMode = false;
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -174,6 +177,20 @@ function pickRandomCombos() {
 function setMessage(text, isOk = false) {
   messageEl.textContent = text;
   messageEl.classList.toggle("ok", isOk);
+}
+
+function setDebugText(text) {
+  if (!debugBoxEl) return;
+  debugBoxEl.textContent = text || "";
+}
+
+function toggleDebugMode() {
+  debugMode = !debugMode;
+  if (debugBtn) debugBtn.classList.toggle("active", debugMode);
+  if (debugBoxEl) {
+    debugBoxEl.classList.toggle("show", debugMode);
+    if (!debugMode) setDebugText("");
+  }
 }
 
 function createEmptyBoard() {
@@ -368,6 +385,20 @@ async function runAISearch(word) {
   let bestCl = popcount(initCl), bestSp = -1, bestPath = [];
   let ops = 0;
   let planInstalled = false;
+  let lastClearSample = "";
+
+  function flatToDebugText(flat) {
+    const rows = [];
+    for (let r = 0; r < ROWS; r++) {
+      const cols = [];
+      for (let c = 0; c < COLS; c++) {
+        const v = flat[r * COLS + c];
+        cols.push(v === 0 ? "." : String(v));
+      }
+      rows.push(cols.join(" "));
+    }
+    return rows.join("\n");
+  }
 
   // ── Stage 1: 找「組合最佳排法」→ 產生每個字的偏好欄位 ──
   function pickBestLayoutMap() {
@@ -511,6 +542,18 @@ async function runAISearch(word) {
       for (let i = 0; i < d; i++) if (sP[i] >= 0) path.push({ word: fullSeq[i], col: sP[i] });
       bestPath = path;
       if (autoMode && path.length > 0 && autoPlanStep <= 1) autoTargetCol = path[0].col;
+      if (debugMode) {
+        const nowBoard = flatToDebugText(pool.subarray(off, off + TC));
+        const firstMove = path[0] ? `${path[0].word}@${path[0].col}` : "-";
+        setDebugText(
+          `最佳更新\n` +
+          `深度: ${d}\n` +
+          `已消: ${cleared}/${numCombos}\n` +
+          `首步: ${firstMove}\n` +
+          `${lastClearSample ? `${lastClearSample}\n` : ""}` +
+          `當前盤面:\n${nowBoard}`,
+        );
+      }
     }
   }
 
@@ -568,8 +611,17 @@ async function runAISearch(word) {
 
         const nx = (depth + 1) * TC;
         pool.copyWithin(nx, off, off + TC);
+        const beforeClear = debugMode ? pool.slice(nx, nx + TC) : null;
         pool[nx + lr * COLS + col] = wIdx;
         const nc = simClear(pool.subarray(nx, nx + TC), _cIdx, cl);
+        if (debugMode && beforeClear && nc !== cl) {
+          const clearedDelta = popcount(nc) - popcount(cl);
+          lastClearSample =
+            `最近一次消除樣本 (+${clearedDelta} 組)\n` +
+            `落子: ${_iToW[wIdx]} -> col ${col}\n` +
+            `消前:\n${flatToDebugText(beforeClear)}\n` +
+            `消後:\n${flatToDebugText(pool.subarray(nx, nx + TC))}`;
+        }
 
         sP[depth] = col;
         sCl[depth + 1] = nc;
