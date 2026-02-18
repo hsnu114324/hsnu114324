@@ -382,6 +382,9 @@ async function runAISearch(word) {
   let lastDebugSample = "";
   let planInstalled = false;
 
+  // ── 偵錯：步驟追蹤 ──
+  const debugSteps = []; // [{step, word, inSize, outSize, dedup, pruned, cleared, fixed, mem, event}]
+
   function flatToDebugText(flat) {
     const lines = [];
     for (let r = 0; r < ROWS; r++) {
@@ -393,6 +396,72 @@ async function runAISearch(word) {
       lines.push(cs.join(" "));
     }
     return lines.join("\n");
+  }
+
+  function buildDebugDiagram(currentStep, bestBoard) {
+    if (!debugMode) return;
+    const lines = [];
+    lines.push("═══ BFS 搜索狀態 ═══");
+
+    // combo 固定資訊
+    const fixedInfoArr = [];
+    try {
+      if (fixedSet && fixedSet.size > 0) {
+        for (const ci of fixedSet) {
+          const name = _cIdx[ci].map(w => _iToW[w]).join(",");
+          fixedInfoArr.push(`#${ci + 1}(${name})`);
+        }
+      }
+    } catch (e) { /* fixedSet 尚未定義 */ }
+    if (fixedInfoArr.length) lines.push("固定: " + fixedInfoArr.join(" "));
+    else if (priCI >= 0) {
+      const name = _cIdx[priCI].map(w => _iToW[w]).join(",");
+      lines.push("優先: #" + (priCI + 1) + "(" + name + ") → col 0~" + (comboMaxEnd - 1));
+    }
+
+    // 找出 bar chart 的最大值（用於縮放）
+    let maxSize = 1;
+    for (const s of debugSteps) if (s.outSize > maxSize) maxSize = s.outSize;
+    const barMax = 20; // bar 最大字元寬度
+
+    // 表頭
+    lines.push("步  字       分支圖                  入→出    事件");
+    lines.push("─".repeat(60));
+
+    for (const s of debugSteps) {
+      const barLen = Math.max(1, Math.round(s.outSize / maxSize * barMax));
+      const bar = "█".repeat(barLen) + "░".repeat(barMax - barLen);
+      const wordStr = (s.word || "?").padEnd(8).slice(0, 8);
+      const sizeStr = `${s.inSize}→${s.outSize}`.padEnd(10);
+
+      let event = "";
+      if (s.event) event = s.event;
+      else {
+        const parts = [];
+        if (s.dedup > 0) parts.push(`去重${s.dedup}`);
+        if (s.pruned > 0) parts.push(`✂${s.pruned}`);
+        if (event === "" && parts.length) event = parts.join(" ");
+      }
+
+      const stepStr = String(s.step).padStart(2);
+      lines.push(`${stepStr}  ${wordStr} [${bar}] ${sizeStr} ${event}`);
+    }
+
+    lines.push("─".repeat(60));
+    lines.push(`最佳: ${bestCl}/${numCombos}  峰值: ${peakStates}態 ${estimateMemoryStr(peakStates)}`);
+
+    // 最佳盤面
+    if (bestBoard) {
+      lines.push("\n最佳盤面:");
+      lines.push(flatToDebugText(bestBoard));
+    }
+
+    // 最新消除樣本
+    if (lastDebugSample) {
+      lines.push("\n" + lastDebugSample);
+    }
+
+    setDebugText(lines.join("\n"));
   }
 
   // ── 活躍 combo 與字映射 ──
@@ -454,26 +523,8 @@ async function runAISearch(word) {
       if (!planInstalled) { autoPlanStep = 1; planInstalled = true; }
       if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
       if (debugMode) {
-        const fm = path[0] ? `${path[0].word}@c${path[0].col}` : "-";
-        // 模擬 Phase 1 盤面快照
-        const p1Snap = f0.slice();
-        let p1Cl = initCl;
-        for (let i = 0; i < Math.min(P1, path.length); i++) {
-          const m = path[i];
-          const wI = _wToI.get(m.word) || 0;
-          let lr2 = -1;
-          for (let r = ROWS - 1; r >= 0; r--) {
-            if (p1Snap[r * COLS + m.col] === 0) { lr2 = r; break; }
-          }
-          if (lr2 >= 0) p1Snap[lr2 * COLS + m.col] = wI;
-          p1Cl = simClear(p1Snap, _cIdx, p1Cl);
-        }
-        setDebugText(
-          `最佳: ${cleared}/${numCombos}\n首步: ${fm}\n` +
-          `Phase1(前${P1}步) 盤面:\n${flatToDebugText(p1Snap)}\n` +
-          `${lastDebugSample ? lastDebugSample + "\n" : ""}` +
-          `最終盤面:\n${flatToDebugText(finalBoard)}`
-        );
+        // tryUpdate 不直接 setDebugText，交給 buildDebugDiagram 統一顯示
+        buildDebugDiagram(0, finalBoard);
       }
       return cleared === numCombos;
     }
@@ -533,11 +584,23 @@ async function runAISearch(word) {
     const bCl = cl;
     const bB = debugMode ? sf.slice() : null;
     cl = simClear(sf, _cIdx, cl);
+    const newCleared = popcount(cl) - popcount(bCl);
     if (debugMode && bB && cl !== bCl) {
       lastDebugSample =
-        `消除 (+${popcount(cl) - popcount(bCl)} 組)\n` +
+        `消除 (+${newCleared} 組)\n` +
         `落: ${_iToW[wIdx]} → col ${col}\n` +
         `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(sf)}`;
+    }
+    // Phase 1 偵錯步驟
+    if (debugMode) {
+      const isCombo = fc >= 0 && ci >= 0;
+      let ev = isCombo ? `c${col}(combo)` : `c${col}(垃圾)`;
+      if (newCleared > 0) ev += ` ★消除+${newCleared}`;
+      debugSteps.push({
+        step: s + 1, word: _iToW[wIdx], inSize: 1, outSize: 1,
+        dedup: 0, pruned: 0, cleared: popcount(cl), fixed: 0,
+        mem: "P1", event: ev
+      });
     }
     p1Path.push({ word: fullSeq[s], col });
   }
@@ -546,7 +609,7 @@ async function runAISearch(word) {
   if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
 
   // 記憶體估算（每個狀態 ≈ board + key string + Map entry + linked list）
-  let peakStates = 0;
+  let peakStates = 1;
   function estimateMemoryStr(size) {
     const bytes = size * (TC * 3 + 300);
     if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + 'MB';
@@ -554,13 +617,9 @@ async function runAISearch(word) {
   }
 
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
-    // 偵錯：顯示 Phase 1 盤面（含落子標記）
+    // 偵錯：顯示 Phase 1 完成狀態
     if (debugMode) {
-      setDebugText(
-        `Phase1 完成（${P1} 步）\n` +
-        `Phase1 盤面:\n${flatToDebugText(sf)}\n` +
-        `→ Phase2 BFS 搜索中...`
-      );
+      buildDebugDiagram(0, sf);
     }
 
     // ── Phase 2: 漸進剪枝 BFS ──
@@ -743,6 +802,10 @@ async function runAISearch(word) {
       }
       if (perfect) break;
 
+      // 計算去重數：嘗試的組合數 vs 實際保留的狀態數
+      const rawBranches = totalInFrontier * (fc2 >= 0 ? 1 : COLS);
+      const dedupCount = rawBranches - nextFrontier.size;
+
       frontier = nextFrontier;
       peakStates = Math.max(peakStates, frontier.size);
 
@@ -765,22 +828,27 @@ async function runAISearch(word) {
       }
 
       // ── 漸進剪枝：如果最佳狀態消除了新的 combo → 固定下一組 + 主動清理 frontier ──
+      let stepPruned = 0;
+      let stepEvent = "";
       if (stepBestCl > prevBestCleared) {
+        const clDelta = stepBestCl - prevBestCleared;
         prevBestCleared = stepBestCl;
         const newCI = fixNextCombo(p2Start + d + 1);
         // 主動清理：移除落後 / 被堵死的狀態，縮小記憶體
-        const pruned = pruneFrontier();
+        stepPruned = pruneFrontier();
         peakStates = Math.max(peakStates, frontier.size);
-        if (debugMode && pruned > 0) {
-          setDebugText(
-            `剪枝清理: 移除 ${pruned} 個狀態，剩餘 ${frontier.size}（${estimateMemoryStr(frontier.size)}）\n` +
-            `已固定 ${fixedSet.size}/${activeCI.length} 組，最佳 ${bestCl}/${numCombos}`
-          );
+        stepEvent = `★消除+${clDelta}`;
+        if (newCI >= 0) {
+          const cname = _cIdx[newCI].map(w => _iToW[w]).join(",");
+          stepEvent += ` 固定#${newCI + 1}`;
         }
+        if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
 
       // 安全上限
+      let capPruned = 0;
       if (frontier.size > MAX_STATES) {
+        const beforeCap = frontier.size;
         const arr = [...frontier.entries()];
         arr.sort((a, b) => {
           const clA = popcount(a[1].cl), clB = popcount(b[1].cl);
@@ -795,6 +863,22 @@ async function runAISearch(word) {
           return spB - spA;
         });
         frontier = new Map(arr.slice(0, MAX_STATES));
+        capPruned = beforeCap - frontier.size;
+        stepEvent += (stepEvent ? " " : "") + `⚠截${capPruned}`;
+      }
+
+      // 偵錯：紀錄步驟
+      if (debugMode) {
+        const isCombo = fc2 >= 0;
+        debugSteps.push({
+          step: P1 + d + 1, word: _iToW[wIdx],
+          inSize: totalInFrontier, outSize: frontier.size,
+          dedup: Math.max(0, dedupCount), pruned: stepPruned + capPruned,
+          cleared: stepBestCl, fixed: fixedSet.size,
+          mem: estimateMemoryStr(frontier.size),
+          event: stepEvent || (isCombo ? "combo" : "")
+        });
+        buildDebugDiagram(d + 1, stepBestState ? stepBestState.board : null);
       }
 
       const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";

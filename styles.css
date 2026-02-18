@@ -166,10 +166,11 @@ button {
   border-radius: 8px;
   background: rgba(15, 18, 34, 0.7);
   color: #d6e2ff;
-  font-size: 0.62rem;
-  line-height: 1.25;
-  white-space: pre-wrap;
-  max-height: 145px;
+  font-family: "SF Mono", "Menlo", "Monaco", "Consolas", monospace;
+  font-size: 0.58rem;
+  line-height: 1.2;
+  white-space: pre;
+  max-height: 240px;
   overflow: auto;
 }
 
