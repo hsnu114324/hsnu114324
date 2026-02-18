@@ -429,16 +429,22 @@ async function runAISearch(word) {
   }
 
   // ── 圖示盤面（box-drawing 格線）──
-  // cellW: 每格顯示寬度（字元數）；label: 可選的二維覆蓋標籤 Map<r*COLS+c, string>
+  // cellW: 每格顯示寬度（半形字元數）；label: 可選覆蓋標籤 Map<r*COLS+c, string>
   function flatToGridText(flat, cellW, label) {
     cellW = cellW || 5;
     const H = "─".repeat(cellW);
-    const top    = "┌" + Array.from({length:COLS}, () => H).join("┬") + "┐";
-    const mid    = "├" + Array.from({length:COLS}, () => H).join("┼") + "┤";
-    const bot    = "└" + Array.from({length:COLS}, () => H).join("┴") + "┘";
-    const colHdr = " " + Array.from({length:COLS}, (_,c) => String(c).padStart(Math.floor(cellW/2)+1).padEnd(cellW)).join(" ");
+    const top = "┌" + Array.from({length:COLS}, () => H).join("┬") + "┐";
+    const mid = "├" + Array.from({length:COLS}, () => H).join("┼") + "┤";
+    const bot = "└" + Array.from({length:COLS}, () => H).join("┴") + "┘";
+    // 欄號標題：對齊每格 cellW 寬 + 1(分隔符)，開頭加 1 格(左框線)
+    const hdr = " " + Array.from({length:COLS}, (_, c) => {
+      const s = String(c);
+      const pad = cellW - s.length;
+      const lp = Math.floor(pad / 2), rp = pad - lp;
+      return " ".repeat(lp) + s + " ".repeat(rp);
+    }).join(" ");
 
-    const rows = [colHdr, top];
+    const rows = [hdr, top];
     for (let r = 0; r < ROWS; r++) {
       const cells = [];
       for (let c = 0; c < COLS; c++) {
@@ -449,8 +455,8 @@ async function runAISearch(word) {
           const v = flat[r * COLS + c];
           txt = v === 0 ? "" : (_iToW[v] || String(v));
         }
-        // 置中對齊
-        if (txt.length >= cellW) txt = txt.slice(0, cellW);
+        // 截短 + 置中（純半形）
+        if (txt.length > cellW) txt = txt.slice(0, cellW);
         const pad = cellW - txt.length;
         const lp = Math.floor(pad / 2), rp = pad - lp;
         cells.push(" ".repeat(lp) + txt + " ".repeat(rp));
@@ -462,25 +468,25 @@ async function runAISearch(word) {
     return rows.join("\n");
   }
 
-  // ── 步驟順序圖（在空白盤面上顯示 ①②…編號）──
+  // ── 步驟順序圖（用 #1~#7 半形標記，避免全形對齊問題）──
   function stepMapToGridText(steps, cellW) {
     cellW = cellW || 5;
-    const CIRCLE = ["①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩","⑪","⑫","⑬","⑭","⑮"];
-    // 建立空板（行優先）
     const flat = new Uint8Array(ROWS * COLS);
     const label = new Map();
     for (const s of steps) {
       if (s.row < 0 || s.row >= ROWS || s.col < 0 || s.col >= COLS) continue;
       const idx = s.row * COLS + s.col;
-      const num = CIRCLE[s.step - 1] || String(s.step);
-      // 短字=步號，後跟截短字
-      const wShort = (s.word || "").slice(0, cellW - 2);
-      label.set(idx, num + wShort.slice(0, cellW - 1));
+      // 用 #N 半形標記（保證 monospace 對齊）
+      const tag = "#" + s.step;
+      const remain = cellW - tag.length;
+      // 截短字名填入剩餘空間（至少留 1 字元間隔）
+      const w = (s.word || "").slice(0, Math.max(0, remain));
+      label.set(idx, tag + w);
     }
     return flatToGridText(flat, cellW, label);
   }
 
-  function buildDebugDiagram(currentStep, bestBoard) {
+  function buildDebugDiagram() {
     if (!debugMode) return;
     const lines = [];
     lines.push("═══ BFS 搜索狀態 ═══");
@@ -542,13 +548,12 @@ async function runAISearch(word) {
     // ── Phase1 前 7 步落點盤面 ──
     if (debugP1Board || debugP1Steps.length > 0) {
       lines.push("\n── Phase1 前 7 步落點 ──");
-      // 左：步號圖；右：落子後盤面（側排顯示，各 6 欄寬）
       if (debugP1Steps.length > 0) {
-        lines.push("落點順序 (①②…):");
+        lines.push("落點順序 (#N=步驟 初始落點):");
         lines.push(stepMapToGridText(debugP1Steps, 6));
       }
       if (debugP1Board) {
-        lines.push("落子後盤面:");
+        lines.push("Phase1 結束後盤面 (含消除/重力):");
         lines.push(flatToGridText(debugP1Board, 6));
       }
     }
@@ -627,7 +632,7 @@ async function runAISearch(word) {
       if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
       if (debugMode) {
         debugFinalBoard = finalBoard.slice(); // 儲存最新最佳路徑的最終盤面
-        buildDebugDiagram(0, null);
+        buildDebugDiagram();
       }
       return cleared === numCombos;
     }
@@ -718,7 +723,7 @@ async function runAISearch(word) {
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
     // 偵錯：顯示 Phase 1 完成狀態
     if (debugMode) {
-      buildDebugDiagram(0, sf);
+      buildDebugDiagram();
     }
 
     // ── Phase 2: 漸進剪枝 BFS ──
@@ -976,7 +981,7 @@ async function runAISearch(word) {
           mem: estimateMemoryStr(frontier.size),
           event: stepEvent || (isCombo ? "combo" : "")
         });
-        buildDebugDiagram(d + 1, stepBestState ? stepBestState.board : null);
+        buildDebugDiagram();
       }
 
       const mem = estimateMemoryStr(frontier.size);
@@ -1001,7 +1006,7 @@ async function runAISearch(word) {
   const peakMem = estimateMemoryStr(peakStates);
   setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | 記憶體 ${peakMem}`, true);
   if (debugMode) {
-    buildDebugDiagram(0, null);
+    buildDebugDiagram();
     const cur = debugBoxEl.textContent || "";
     setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms, 峰值${peakStates}態`);
   }
