@@ -3,12 +3,10 @@ const ROWS = 8;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 
-/*
 const DEFAULT_WORD_ROWS = [
-  "der -e,ice cream",
   "1,2,3,4,5",
+  "6,7,8,9,10",
 ];
-*/
 
 const COLORS = [
   "#ff7a7a",
@@ -39,7 +37,6 @@ const ALL_WORD_ROWS = loadWordRows();
 const allComboList = buildComboList(ALL_WORD_ROWS);
 
 let comboList = [];
-let wordPool = [];
 
 let cellSize = 44;
 let board = createEmptyBoard();
@@ -892,9 +889,7 @@ function playClearAnimation(markedPositions) {
         );
       }
 
-      // 更新並畫粒子
-      updateParticles();
-      drawParticles();
+      // 粒子已由 drawGrid() 內更新/繪製，不需要重複呼叫
 
       if (t < 1) {
         requestAnimationFrame(tick);
@@ -965,8 +960,6 @@ async function clearMatches() {
 
 // 破關慶祝動畫：全畫面放煙火粒子
 function playClearAllAnimation() {
-  const cols = COLS;
-  const rows = ROWS;
   for (let i = 0; i < 5; i++) {
     setTimeout(() => {
       const cx = Math.random() * canvas.width;
@@ -1137,7 +1130,6 @@ function gameLoop(ts) {
 function restartGame() {
   // 每次重新開始都重新抽取
   comboList = pickRandomCombos();
-  wordPool = [...new Set(comboList.flat())];
 
   board = createEmptyBoard();
   activeBlock = null;
