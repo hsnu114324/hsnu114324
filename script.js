@@ -987,7 +987,8 @@ async function runAISearch(word) {
         tryUpdate(bestBoard, bfsPool.cl[stepBestIdx], poolPath(stepBestIdx));
       }
 
-      // ── 消除時剪枝 frontier（過濾陣列，不影響池記憶體）──
+      // ── 消除剪枝：一旦有狀態消除了新 combo，只保留跟上的狀態 ──
+      // BFS 的「頭」從消除成功的狀態重新開始
       let stepPruned = 0;
       let stepEvent = "";
       if (stepBestCl > prevBestCleared) {
@@ -996,25 +997,12 @@ async function runAISearch(word) {
         let wp = 0;
         for (let fi = 0; fi < bfsPool.fALen; fi++) {
           const idx = bfsPool.frontierA[fi];
-          if (popcount(bfsPool.cl[idx]) < prevBestCleared - 1) { stepPruned++; continue; }
-          if (priCI >= 0 && !(bfsPool.cl[idx] & (1 << priCI))) {
-            const combo = _cIdx[priCI];
-            const base = idx * TC;
-            let blocked = false;
-            for (let p = 0; p < combo.length; p++) {
-              let hasSpace = false;
-              for (let r = 0; r < ROWS; r++) {
-                if (bfsPool.boards[base + r * COLS + p] === 0) { hasSpace = true; break; }
-              }
-              if (!hasSpace) { blocked = true; break; }
-            }
-            if (blocked) { stepPruned++; continue; }
-          }
+          // 消除數必須 >= 最佳消除數，沒跟上的全部丟棄
+          if (popcount(bfsPool.cl[idx]) < prevBestCleared) { stepPruned++; continue; }
           bfsPool.frontierA[wp++] = idx;
         }
         bfsPool.fALen = wp;
-        stepEvent = `★消除+${clDelta}`;
-        if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
+        stepEvent = `★消除+${clDelta} 重置BFS頭 ✂${stepPruned}`;
       }
       // ── 預防性剪枝：根據池使用率，漸進式淘汰弱 frontier 狀態 ──
       const poolUsage = bfsPool.count / BFS_POOL_MAX;
