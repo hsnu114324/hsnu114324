@@ -722,8 +722,6 @@ async function runAISearch(word) {
     // Phase 2 在 Phase 1 方塊掉落期間即開始計算（偷跑）
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
-    const MAX_STATES = 500000;
-
     let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
 
     // ── 主動清理 frontier：移除落後或被堵死的狀態 ──
@@ -887,35 +885,13 @@ async function runAISearch(word) {
         if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
 
-      // 安全上限
-      let capPruned = 0;
-      if (frontier.size > MAX_STATES) {
-        const beforeCap = frontier.size;
-        const arr = [...frontier.entries()];
-        arr.sort((a, b) => {
-          const clA = popcount(a[1].cl), clB = popcount(b[1].cl);
-          if (clA !== clB) return clB - clA;
-          let spA = 0, spB = 0;
-          for (let c = 0; c < COLS; c++) {
-            for (let r = ROWS - 1; r >= 0; r--)
-              if (a[1].board[r * COLS + c] === 0) { spA += r + 1; break; }
-            for (let r = ROWS - 1; r >= 0; r--)
-              if (b[1].board[r * COLS + c] === 0) { spB += r + 1; break; }
-          }
-          return spB - spA;
-        });
-        frontier = new Map(arr.slice(0, MAX_STATES));
-        capPruned = beforeCap - frontier.size;
-        stepEvent += (stepEvent ? " " : "") + `⚠截${capPruned}`;
-      }
-
       // 偵錯：紀錄步驟
       if (debugMode) {
         const isCombo = fc2 >= 0;
         debugSteps.push({
           step: P1 + d + 1, word: _iToW[wIdx],
           inSize: totalInFrontier, outSize: frontier.size,
-          dedup: Math.max(0, dedupCount), pruned: stepPruned + capPruned,
+          dedup: Math.max(0, dedupCount), pruned: stepPruned,
           cleared: stepBestCl, fixed: priCI >= 0 ? 1 : 0,
           mem: estimateMemoryStr(frontier.size),
           event: stepEvent || (isCombo ? "combo" : "")
