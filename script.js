@@ -453,8 +453,10 @@ async function runAISearch(word) {
       if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
       if (debugMode) {
         const fm = path[0] ? `${path[0].word}@c${path[0].col}` : "-";
+        const p1Info = path.slice(0, P1).map((m, i) => `${i + 1}.${m.word}→c${m.col}`).join(" ");
         setDebugText(
           `最佳: ${cleared}/${numCombos}\n首步: ${fm}\n` +
+          `Phase1(前${P1}步): ${p1Info}\n` +
           `${lastDebugSample ? lastDebugSample + "\n" : ""}` +
           `盤面:\n${flatToDebugText(finalBoard)}`
         );
@@ -565,8 +567,18 @@ async function runAISearch(word) {
       const wordStr = fullSeq[p2Start + d];
       const nextFrontier = new Map();
 
+      // 剪枝：屬於優先 combo 且尚未消除 → 只嘗試指定欄
+      const wCi = wordToCi[wIdx];
+      const wPos = wordToPos[wIdx];
+      const determined = (wCi === priCI && psc >= 0 && wPos >= 0);
+
       for (const [, state] of frontier) {
-        for (let col = 0; col < COLS; col++) {
+        // 如果該 combo 已在此狀態中被消除，就不再限制
+        const useDetermined = determined && !(state.cl & (1 << priCI));
+        const colStart = useDetermined ? (psc + wPos) : 0;
+        const colEnd = useDetermined ? (psc + wPos + 1) : COLS;
+
+        for (let col = colStart; col < colEnd; col++) {
           // 找落點
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
