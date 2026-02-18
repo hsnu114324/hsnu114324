@@ -224,12 +224,18 @@ function findBestColumn() {
   let bestCol = Math.floor(COLS / 2);
   let bestScore = -Infinity;
 
-  for (let col = 0; col < COLS; col++) {
-    // 找這欄的落點
-    let landRow = -1;
-    for (let row = ROWS - 1; row >= 0; row--) {
-      if (board[row][col] === null) { landRow = row; break; }
+  // 預先算出每欄的落點 row（-1 = 滿了）
+  const landRows = [];
+  for (let c = 0; c < COLS; c++) {
+    let lr = -1;
+    for (let r = ROWS - 1; r >= 0; r--) {
+      if (board[r][c] === null) { lr = r; break; }
     }
+    landRows.push(lr);
+  }
+
+  for (let col = 0; col < COLS; col++) {
+    const landRow = landRows[col];
     if (landRow < 0) continue; // 滿了
 
     let colScore = 0;
@@ -243,6 +249,9 @@ function findBestColumn() {
 
         let matchCount = 0;
         let possible = true;
+        let alignedEmpty = 0;   // 空格但落點高度一致
+        let totalEmpty = 0;     // 空格數
+
         for (let i = 0; i < combo.length; i++) {
           const cc = startCol + i;
           if (i === wi) { matchCount++; continue; }
@@ -252,13 +261,25 @@ function findBestColumn() {
           } else if (cell !== null) {
             possible = false;
             break;
+          } else {
+            // 格子是空的 → 看該欄的落點高度是否對齊
+            totalEmpty++;
+            if (landRows[cc] === landRow) alignedEmpty++;
           }
         }
         if (!possible) continue;
+
         if (matchCount >= combo.length) {
           colScore += 1000; // 直接完成
         } else {
-          colScore += matchCount * 15;
+          // 已匹配的字越多越好
+          colScore += matchCount * 50;
+          // 空格落點對齊 → 未來放上去會在同一行
+          colScore += alignedEmpty * 30;
+          // 所有剩餘空格都對齊 → 此 combo 完全可建
+          if (totalEmpty > 0 && alignedEmpty === totalEmpty) {
+            colScore += 80;
+          }
         }
       }
     }
