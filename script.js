@@ -821,7 +821,7 @@ async function runAISearch(word) {
         if (statesDone % YIELD_INTERVAL === 0) {
           const pct = Math.round(statesDone / totalInFrontier * 100);
           const mem = estimateMemoryStr(nextFrontier.size);
-          setMessage(`🤖 步${d + 1}/${p2Len} ${pct}% | ${nextFrontier.size}態 ${mem} | 最佳${bestCl}/${numCombos}`, true);
+          setMessage(`🤖 BFS ${d + 1}/${p2Len} ${pct}% | 記憶體 ${mem}`, true);
           await new Promise(r => setTimeout(r, 0));
           if (myGen !== aiSearchGen) return;
         }
@@ -908,7 +908,7 @@ async function runAISearch(word) {
       }
 
       const mem = estimateMemoryStr(frontier.size);
-      setMessage(`🤖 步${d + 1}/${p2Len} | ${frontier.size}態 ${mem} | 最佳${bestCl}/${numCombos}`, true);
+      setMessage(`🤖 BFS ${d + 1}/${p2Len} | 記憶體 ${mem}`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
