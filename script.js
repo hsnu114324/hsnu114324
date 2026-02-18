@@ -55,6 +55,7 @@ let autoLastMoveTime = 0;   // 上次 AI 移動時間戳
 const AUTO_MOVE_MS = 100;   // AI 每步間隔 ms
 let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
 let autoPlanStep = 0;        // 目前執行到第幾步
+let aiComputing = false;     // AI 正在計算中
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -335,7 +336,7 @@ function clearAutoPlan() {
   autoPlanStep = 0;
 }
 
-// 完全最優解：狀態空間全搜索（含全局規劃快取）
+// 同步入口：快取命中 → 直接回傳；否則啟動非同步搜索
 function findBestColumn() {
   if (!activeBlock) return Math.floor(COLS / 2);
   const word = activeBlock.word;
@@ -350,7 +351,14 @@ function findBestColumn() {
     clearAutoPlan();
   }
 
-  // ── 窮舉整場最佳策略 ──
+  // 快取未命中 → 啟動非同步全搜索
+  runAISearch(word);
+  return -1; // 回傳 -1 表示「計算中，稍後設定 autoTargetCol」
+}
+
+// 非同步全搜索：每步 yield 給瀏覽器更新進度
+async function runAISearch(word) {
+  aiComputing = true;
 
   // 發牌序列
   const fullSeq = [word];
@@ -365,22 +373,25 @@ function findBestColumn() {
     if (active) fullSeq.push(w);
   }
 
+  const totalSteps = fullSeq.length;
+  setMessage(`🤖 計算中 0/${totalSteps} 步...`, true);
+  await new Promise((r) => setTimeout(r, 0)); // 讓瀏覽器先畫出訊息
+
   // clearedCombos → 位元遮罩
   let initCl = 0;
   for (const ci of clearedCombos) initCl |= (1 << ci);
 
-  // 初始狀態（鏈結串列根節點：p=null, w=null）
+  // 初始狀態
   const f0 = boardToFlat(board);
   const rootNode = { p: null, w: null, c: -1 };
   let states = new Map();
   states.set(boardKey(f0, initCl), { f: f0, cl: initCl, n: rootNode });
 
-  for (let step = 0; step < fullSeq.length; step++) {
+  for (let step = 0; step < totalSteps; step++) {
     const w = fullSeq[step];
     const nextStates = new Map();
 
     for (const st of states.values()) {
-      // 這個字在此狀態下是否還需要
       let needed = false;
       for (let ci = 0; ci < comboList.length; ci++) {
         if (!(st.cl & (1 << ci)) && comboList[ci].includes(w)) {
@@ -395,12 +406,11 @@ function findBestColumn() {
         continue;
       }
 
-      // 窮舉所有欄位
       for (let col = 0; col < COLS; col++) {
         const lr = simLandRow(st.f, col);
         if (lr < 0) continue;
 
-        const nf = st.f.slice();         // 1D .slice()，最輕量的複製
+        const nf = st.f.slice();
         nf[lr * COLS + col] = w;
         const nc = simClear(nf, comboList, st.cl);
 
@@ -409,14 +419,19 @@ function findBestColumn() {
           nextStates.set(key, {
             f: nf,
             cl: nc,
-            n: { p: st.n, w, c: col },   // 鏈結串列節點
+            n: { p: st.n, w, c: col },
           });
         }
-        // 同 key = 同棋盤 + 同 cleared → 未來等價，跳過
       }
     }
 
     states = nextStates;
+
+    // 更新進度 + yield 給瀏覽器
+    setMessage(`🤖 計算中 ${step + 1}/${totalSteps} 步（${states.size} 狀態）...`, true);
+    if ((step & 3) === 0) {
+      await new Promise((r) => setTimeout(r, 0));
+    }
   }
 
   // ── 從所有最終狀態選最優解 ──
@@ -444,11 +459,13 @@ function findBestColumn() {
     autoPlan = reconstructPath(bestNode);
     if (autoPlan.length > 0) {
       autoPlanStep = 1;
-      return autoPlan[0].col;
+      autoTargetCol = autoPlan[0].col;
     }
   }
+  if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
-  return Math.floor(COLS / 2);
+  setMessage(`🤖 計算完成！最優解消除 ${bestCleared}/${comboList.length} 組`, true);
+  aiComputing = false;
 }
 
 function toggleAutoMode() {
@@ -456,11 +473,12 @@ function toggleAutoMode() {
   autoBtn.textContent = autoMode ? "手動" : "自動";
   autoBtn.classList.toggle("active", autoMode);
   if (autoMode && activeBlock) {
-    clearAutoPlan();               // 重新規劃整場
-    autoTargetCol = findBestColumn();
+    clearAutoPlan();
+    autoTargetCol = findBestColumn(); // 快取命中→同步；否則啟動非同步搜索
     autoLastMoveTime = 0;
   } else {
     autoTargetCol = -1;
+    aiComputing = false;
     clearAutoPlan();
   }
 }
@@ -838,8 +856,10 @@ function gameLoop(ts) {
     return;
   }
 
-  // 動畫播放中暫停掉落
-  if (!animating) {
+  // AI 計算中或動畫播放中 → 暫停掉落
+  if (aiComputing || animating) {
+    lastTick = ts; // 重置計時，避免恢復後瞬間掉一大段
+  } else {
     if (!lastTick) lastTick = ts;
     if (ts - lastTick >= FALL_MS) {
       softDrop();
@@ -849,7 +869,7 @@ function gameLoop(ts) {
     // 自動模式：AI 移動 + 落下
     if (autoMode && activeBlock) {
       if (autoTargetCol < 0) autoTargetCol = findBestColumn();
-      if (ts - autoLastMoveTime >= AUTO_MOVE_MS) {
+      if (autoTargetCol >= 0 && ts - autoLastMoveTime >= AUTO_MOVE_MS) {
         if (activeBlock.col !== autoTargetCol) {
           moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
         } else {
@@ -859,8 +879,6 @@ function gameLoop(ts) {
         autoLastMoveTime = ts;
       }
     }
-  } else {
-    lastTick = ts; // 重置計時，避免動畫結束後瞬間掉一大段
   }
 
   drawGrid();
@@ -882,6 +900,7 @@ function restartGame() {
   wordQueue = [];
   autoTargetCol = -1;
   autoLastMoveTime = 0;
+  aiComputing = false;
   clearAutoPlan();
   scoreEl.textContent = "0";
   updateProgress();
