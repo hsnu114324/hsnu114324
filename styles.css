@@ -131,12 +131,14 @@ button {
 }
 
 .message {
-  margin-top: 8px !important;
-  min-height: 1.4em;
+  margin: 4px 0 0;
+  min-height: 1.2em;
+  font-size: 0.85rem;
   color: var(--warn);
+  text-align: center;
 }
 
-.compact-message {
+.message:empty {
   display: none;
 }
 
