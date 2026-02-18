@@ -417,18 +417,6 @@ async function runAISearch(word) {
     }
   }
 
-  // 每個 combo word 的合法欄位集合（用於剪枝）
-  const wValid = new Array(_iToW.length).fill(null);
-  for (const ci of activeCI) {
-    const combo = _cIdx[ci];
-    const clen = combo.length;
-    for (let p = 0; p < clen; p++) {
-      const w = combo[p];
-      if (!wValid[w]) wValid[w] = new Set();
-      for (let sc = 0; sc <= COLS - clen; sc++) wValid[w].add(sc + p);
-    }
-  }
-
   // ── Phase 1: 分析前 7 個字 ──
   const P1 = Math.min(7, totalSteps);
   const comboFreq = new Uint8Array(numCombos);
@@ -443,11 +431,10 @@ async function runAISearch(word) {
     if (comboFreq[ci] > priMax) { priMax = comboFreq[ci]; priCI = ci; }
   }
 
-  // 優先 combo 的有效起始欄
+  // 優先 combo 起始欄：從 col 0 開始（放左邊）
   const priStarts = [];
   if (priCI >= 0) {
-    const clen = _cIdx[priCI].length;
-    for (let sc = 0; sc <= COLS - clen; sc++) priStarts.push(sc);
+    priStarts.push(0); // combo 放最左邊
   } else {
     priStarts.push(-1);
   }
@@ -500,9 +487,9 @@ async function runAISearch(word) {
       if (ci === priCI && psc >= 0 && !(cl & (1 << priCI))) {
         col = psc + pos; // 優先 combo → 指定位置
       } else {
-        // Garbage → 最空欄
-        let mh = -1; col = 0;
-        for (let c = 0; c < COLS; c++) {
+        // Garbage → 最空的右側欄（從右往左掃，同高取最右）
+        let mh = -1; col = COLS - 1;
+        for (let c = COLS - 1; c >= 0; c--) {
           let h = 0;
           for (let r = 0; r < ROWS; r++) {
             if (sf[r * COLS + c] === 0) h++; else break;
@@ -538,112 +525,131 @@ async function runAISearch(word) {
       continue;
     }
 
-    // ── Phase 2: 全 DFS 搜索剩餘字 ──
+    // ── Phase 2: 全狀態空間模擬 ──
+    // BFS：每步展開所有可達狀態，去重後保留唯一狀態
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
+    const MAX_STATES = 500000;
 
-    // Board pool（避免 GC）
-    const pool = [];
-    for (let i = 0; i <= p2Len; i++) pool.push(new Uint8Array(TC));
-    pool[0].set(sf);
-
-    const dfsCl = new Uint32Array(p2Len + 1);
-    dfsCl[0] = cl;
-
-    // 不可能消除的 combo bitmask（每層）
-    const dfsImp = new Uint32Array(p2Len + 1);
-    dfsImp[0] = 0;
-
-    const dfsPath = new Array(p2Len);
-
-    // 每步的欄位嘗試順序：combo 合法欄優先
-    const colOrd = [];
-    for (let d = 0; d < p2Len; d++) {
-      const w = seqIdx[p2Start + d];
-      const vc = wValid[w];
-      const ord = [];
-      if (vc) {
-        for (let c = 0; c < COLS; c++) if (vc.has(c)) ord.push(c);
-        for (let c = 0; c < COLS; c++) if (!vc.has(c)) ord.push(c);
-      } else {
-        for (let c = 0; c < COLS; c++) ord.push(c);
-      }
-      colOrd.push(ord);
+    // Path linked list：{ word, col, prev }
+    function pathToArray(tail) {
+      const arr = [];
+      let n = tail;
+      while (n) { arr.push({ word: n.word, col: n.col }); n = n.prev; }
+      arr.reverse();
+      return arr;
     }
 
-    // Stack-based DFS
-    const colPtr = new Int8Array(p2Len).fill(0);
-    let depth = 0;
+    function stateKey(b, clMask) {
+      let k = "";
+      for (let i = 0; i < TC; i++) k += String.fromCharCode(b[i]);
+      k += String.fromCharCode(clMask & 0xffff, (clMask >> 16) & 0xffff);
+      return k;
+    }
 
-    while (depth >= 0) {
+    // 初始 frontier
+    let frontier = new Map();
+    const initP1Tail = p1Path.reduce(
+      (prev, m) => ({ word: m.word, col: m.col, prev }), null
+    );
+    frontier.set(stateKey(sf, cl), {
+      board: sf.slice(), cl, firstCol: -1, pathTail: initP1Tail
+    });
+
+    let perfect = false;
+
+    for (let d = 0; d < p2Len && !perfect; d++) {
       if (myGen !== aiSearchGen) return;
 
-      if (colPtr[depth] >= COLS) {
-        colPtr[depth] = 0;
-        depth--;
-        continue;
+      const wIdx = seqIdx[p2Start + d];
+      const wordStr = fullSeq[p2Start + d];
+      const nextFrontier = new Map();
+
+      for (const [, state] of frontier) {
+        for (let col = 0; col < COLS; col++) {
+          // 找落點
+          let lr = -1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (state.board[r * COLS + col] === 0) { lr = r; break; }
+          }
+          if (lr < 0) continue;
+
+          const nb = state.board.slice();
+          nb[lr * COLS + col] = wIdx;
+
+          const bCl = state.cl;
+          const bB = debugMode ? nb.slice() : null;
+          const nCl = simClear(nb, _cIdx, bCl);
+          ops++;
+
+          if (debugMode && bB && nCl !== bCl) {
+            lastDebugSample =
+              `消除 (+${popcount(nCl) - popcount(bCl)} 組)\n` +
+              `落: ${_iToW[wIdx]} → col ${col}\n` +
+              `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(nb)}`;
+          }
+
+          const key = stateKey(nb, nCl);
+          const fc = state.firstCol >= 0 ? state.firstCol : col;
+          const newTail = { word: wordStr, col, prev: state.pathTail };
+
+          if (!nextFrontier.has(key)) {
+            nextFrontier.set(key, { board: nb, cl: nCl, firstCol: fc, pathTail: newTail });
+          }
+
+          // 全消 → 立刻停止
+          if (popcount(nCl) === numCombos) {
+            const fullPath = pathToArray(newTail);
+            if (tryUpdate(nb, nCl, fullPath)) { perfect = true; }
+            break;
+          }
+        }
+        if (perfect) break;
+      }
+      if (perfect) break;
+
+      frontier = nextFrontier;
+
+      // 每步結束後，找出當前 frontier 中最佳狀態並嘗試更新
+      let stepBestCl = -1, stepBestSp = -1, stepBestState = null;
+      for (const [, state] of frontier) {
+        const cleared = popcount(state.cl);
+        let space = 0;
+        for (let c = 0; c < COLS; c++)
+          for (let r = ROWS - 1; r >= 0; r--)
+            if (state.board[r * COLS + c] === 0) { space += r + 1; break; }
+        if (cleared > stepBestCl || (cleared === stepBestCl && space > stepBestSp)) {
+          stepBestCl = cleared; stepBestSp = space; stepBestState = state;
+        }
+      }
+      // 最後一步或中間有更好解 → 更新
+      if (stepBestState && (d === p2Len - 1 || stepBestCl > bestCl)) {
+        const fullPath = pathToArray(stepBestState.pathTail);
+        tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
       }
 
-      const col = colOrd[depth][colPtr[depth]];
-      colPtr[depth]++;
-      ops++;
-
-      const step = p2Start + depth;
-      const wIdx = seqIdx[step];
-      const curB = pool[depth];
-
-      // 找落點
-      let lr = -1;
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (curB[r * COLS + col] === 0) { lr = r; break; }
-      }
-      if (lr < 0) continue; // 欄已滿
-
-      // ── 上界剪枝 ──
-      let imp = dfsImp[depth];
-      const ci = wordToCi[wIdx];
-      if (ci >= 0 && !(dfsCl[depth] & (1 << ci)) && wValid[wIdx] && !wValid[wIdx].has(col)) {
-        imp |= (1 << ci); // 放在不合法欄 → 該 combo 不可能消除
-      }
-      const allM = (1 << numCombos) - 1;
-      const ub = popcount(dfsCl[depth]) + popcount(allM & ~dfsCl[depth] & ~imp);
-      if (ub < bestCl) continue; // 不可能超越最佳
-
-      // 放置
-      const nb = pool[depth + 1];
-      nb.set(curB);
-      nb[lr * COLS + col] = wIdx;
-
-      const bCl = dfsCl[depth];
-      const bB = debugMode ? nb.slice() : null;
-      const nCl = simClear(nb, _cIdx, bCl);
-      dfsCl[depth + 1] = nCl;
-      dfsImp[depth + 1] = imp;
-
-      if (debugMode && bB && nCl !== bCl) {
-        lastDebugSample =
-          `消除 (+${popcount(nCl) - popcount(bCl)} 組)\n` +
-          `落: ${_iToW[wIdx]} → col ${col}\n` +
-          `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(nb)}`;
-      }
-
-      dfsPath[depth] = { word: fullSeq[step], col };
-
-      if (depth + 1 >= p2Len) {
-        // 葉節點：評估
-        const path = [...p1Path];
-        for (let i = 0; i <= depth; i++) path.push({ ...dfsPath[i] });
-        if (tryUpdate(nb, nCl, path)) { depth = -1; break; }
-      } else {
-        depth++;
-        colPtr[depth] = 0;
+      // 安全上限：狀態過多時保留最佳的
+      if (frontier.size > MAX_STATES) {
+        const arr = [...frontier.entries()];
+        arr.sort((a, b) => {
+          const clA = popcount(a[1].cl), clB = popcount(b[1].cl);
+          if (clA !== clB) return clB - clA;
+          let spA = 0, spB = 0;
+          for (let c = 0; c < COLS; c++) {
+            for (let r = ROWS - 1; r >= 0; r--)
+              if (a[1].board[r * COLS + c] === 0) { spA += r + 1; break; }
+            for (let r = ROWS - 1; r >= 0; r--)
+              if (b[1].board[r * COLS + c] === 0) { spB += r + 1; break; }
+          }
+          return spB - spA;
+        });
+        frontier = new Map(arr.slice(0, MAX_STATES));
       }
 
       // 定期讓出 UI
-      if (ops % 50000 === 0) {
-        setMessage(`🤖 DFS ${ops} 節點（最佳 ${bestCl}/${numCombos}）`, true);
-        await new Promise(r => setTimeout(r, 0));
-      }
+      setMessage(`🤖 全狀態 步${d + 1}/${p2Len}（${frontier.size} 狀態，最佳 ${bestCl}/${numCombos}）`, true);
+      await new Promise(r => setTimeout(r, 0));
+      if (myGen !== aiSearchGen) return;
     }
 
     if (bestCl === numCombos) break;
