@@ -395,6 +395,129 @@ async function runAISearch(word) {
     colOrd.push(Uint8Array.from(pri));
   }
 
+  let bestCl = -1, bestSp = -1, bestPath = null;
+  let totalOps = 0;
+  let planInstalled = false;
+
+  // ── 特化模式：6 欄 + 全為 5 字 combo → 32 版型 anytime 搜索 ──
+  // 每個 5 字 combo 只有 2 種起始欄（0 或 1），N 組共 2^N 種版型
+  const activeCombos = [];
+  for (let ci = 0; ci < numCombos; ci++) if (!(initCl & (1 << ci))) activeCombos.push(ci);
+  const canUseLongLayoutMode = (
+    COLS === 6 &&
+    activeCombos.length > 0 &&
+    activeCombos.length <= 10 &&
+    activeCombos.every(ci => _cIdx[ci].length === 5)
+  );
+  if (canUseLongLayoutMode) {
+    const configs = [];
+    const cfgCount = 1 << activeCombos.length;
+    for (let mask = 0; mask < cfgCount; mask++) {
+      const w2c = new Int8Array(_iToW.length).fill(-1);
+      let ok = true;
+      for (let k = 0; k < activeCombos.length; k++) {
+        const ci = activeCombos[k];
+        const combo = _cIdx[ci];
+        const start = (mask >> k) & 1; // 0 or 1
+        for (let p = 0; p < combo.length; p++) {
+          const w = combo[p], c = start + p;
+          if (w2c[w] !== -1 && w2c[w] !== c) { ok = false; break; }
+          w2c[w] = c;
+        }
+        if (!ok) break;
+      }
+      if (ok) configs.push(w2c);
+    }
+
+    for (let maxDepth = 1; maxDepth <= totalSteps; maxDepth++) {
+      if (myGen !== aiSearchGen) return;
+      for (const w2c of configs) {
+        totalOps++;
+        const f = f0.slice();
+        let cl = initCl;
+        const path = [];
+        let ok = true;
+
+        for (let s = 0; s < maxDepth; s++) {
+          const wIdx = seqIdx[s];
+          const pref = w2c[wIdx];
+          let chosen = -1;
+
+          // 優先放到版型指定欄；若不可放，再退回通用優先序找可放欄
+          if (pref >= 0) {
+            for (let r = ROWS - 1; r >= 0; r--) {
+              if (f[r * COLS + pref] === 0) { chosen = pref; break; }
+            }
+          }
+          if (chosen < 0) {
+            const order = colOrd[wIdx];
+            for (let oi = 0; oi < order.length; oi++) {
+              const c = order[oi];
+              let lr = -1;
+              for (let r = ROWS - 1; r >= 0; r--) {
+                if (f[r * COLS + c] === 0) { lr = r; break; }
+              }
+              if (lr >= 0) { chosen = c; break; }
+            }
+          }
+          if (chosen < 0) { ok = false; break; }
+
+          let lr = -1;
+          for (let r = ROWS - 1; r >= 0; r--) {
+            if (f[r * COLS + chosen] === 0) { lr = r; break; }
+          }
+          if (lr < 0) { ok = false; break; }
+          f[lr * COLS + chosen] = wIdx;
+          cl = simClear(f, _cIdx, cl);
+          path.push({ word: fullSeq[s], col: chosen });
+        }
+        if (!ok) continue;
+
+        const cleared = popcount(cl);
+        let space = 0;
+        for (let c = 0; c < COLS; c++)
+          for (let r = ROWS - 1; r >= 0; r--)
+            if (f[r * COLS + c] === 0) { space += r + 1; break; }
+
+        if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
+          bestCl = cleared;
+          bestSp = space;
+          bestPath = path;
+          if (autoMode && path.length > 0 && autoPlanStep <= 1) {
+            autoTargetCol = path[0].col;
+          }
+        }
+      }
+
+      if (bestPath && bestPath.length > 0 && autoMode) {
+        autoPlan = bestPath;
+        if (!planInstalled) {
+          autoPlanStep = 1;
+          planInstalled = true;
+        }
+        if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
+      }
+
+      setMessage(`🤖 32版型 深度 ${maxDepth}/${totalSteps}（最佳 ${Math.max(0, bestCl)}/${numCombos}）`, true);
+      await new Promise(r => setTimeout(r, 0));
+
+      // 已達理論上限（全消）且已看到完整深度，可停止
+      if (bestCl === numCombos && maxDepth === totalSteps) break;
+    }
+
+    if (myGen !== aiSearchGen) return;
+    if (bestPath && bestPath.length > 0) {
+      autoPlan = bestPath;
+      if (!planInstalled) autoPlanStep = 1;
+      if (autoPlanStep <= 1) autoTargetCol = bestPath[0].col;
+    }
+    if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
+    setMessage(`🤖 完成！32版型最優 ${Math.max(0, bestCl)}/${numCombos} 組（${totalOps} 步）`, true);
+    aiComputing = false;
+    return;
+  }
+
+  // ── 通用模式：迭代加深 DFS ──
   // ── 預分配記憶體池（一次分配，所有深度共用）──
   const maxD = totalSteps + 1;
   const pool = new Uint8Array(maxD * TC);
@@ -406,10 +529,6 @@ async function runAISearch(word) {
   const HT_MASK = 0xFFF;
   const ht1 = new Uint32Array(4096);
   const ht2 = new Uint32Array(4096);
-
-  let bestCl = -1, bestSp = -1, bestPath = null;
-  let totalOps = 0;
-  let planInstalled = false;
 
   // ═══════════════════════════════════════════════════════
   //  持續迭代加深 DFS：depth 1 → 2 → 3 → ... → totalSteps
