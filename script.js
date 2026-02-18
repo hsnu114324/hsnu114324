@@ -340,7 +340,7 @@ function findBestColumn() {
     if (active) fullSeq.push(w);
   }
 
-  console.log(`[AI] 開始全搜索：${fullSeq.length} 步，${comboList.length} 組 combo`);
+  // console.log(`[AI] 開始全搜索：${fullSeq.length} 步，${comboList.length} 組 combo`);
   const t0 = performance.now();
 
   // 初始狀態集合：Map<stateKey, {board, cleared, path}>
@@ -404,7 +404,7 @@ function findBestColumn() {
     }
 
     states = nextStates;
-    console.log(`[AI] 第 ${step + 1}/${fullSeq.length} 步 "${w}"：${states.size} 個唯一狀態`);
+    // console.log(`[AI] 第 ${step + 1}/${fullSeq.length} 步 "${w}"：${states.size} 個唯一狀態`);
   }
 
   // ── 從所有最終狀態中選出消掉最多 combo 的最優解 ──
@@ -429,10 +429,10 @@ function findBestColumn() {
   }
 
   const elapsed = (performance.now() - t0).toFixed(1);
-  console.log(
-    `[AI] 搜索完成：${elapsed}ms，最優解消除 ${bestCleared}/${comboList.length} 組 combo，` +
-    `探索 ${states.size} 個最終狀態`
-  );
+  // console.log(
+  //   `[AI] 搜索完成：${elapsed}ms，最優解消除 ${bestCleared}/${comboList.length} 組 combo，` +
+  //   `探索 ${states.size} 個最終狀態`
+  // );
 
   // 快取整場計畫
   if (bestPath && bestPath.length > 0) {
