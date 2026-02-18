@@ -5,6 +5,10 @@ const PICK_KEY = "word_tetris_pick_count_v1";
 const DEFAULT_WORD_ROWS = [
   "der -e,ice cream",
   "1,2,3,4,5",
+  "6,7,8,9,10",
+  "11,12,13,14,15",
+  "16,17,18,19,20",
+  "21,22,23,24,25",
 //  "-,所有格 第一格(Nominativ),所有格 第二格(Genitiv),所有格 第三格(Dativ),所有格 第四格(Akkusativ)",
 //  "der ich,mein ,meines,meinem,meinen",
 //  "der du,dein ,deines,deinem,deinen",
