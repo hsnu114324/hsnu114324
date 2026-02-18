@@ -26,6 +26,7 @@ const scoreEl = document.getElementById("score");
 const progressEl = document.getElementById("progress");
 const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restartBtn");
+const autoBtn = document.getElementById("autoBtn");
 const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
@@ -48,6 +49,10 @@ let animating = false;  // 消除動畫播放中
 let particles = [];     // 爆散粒子
 let clearedCombos = new Set(); // 已消除的 combo 索引
 let wordQueue = [];     // 派發佇列：確保所有組合輪過一遍
+let autoMode = false;       // 自動模式
+let autoTargetCol = -1;     // AI 目標欄
+let autoLastMoveTime = 0;   // 上次 AI 移動時間戳
+const AUTO_MOVE_MS = 100;   // AI 每步間隔 ms
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -211,6 +216,78 @@ function nextWord() {
   return wordQueue.shift();
 }
 
+// ── 自動模式 AI ──
+
+function findBestColumn() {
+  if (!activeBlock) return Math.floor(COLS / 2);
+  const word = activeBlock.word;
+  let bestCol = Math.floor(COLS / 2);
+  let bestScore = -Infinity;
+
+  for (let col = 0; col < COLS; col++) {
+    // 找這欄的落點
+    let landRow = -1;
+    for (let row = ROWS - 1; row >= 0; row--) {
+      if (board[row][col] === null) { landRow = row; break; }
+    }
+    if (landRow < 0) continue; // 滿了
+
+    let colScore = 0;
+
+    for (let ci = 0; ci < comboList.length; ci++) {
+      const combo = comboList[ci];
+      for (let wi = 0; wi < combo.length; wi++) {
+        if (combo[wi] !== word) continue;
+        const startCol = col - wi;
+        if (startCol < 0 || startCol + combo.length > COLS) continue;
+
+        let matchCount = 0;
+        let possible = true;
+        for (let i = 0; i < combo.length; i++) {
+          const cc = startCol + i;
+          if (i === wi) { matchCount++; continue; }
+          const cell = board[landRow][cc];
+          if (cell && cell.word === combo[i]) {
+            matchCount++;
+          } else if (cell !== null) {
+            possible = false;
+            break;
+          }
+        }
+        if (!possible) continue;
+        if (matchCount >= combo.length) {
+          colScore += 1000; // 直接完成
+        } else {
+          colScore += matchCount * 15;
+        }
+      }
+    }
+
+    // 偏好低處放置
+    colScore += landRow * 2;
+    // 微偏好中間
+    colScore -= Math.abs(col - (COLS - 1) / 2) * 0.5;
+
+    if (colScore > bestScore) {
+      bestScore = colScore;
+      bestCol = col;
+    }
+  }
+  return bestCol;
+}
+
+function toggleAutoMode() {
+  autoMode = !autoMode;
+  autoBtn.textContent = autoMode ? "手動" : "自動";
+  autoBtn.classList.toggle("active", autoMode);
+  if (autoMode && activeBlock) {
+    autoTargetCol = findBestColumn();
+    autoLastMoveTime = 0;
+  } else {
+    autoTargetCol = -1;
+  }
+}
+
 function spawnBlock() {
   const word = nextWord();
   activeBlock = {
@@ -223,6 +300,11 @@ function spawnBlock() {
   if (board[0][activeBlock.col] !== null) {
     running = false;
     setMessage("遊戲結束：方塊堆到最上方", false);
+    return;
+  }
+
+  if (autoMode) {
+    autoTargetCol = findBestColumn();
   }
 }
 
@@ -583,6 +665,20 @@ function gameLoop(ts) {
       softDrop();
       lastTick = ts;
     }
+
+    // 自動模式：AI 移動 + 落下
+    if (autoMode && activeBlock) {
+      if (autoTargetCol < 0) autoTargetCol = findBestColumn();
+      if (ts - autoLastMoveTime >= AUTO_MOVE_MS) {
+        if (activeBlock.col !== autoTargetCol) {
+          moveHorizontal(activeBlock.col < autoTargetCol ? 1 : -1);
+        } else {
+          hardDrop();
+          autoTargetCol = -1;
+        }
+        autoLastMoveTime = ts;
+      }
+    }
   } else {
     lastTick = ts; // 重置計時，避免動畫結束後瞬間掉一大段
   }
@@ -604,6 +700,8 @@ function restartGame() {
   clearedCombos = new Set();
   particles = [];
   wordQueue = [];
+  autoTargetCol = -1;
+  autoLastMoveTime = 0;
   scoreEl.textContent = "0";
   updateProgress();
 
@@ -619,12 +717,14 @@ function restartGame() {
 }
 
 function bindControls() {
-  tapBind(leftBtn, () => moveHorizontal(-1));
-  tapBind(rightBtn, () => moveHorizontal(1));
-  tapBind(downBtn, hardDrop);
+  tapBind(leftBtn, () => { if (!autoMode) moveHorizontal(-1); });
+  tapBind(rightBtn, () => { if (!autoMode) moveHorizontal(1); });
+  tapBind(downBtn, () => { if (!autoMode) hardDrop(); });
   tapBind(restartBtn, restartGame);
+  tapBind(autoBtn, toggleAutoMode);
 
   window.addEventListener("keydown", (event) => {
+    if (autoMode) return;
     if (event.key === "ArrowLeft") moveHorizontal(-1);
     if (event.key === "ArrowRight") moveHorizontal(1);
     if (event.key === "ArrowDown") {

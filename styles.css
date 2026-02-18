@@ -70,6 +70,19 @@ body {
   gap: 8px;
 }
 
+#autoBtn {
+  background: #1c6e47;
+  border-color: #2aa06a;
+  font-weight: 700;
+  min-width: 52px;
+  transition: background 0.2s, border-color 0.2s;
+}
+
+#autoBtn.active {
+  background: #b65a20;
+  border-color: #e47c3a;
+}
+
 .score-chip {
   font-size: 0.95rem;
   color: #ffda44;
