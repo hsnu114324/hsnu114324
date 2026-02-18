@@ -417,24 +417,27 @@ async function runAISearch(word) {
     }
   }
 
-  // ── 所有 combo 固定起始欄 = 0（全部靠左堆疊） ──
+  // ── Phase 1: 掃描 Q 前 7 個字，找出最有可能的 combo ──
   const P1 = Math.min(7, totalSteps);
-
-  // 為每個 combo word 計算固定欄位（combo 起始欄 0 + 字在 combo 中的位置）
-  const wordFixedCol = new Int8Array(_iToW.length).fill(-1);
-  let comboMaxEnd = 0; // combo 佔用的最右欄 +1
+  const comboFreq = new Uint8Array(numCombos);
+  for (let s = 0; s < P1; s++) {
+    const ci = wordToCi[seqIdx[s]];
+    if (ci >= 0) comboFreq[ci]++;
+  }
+  // 優先 combo = 前 7 中出現最多字的那組
+  let priCI = -1, priMax = 0;
   for (const ci of activeCI) {
-    const combo = _cIdx[ci];
-    const clen = combo.length;
-    if (clen > comboMaxEnd) comboMaxEnd = clen;
-    for (let p = 0; p < clen; p++) {
-      const w = combo[p];
-      const fixedCol = 0 + p; // 所有 combo 從 col 0 開始
-      if (wordFixedCol[w] === -1) {
-        wordFixedCol[w] = fixedCol;
-      } else if (wordFixedCol[w] !== fixedCol) {
-        wordFixedCol[w] = -2; // 衝突（同一字在不同 combo 的不同位置）→ 不固定
-      }
+    if (comboFreq[ci] > priMax) { priMax = comboFreq[ci]; priCI = ci; }
+  }
+
+  // 只有優先 combo 的字有固定欄位，其他 combo 字當 garbage
+  const wordFixedCol = new Int8Array(_iToW.length).fill(-1);
+  let comboMaxEnd = 0; // 優先 combo 佔用的最右欄 +1
+  if (priCI >= 0) {
+    const combo = _cIdx[priCI];
+    comboMaxEnd = combo.length;
+    for (let p = 0; p < combo.length; p++) {
+      wordFixedCol[combo[p]] = p; // col 0 + position
     }
   }
 
@@ -477,7 +480,8 @@ async function runAISearch(word) {
     return false;
   }
 
-  setMessage(`🤖 ${activeCI.length} 組 combo 固定左側（佔 col 0~${comboMaxEnd - 1}）`, true);
+  const priName = priCI >= 0 ? _cIdx[priCI].map(w => _iToW[w]).join(",") : "無";
+  setMessage(`🤖 優先: ${priName}（佔 col 0~${comboMaxEnd - 1}），其餘 combo 為 garbage`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -496,11 +500,11 @@ async function runAISearch(word) {
     if (fc >= 0 && ci >= 0 && !(cl & (1 << ci))) {
       col = fc; // combo 字 → 固定欄位
     } else {
-      // Garbage / 已消除 combo / 衝突字 → 避開 combo 佔用欄，從右往左找最空
+      // Garbage → 避開優先 combo 佔用的欄位，從右往左找最空
       let mh = -1; col = COLS - 1;
       for (let c = COLS - 1; c >= 0; c--) {
-        const anyComboActive = popcount(cl) < numCombos;
-        if (anyComboActive && c < comboMaxEnd) continue;
+        // 優先 combo 尚未消除時，跳過它佔用的欄 (col 0 ~ comboMaxEnd-1)
+        if (priCI >= 0 && !(cl & (1 << priCI)) && c < comboMaxEnd) continue;
         let h = 0;
         for (let r = 0; r < ROWS; r++) {
           if (sf[r * COLS + c] === 0) h++; else break;
@@ -591,12 +595,12 @@ async function runAISearch(word) {
       const wordStr = fullSeq[p2Start + d];
       const nextFrontier = new Map();
 
-      // 剪枝：所有 combo 字有固定欄位 → 只嘗試該欄
+      // 剪枝：優先 combo 的字有固定欄位 → 只嘗試該欄；其他 combo 字全搜索
       const wCi = wordToCi[wIdx];
-      const fc = wordFixedCol[wIdx]; // >=0: 固定欄, -1: 無 combo, -2: 衝突
+      const fc = wordFixedCol[wIdx]; // >=0: 優先 combo 固定欄, -1: 非優先 combo / 無 combo
 
       for (const [, state] of frontier) {
-        // combo 字且 combo 尚未消除 → 只嘗試固定欄；否則全搜索
+        // 優先 combo 字且 combo 尚未消除 → 只嘗試固定欄；否則全搜索
         const useDetermined = fc >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
         const colStart = useDetermined ? fc : 0;
         const colEnd = useDetermined ? fc + 1 : COLS;
