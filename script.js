@@ -545,6 +545,14 @@ async function runAISearch(word) {
   // Phase 1 結束 → 先用 Phase 1 的結果更新（確保偵錯能顯示）
   if (p1Ok) tryUpdate(sf, cl, [...p1Path]);
 
+  // 記憶體估算（每個狀態 ≈ board + key string + Map entry + linked list）
+  let peakStates = 0;
+  function estimateMemoryStr(size) {
+    const bytes = size * (TC * 3 + 300);
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + 'MB';
+    return (bytes / 1024).toFixed(0) + 'KB';
+  }
+
   if (p1Ok && P1 < totalSteps && bestCl < numCombos) {
     // 偵錯：顯示 Phase 1 盤面（含落子標記）
     if (debugMode) {
@@ -567,7 +575,7 @@ async function runAISearch(word) {
     if (priCI >= 0) fixedSet.add(priCI);
     let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
 
-    // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定
+    // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定；回傳新固定的 combo index（-1=無）
     function fixNextCombo(fromStep) {
       const freq = new Uint8Array(numCombos);
       for (let s = fromStep; s < totalSteps; s++) {
@@ -594,6 +602,34 @@ async function runAISearch(word) {
           );
         }
       }
+      return nextCI;
+    }
+
+    // ── 主動清理 frontier：移除落後或被堵死的狀態 ──
+    function pruneFrontier() {
+      const keysToRemove = [];
+      for (const [key, state] of frontier) {
+        const sc = popcount(state.cl);
+        // 1) 落後超過 1 個 combo → 淘汰（不可能追上最佳）
+        if (sc < prevBestCleared - 1) { keysToRemove.push(key); continue; }
+        // 2) 檢查已固定 combo 的欄位是否被堵死
+        let blocked = false;
+        for (const ci of fixedSet) {
+          if (state.cl & (1 << ci)) continue; // 此 combo 已消除，不用檢查
+          const combo = _cIdx[ci];
+          for (let p = 0; p < combo.length; p++) {
+            let hasSpace = false;
+            for (let r = 0; r < ROWS; r++) {
+              if (state.board[r * COLS + p] === 0) { hasSpace = true; break; }
+            }
+            if (!hasSpace) { blocked = true; break; }
+          }
+          if (blocked) break;
+        }
+        if (blocked) keysToRemove.push(key);
+      }
+      for (const key of keysToRemove) frontier.delete(key);
+      return keysToRemove.length;
     }
 
     function pathToArray(tail) {
@@ -612,6 +648,7 @@ async function runAISearch(word) {
     }
 
     // 初始 frontier
+    peakStates = 1;
     let frontier = new Map();
     const initP1Tail = p1Path.reduce(
       (prev, m) => ({ word: m.word, col: m.col, prev }), null
@@ -679,6 +716,7 @@ async function runAISearch(word) {
       if (perfect) break;
 
       frontier = nextFrontier;
+      peakStates = Math.max(peakStates, frontier.size);
 
       // 找出 frontier 中最佳狀態
       let stepBestCl = -1, stepBestSp = -1, stepBestState = null;
@@ -698,10 +736,19 @@ async function runAISearch(word) {
         tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
       }
 
-      // ── 漸進剪枝：如果最佳狀態消除了新的 combo → 固定下一組 ──
+      // ── 漸進剪枝：如果最佳狀態消除了新的 combo → 固定下一組 + 主動清理 frontier ──
       if (stepBestCl > prevBestCleared) {
         prevBestCleared = stepBestCl;
-        fixNextCombo(p2Start + d + 1);
+        const newCI = fixNextCombo(p2Start + d + 1);
+        // 主動清理：移除落後 / 被堵死的狀態，縮小記憶體
+        const pruned = pruneFrontier();
+        peakStates = Math.max(peakStates, frontier.size);
+        if (debugMode && pruned > 0) {
+          setDebugText(
+            `剪枝清理: 移除 ${pruned} 個狀態，剩餘 ${frontier.size}（${estimateMemoryStr(frontier.size)}）\n` +
+            `已固定 ${fixedSet.size}/${activeCI.length} 組，最佳 ${bestCl}/${numCombos}`
+          );
+        }
       }
 
       // 安全上限
@@ -723,7 +770,8 @@ async function runAISearch(word) {
       }
 
       const fixedInfo = fixedSet.size < activeCI.length ? `固定${fixedSet.size}/${activeCI.length}` : "全固定";
-      setMessage(`🤖 步${d + 1}/${p2Len}（${frontier.size} 狀態，${fixedInfo}，最佳 ${bestCl}/${numCombos}）`, true);
+      const mem = estimateMemoryStr(frontier.size);
+      setMessage(`🤖 步${d + 1}/${p2Len}（${frontier.size}態 ${mem}，${fixedInfo}，最佳${bestCl}/${numCombos}）`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
@@ -741,7 +789,8 @@ async function runAISearch(word) {
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
   const elapsed = (performance.now() - t0).toFixed(1);
-  setMessage(`🤖 完成！${bestCl}/${numCombos} 組（${ops} 節點，${elapsed} ms）`, true);
+  const peakMem = estimateMemoryStr(peakStates);
+  setMessage(`🤖 完成！${bestCl}/${numCombos} 組（${ops}節點，峰值${peakStates}態 ${peakMem}，${elapsed}ms）`, true);
   aiComputing = false;
 }
 
