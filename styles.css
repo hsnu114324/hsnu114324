@@ -82,13 +82,6 @@ body {
   border-color: #e47c3a;
 }
 
-#autoBtn:disabled {
-  background: #2a2e3e;
-  border-color: #444;
-  color: #666;
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 .score-chip {
   font-size: 0.95rem;

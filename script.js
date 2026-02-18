@@ -1274,6 +1274,7 @@ async function runAISearch(word) {
 }
 
 function toggleAutoMode() {
+  if (blockCount < 10) return; // 前 10 子不允許啟用
   autoMode = !autoMode;
   autoBtn.textContent = autoMode ? "手動" : "自動";
   autoBtn.classList.toggle("active", autoMode);
@@ -1301,10 +1302,6 @@ function spawnBlock() {
   };
 
   blockCount++;
-  // 第 7 子後才開放自動按鈕
-  if (blockCount >= 7 && autoBtn.disabled) {
-    autoBtn.disabled = false;
-  }
 
   if (board[0][activeBlock.col] !== null) {
     running = false;
@@ -1730,7 +1727,6 @@ function restartGame() {
   autoMode = false;
   autoBtn.textContent = "自動";
   autoBtn.classList.remove("active");
-  autoBtn.disabled = true;  // 第 7 子後才開放
   scoreEl.textContent = "0";
   updateProgress();
 
