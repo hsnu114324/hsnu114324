@@ -224,7 +224,7 @@ function findBestColumn() {
   let bestCol = Math.floor(COLS / 2);
   let bestScore = -Infinity;
 
-  // 預先算出每欄的落點 row（-1 = 滿了）
+  // ── 1. 預算每欄落點 ──
   const landRows = [];
   for (let c = 0; c < COLS; c++) {
     let lr = -1;
@@ -234,8 +234,7 @@ function findBestColumn() {
     landRows.push(lr);
   }
 
-  // 預掃描每一行的「局部 combo」：哪些 combo 在哪一行已有部分匹配
-  // rowPartials[row] = [{ ci, startCol, matched }]
+  // ── 2. 掃描每行的局部 combo ──
   const rowPartials = [];
   for (let row = 0; row < ROWS; row++) {
     const list = [];
@@ -257,15 +256,81 @@ function findBestColumn() {
     rowPartials.push(list);
   }
 
+  // ── 3. 讀取整個 wordQueue，計算每組 combo 的優先權重 ──
+  //   ‧ 找出棋盤上匹配最多的行
+  //   ‧ 列出還缺哪些字
+  //   ‧ 檢查缺字是否都在 [當前字 + wordQueue] 裡
+  //   ‧ 計算「完成距離」= 隊列中拿齊所有缺字所需的最遠位置
+  //   ‧ 距離越短 + 棋盤進度越高 → 權重越大
+
+  const available = [word, ...wordQueue]; // 可用字序列（只讀）
+  const comboWeight = new Array(comboList.length).fill(1);
+
+  for (let ci = 0; ci < comboList.length; ci++) {
+    const combo = comboList[ci];
+
+    // 3a. 找棋盤上最佳局部匹配
+    let bestMatched = 0, bestRow = -1, bestSc = -1;
+    for (let row = 0; row < ROWS; row++) {
+      for (const p of rowPartials[row]) {
+        if (p.ci === ci && p.matched > bestMatched) {
+          bestMatched = p.matched;
+          bestRow = row;
+          bestSc = p.startCol;
+        }
+      }
+    }
+
+    // 3b. 列出缺字
+    const missing = [];
+    if (bestRow >= 0) {
+      for (let i = 0; i < combo.length; i++) {
+        const cell = board[bestRow][bestSc + i];
+        if (!cell || cell.word !== combo[i]) missing.push(combo[i]);
+      }
+    } else {
+      for (const w of combo) missing.push(w);
+    }
+    if (missing.length === 0) { comboWeight[ci] = 5; continue; } // 已齊，等消除
+
+    // 3c. 檢查 available 裡是否有足夠的缺字（考慮重複字）
+    const need = {};
+    for (const m of missing) need[m] = (need[m] || 0) + 1;
+    const have = {};
+    for (const a of available) {
+      if (need[a]) have[a] = (have[a] || 0) + 1;
+    }
+    let canComplete = true;
+    for (const m in need) {
+      if ((have[m] || 0) < need[m]) { canComplete = false; break; }
+    }
+    if (!canComplete) continue; // 這輪補不齊，權重維持 1
+
+    // 3d. 計算完成距離（隊列中最遠的缺字位置）
+    const tmpMissing = [...missing];
+    let dist = 0;
+    for (let q = 0; q < available.length && tmpMissing.length > 0; q++) {
+      const idx = tmpMissing.indexOf(available[q]);
+      if (idx >= 0) { tmpMissing.splice(idx, 1); dist = q; }
+    }
+
+    // 3e. 計算權重：進度 + 完成距離
+    const progress = bestMatched / combo.length;                        // 0~1
+    const proximity = Math.max(0, 1 - dist / (available.length || 1)); // 0~1
+    comboWeight[ci] = 1 + progress * 2.5 + proximity * 1.5;           // 1~5
+  }
+
+  // ── 4. 評估每一欄 ──
   for (let col = 0; col < COLS; col++) {
     const landRow = landRows[col];
     if (landRow < 0) continue;
 
-    let comboScore = 0; // 取最大值（不累加）
+    let comboScore = 0;
 
-    // ─── A. 落點行的 combo 匹配 ───
+    // ─ A. 落點行 combo 匹配（乘以權重）─
     for (let ci = 0; ci < comboList.length; ci++) {
       const combo = comboList[ci];
+      const w = comboWeight[ci];
       for (let wi = 0; wi < combo.length; wi++) {
         if (combo[wi] !== word) continue;
         const sc = col - wi;
@@ -290,44 +355,41 @@ function findBestColumn() {
 
         let s = 0;
         if (matchCount >= combo.length) {
-          s = 2000; // 直接完成
+          s = 2000;
         } else {
           s = matchCount * 80 + alignedEmpty * 40;
           if (totalEmpty > 0 && alignedEmpty === totalEmpty) s += 120;
         }
-        comboScore = Math.max(comboScore, s);
+        comboScore = Math.max(comboScore, Math.round(s * w));
       }
     }
 
-    // ─── B.「正確欄位」獎勵：即使落點行不對齊，
-    //       放在 combo 對應的欄位，未來消除後重力會讓字掉到正確行 ───
+    // ─ B. 正確欄位獎勵（重力掉落後會對齊，權重放大）─
     for (let ci = 0; ci < comboList.length; ci++) {
       const combo = comboList[ci];
+      const w = comboWeight[ci];
       for (let wi = 0; wi < combo.length; wi++) {
         if (combo[wi] !== word) continue;
         const sc = col - wi;
         if (sc < 0 || sc + combo.length > COLS) continue;
-        comboScore += 5;
+        comboScore += Math.round(5 * w);
       }
     }
 
-    // ─── C. 阻擋懲罰：若落點行已有別組 combo 的局部匹配，
-    //       而本字會佔據該 combo 需要的格子，重罰 ───
+    // ─ C. 阻擋懲罰（擋住高權重 combo 罰更重）─
     let blockPenalty = 0;
     for (const p of rowPartials[landRow]) {
       const combo = comboList[p.ci];
+      const w = comboWeight[p.ci];
       if (col < p.startCol || col >= p.startCol + combo.length) continue;
       const wi = col - p.startCol;
       if (combo[wi] !== word) {
-        // 這個字會擋住這組局部 combo
-        blockPenalty = Math.max(blockPenalty, p.matched * 60);
+        blockPenalty = Math.max(blockPenalty, Math.round(p.matched * 60 * w));
       }
     }
 
     let colScore = comboScore - blockPenalty;
-    // 偏好低處放置
     colScore += landRow * 2;
-    // 微偏好中間
     colScore -= Math.abs(col - (COLS - 1) / 2) * 0.5;
 
     if (colScore > bestScore) {
