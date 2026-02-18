@@ -26,7 +26,6 @@ const messageEl = document.getElementById("message");
 const restartBtn = document.getElementById("restartBtn");
 const autoBtn = document.getElementById("autoBtn");
 const debugBtn = document.getElementById("debugBtn");
-const debugHistoryBtn = document.getElementById("debugHistoryBtn");
 const debugBoxEl = document.getElementById("debugBox");
 const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
@@ -58,9 +57,6 @@ let autoPlanStep = 0;        // 目前執行到第幾步
 let aiComputing = false;     // AI 正在計算中
 let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
 let debugMode = false;
-let debugHistoryExpanded = false;
-let debugLatestText = "";
-let debugHistory = [];
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -181,17 +177,8 @@ function setMessage(text, isOk = false) {
 }
 
 function setDebugText(text) {
-  if (!debugBoxEl) return;
-  debugLatestText = text || "";
-  if (!debugMode) return;
-  if (!debugHistoryExpanded || debugHistory.length === 0) {
-    debugBoxEl.textContent = debugLatestText;
-    return;
-  }
-  const items = debugHistory
-    .map((item, idx) => `${idx + 1}. ${item.title} (${item.step})`)
-    .join("\n");
-  debugBoxEl.textContent = `${debugLatestText}\n\n--- 歷史（最近 5 筆）---\n${items}`;
+  if (!debugBoxEl || !debugMode) return;
+  debugBoxEl.textContent = text || "";
 }
 
 function toggleDebugMode() {
@@ -199,21 +186,8 @@ function toggleDebugMode() {
   if (debugBtn) debugBtn.classList.toggle("active", debugMode);
   if (debugBoxEl) {
     debugBoxEl.classList.toggle("show", debugMode);
-    if (!debugMode) {
-      debugHistoryExpanded = false;
-      if (debugHistoryBtn) debugHistoryBtn.classList.remove("active");
-      debugBoxEl.textContent = "";
-      return;
-    }
-    setDebugText(debugLatestText);
+    if (!debugMode) debugBoxEl.textContent = "";
   }
-}
-
-function toggleDebugHistory() {
-  if (!debugMode) return;
-  debugHistoryExpanded = !debugHistoryExpanded;
-  if (debugHistoryBtn) debugHistoryBtn.classList.toggle("active", debugHistoryExpanded);
-  setDebugText(debugLatestText);
 }
 
 function createEmptyBoard() {
@@ -391,9 +365,6 @@ async function runAISearch(word) {
   const myGen = ++aiSearchGen;
   aiComputing = true;
   buildWordIndex();
-  debugLatestText = "";
-  debugHistory = [];
-  if (debugMode) setDebugText("");
 
   const fullSeq = [word, ...wordQueue];
   const seqIdx = Uint8Array.from(fullSeq.map(w => _wToI.get(w) || 0));
@@ -637,22 +608,16 @@ async function runAISearch(word) {
 
         const nx = (depth + 1) * TC;
         pool.copyWithin(nx, off, off + TC);
-        const beforeClear = debugMode ? pool.slice(nx, nx + TC) : null;
         pool[nx + lr * COLS + col] = wIdx;
+        const beforeClear = debugMode ? pool.slice(nx, nx + TC) : null;
         const nc = simClear(pool.subarray(nx, nx + TC), _cIdx, cl);
         if (debugMode && beforeClear && nc !== cl) {
           const clearedDelta = popcount(nc) - popcount(cl);
-          const clearTitle = `${_iToW[wIdx]} -> col ${col} (+${clearedDelta} 組)`;
           lastClearSample =
             `最近一次消除樣本 (+${clearedDelta} 組)\n` +
             `落子: ${_iToW[wIdx]} -> col ${col}\n` +
             `消前:\n${flatToDebugText(beforeClear)}\n` +
             `消後:\n${flatToDebugText(pool.subarray(nx, nx + TC))}`;
-          debugHistory.unshift({
-            title: clearTitle,
-            step: `d${depth + 1}`,
-          });
-          if (debugHistory.length > 5) debugHistory.length = 5;
         }
 
         sP[depth] = col;
@@ -1144,12 +1109,6 @@ function restartGame() {
   aiSearchGen++;            // 取消舊搜索
   aiComputing = false;
   clearAutoPlan();
-  debugLatestText = "";
-  debugHistory = [];
-  if (debugHistoryBtn) {
-    debugHistoryExpanded = false;
-    debugHistoryBtn.classList.remove("active");
-  }
   if (debugMode) setDebugText("");
   scoreEl.textContent = "0";
   updateProgress();
