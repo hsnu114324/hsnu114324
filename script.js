@@ -230,234 +230,214 @@ function nextWord() {
   return wordQueue.shift();
 }
 
-// ── 自動模式 AI ──
+// ── 自動模式 AI（模擬式前瞻）──
+// 每次選欄時，對 6 個欄位各模擬跑完剩餘整場遊戲，
+// 選擇能消除最多 combo、留下最多空間的那一欄。
 
-function findBestColumn() {
-  if (!activeBlock) return Math.floor(COLS / 2);
-  const word = activeBlock.word;
-  let bestCol = Math.floor(COLS / 2);
-  let bestScore = -Infinity;
+// 複製棋盤（輕量：只保留 word）
+function cloneBoard(b) {
+  return b.map((row) => row.map((cell) => (cell ? { word: cell.word } : null)));
+}
 
-  // ── 1. 預算每欄落點 ──
-  const landRows = [];
-  for (let c = 0; c < COLS; c++) {
-    let lr = -1;
-    for (let r = ROWS - 1; r >= 0; r--) {
-      if (board[r][c] === null) { lr = r; break; }
-    }
-    landRows.push(lr);
+// 某欄的落點 row（-1 = 滿）
+function simLandRow(b, col) {
+  for (let r = ROWS - 1; r >= 0; r--) {
+    if (b[r][col] === null) return r;
   }
+  return -1;
+}
 
-  // ── 2. 掃描每行的局部 combo ──
-  const rowPartials = [];
-  for (let row = 0; row < ROWS; row++) {
-    const list = [];
-    for (let ci = 0; ci < comboList.length; ci++) {
-      const combo = comboList[ci];
-      for (let sc = 0; sc <= COLS - combo.length; sc++) {
-        let matched = 0;
-        let blocked = false;
-        for (let i = 0; i < combo.length; i++) {
-          const cell = board[row][sc + i];
-          if (cell && cell.word === combo[i]) matched++;
-          else if (cell !== null) { blocked = true; break; }
-        }
-        if (!blocked && matched > 0) {
-          list.push({ ci, startCol: sc, matched });
-        }
-      }
-    }
-    rowPartials.push(list);
-  }
-
-  // ── 3. 讀取整個 wordQueue，計算每組 combo 的優先權重 ──
-  //   ‧ 找出棋盤上匹配最多的行
-  //   ‧ 列出還缺哪些字
-  //   ‧ 檢查缺字是否都在 [當前字 + wordQueue] 裡
-  //   ‧ 計算「完成距離」= 隊列中拿齊所有缺字所需的最遠位置
-  //   ‧ 距離越短 + 棋盤進度越高 → 權重越大
-
-  const available = [word, ...wordQueue]; // 可用字序列（只讀）
-  const comboWeight = new Array(comboList.length).fill(1);
-
-  for (let ci = 0; ci < comboList.length; ci++) {
-    const combo = comboList[ci];
-
-    // 3a. 找棋盤上最佳局部匹配
-    let bestMatched = 0, bestRow = -1, bestSc = -1;
-    for (let row = 0; row < ROWS; row++) {
-      for (const p of rowPartials[row]) {
-        if (p.ci === ci && p.matched > bestMatched) {
-          bestMatched = p.matched;
-          bestRow = row;
-          bestSc = p.startCol;
-        }
-      }
-    }
-
-    // 3b. 列出缺字
-    const missing = [];
-    if (bestRow >= 0) {
-      for (let i = 0; i < combo.length; i++) {
-        const cell = board[bestRow][bestSc + i];
-        if (!cell || cell.word !== combo[i]) missing.push(combo[i]);
-      }
-    } else {
-      for (const w of combo) missing.push(w);
-    }
-    if (missing.length === 0) { comboWeight[ci] = 5; continue; } // 已齊，等消除
-
-    // 3c. 檢查 available 裡是否有足夠的缺字（考慮重複字）
-    const need = {};
-    for (const m of missing) need[m] = (need[m] || 0) + 1;
-    const have = {};
-    for (const a of available) {
-      if (need[a]) have[a] = (have[a] || 0) + 1;
-    }
-    let canComplete = true;
-    for (const m in need) {
-      if ((have[m] || 0) < need[m]) { canComplete = false; break; }
-    }
-    if (!canComplete) continue; // 這輪補不齊，權重維持 1
-
-    // 3d. 計算完成距離（隊列中最遠的缺字位置）
-    const tmpMissing = [...missing];
-    let dist = 0;
-    for (let q = 0; q < available.length && tmpMissing.length > 0; q++) {
-      const idx = tmpMissing.indexOf(available[q]);
-      if (idx >= 0) { tmpMissing.splice(idx, 1); dist = q; }
-    }
-
-    // 3e. 計算權重：進度 + 完成距離
-    const progress = bestMatched / combo.length;                        // 0~1
-    const proximity = Math.max(0, 1 - dist / (available.length || 1)); // 0~1
-    comboWeight[ci] = 1 + progress * 2.5 + proximity * 1.5;           // 1~5
-  }
-
-  // ── 4. 戰略規劃：全局 startCol + 堆疊層消 ──
-  //   所有 combo 共用同一個 startCol，字在正確欄位上下堆疊，
-  //   底層消除 → 重力讓上層掉落 → 連鎖消除。
-
-  // 4a. 選最佳全局 startCol：讓最多高權重 combo 使用、且與棋盤現狀吻合
-  let bestGSC = 0, bestGSCScore = -Infinity;
-  for (let gsc = 0; gsc < COLS; gsc++) {
-    let s = 0;
-    for (let ci = 0; ci < comboList.length; ci++) {
-      if (gsc + comboList[ci].length <= COLS) s += comboWeight[ci];
-    }
-    // 若棋盤上已有局部 combo 在此 startCol，加分
-    for (let row = 0; row < ROWS; row++) {
-      for (const p of rowPartials[row]) {
-        if (p.startCol === gsc) s += p.matched * comboWeight[p.ci] * 2;
-      }
-    }
-    if (s > bestGSCScore) { bestGSCScore = s; bestGSC = gsc; }
-  }
-
-  // 4b. 保留欄位集合（bestGSC 下所有可完成 combo 佔用的欄位）
-  const reservedCols = new Set();
-  for (let ci = 0; ci < comboList.length; ci++) {
-    const combo = comboList[ci];
-    if (bestGSC + combo.length <= COLS) {
-      for (let i = 0; i < combo.length; i++) reservedCols.add(bestGSC + i);
-    }
-  }
-
-  // 4c. 當前字的「戰略目標欄」：從最高權重 combo 決定
-  let targetCol = -1, targetCW = 0;
-  for (let ci = 0; ci < comboList.length; ci++) {
-    const combo = comboList[ci];
-    if (bestGSC + combo.length > COLS) continue;
-    const cw = comboWeight[ci];
-    for (let wi = 0; wi < combo.length; wi++) {
-      if (combo[wi] === word && cw > targetCW) {
-        targetCol = bestGSC + wi;
-        targetCW = cw;
-      }
-    }
-  }
-
-  // 4d. 計算連鎖深度：有多少 combo 使用 bestGSC 且能完成
-  let stackDepth = 0;
-  for (let ci = 0; ci < comboList.length; ci++) {
-    if (bestGSC + comboList[ci].length <= COLS && comboWeight[ci] > 1) stackDepth++;
-  }
-
-  // ── 5. 評估每一欄 ──
+// 重力沉降
+function simGravity(b) {
   for (let col = 0; col < COLS; col++) {
-    const landRow = landRows[col];
-    if (landRow < 0) continue;
+    const stack = [];
+    for (let row = ROWS - 1; row >= 0; row--) {
+      if (b[row][col]) stack.push(b[row][col]);
+    }
+    for (let row = ROWS - 1; row >= 0; row--) {
+      b[row][col] = stack[ROWS - 1 - row] || null;
+    }
+  }
+}
 
-    let comboScore = 0;
+// 消除 + 重力（可連鎖），回傳本次新消除的 combo 數
+function simClear(b, combos, cleared) {
+  let total = 0;
+  let again = true;
+  while (again) {
+    again = false;
+    for (let row = 0; row < ROWS; row++) {
+      for (let ci = 0; ci < combos.length; ci++) {
+        if (cleared.has(ci)) continue;
+        const combo = combos[ci];
+        for (let sc = 0; sc <= COLS - combo.length; sc++) {
+          let hit = true;
+          for (let i = 0; i < combo.length; i++) {
+            if (!b[row][sc + i] || b[row][sc + i].word !== combo[i]) {
+              hit = false;
+              break;
+            }
+          }
+          if (hit) {
+            for (let i = 0; i < combo.length; i++) b[row][sc + i] = null;
+            cleared.add(ci);
+            total++;
+            again = true;
+          }
+        }
+      }
+    }
+    if (again) simGravity(b);
+  }
+  return total;
+}
 
-    // ─ A. 落點行 combo 匹配（乘以權重）─
-    for (let ci = 0; ci < comboList.length; ci++) {
-      const combo = comboList[ci];
-      const w = comboWeight[ci];
+// 貪心選欄（模擬內部用，簡化但精確）
+function greedyCol(b, word, combos, cleared) {
+  const lrs = [];
+  for (let c = 0; c < COLS; c++) lrs.push(simLandRow(b, c));
+  let best = -1, bestS = -Infinity;
+
+  for (let col = 0; col < COLS; col++) {
+    const lr = lrs[col];
+    if (lr < 0) continue;
+    let s = 0;
+
+    // A. combo 匹配 + 對齊
+    for (let ci = 0; ci < combos.length; ci++) {
+      if (cleared.has(ci)) continue;
+      const combo = combos[ci];
       for (let wi = 0; wi < combo.length; wi++) {
         if (combo[wi] !== word) continue;
         const sc = col - wi;
         if (sc < 0 || sc + combo.length > COLS) continue;
-
-        let matchCount = 0, possible = true;
-        let alignedEmpty = 0, totalEmpty = 0;
+        let mc = 0,
+          ok = true,
+          ae = 0,
+          te = 0;
         for (let i = 0; i < combo.length; i++) {
           const cc = sc + i;
-          if (i === wi) { matchCount++; continue; }
-          const cell = board[landRow][cc];
-          if (cell && cell.word === combo[i]) {
-            matchCount++;
-          } else if (cell !== null) {
-            possible = false; break;
+          if (i === wi) {
+            mc++;
+            continue;
+          }
+          const cell = b[lr][cc];
+          if (cell && cell.word === combo[i]) mc++;
+          else if (cell !== null) {
+            ok = false;
+            break;
           } else {
-            totalEmpty++;
-            if (landRows[cc] === landRow) alignedEmpty++;
+            te++;
+            if (lrs[cc] === lr) ae++;
           }
         }
-        if (!possible) continue;
+        if (!ok) continue;
+        const v =
+          mc >= combo.length
+            ? 2000
+            : mc * 80 + ae * 40 + (te > 0 && ae === te ? 120 : 0);
+        s = Math.max(s, v);
+      }
+    }
 
-        let s = 0;
-        if (matchCount >= combo.length) {
-          s = 2000;
-        } else {
-          s = matchCount * 80 + alignedEmpty * 40;
-          if (totalEmpty > 0 && alignedEmpty === totalEmpty) s += 120;
+    // B. 阻擋懲罰
+    for (let ci = 0; ci < combos.length; ci++) {
+      if (cleared.has(ci)) continue;
+      const combo = combos[ci];
+      for (let sc = 0; sc <= COLS - combo.length; sc++) {
+        if (col < sc || col >= sc + combo.length) continue;
+        const wi = col - sc;
+        if (combo[wi] === word) continue;
+        let mc = 0,
+          blk = false;
+        for (let i = 0; i < combo.length; i++) {
+          if (i === wi) continue;
+          const cell = b[lr][sc + i];
+          if (cell && cell.word === combo[i]) mc++;
+          else if (cell !== null) {
+            blk = true;
+            break;
+          }
         }
-        comboScore = Math.max(comboScore, Math.round(s * w));
+        if (!blk && mc > 0) s -= mc * 60;
       }
     }
 
-    // ─ B. 阻擋懲罰（擋住高權重 combo 罰更重）─
-    let blockPenalty = 0;
-    for (const p of rowPartials[landRow]) {
-      const combo = comboList[p.ci];
-      const w = comboWeight[p.ci];
-      if (col < p.startCol || col >= p.startCol + combo.length) continue;
-      const wi = col - p.startCol;
-      if (combo[wi] !== word) {
-        blockPenalty = Math.max(blockPenalty, Math.round(p.matched * 60 * w));
+    // C. 正確欄位小獎勵
+    for (let ci = 0; ci < combos.length; ci++) {
+      if (cleared.has(ci)) continue;
+      const combo = combos[ci];
+      for (let wi = 0; wi < combo.length; wi++) {
+        if (combo[wi] === word) {
+          const sc = col - wi;
+          if (sc >= 0 && sc + combo.length <= COLS) s += 10;
+        }
       }
     }
 
-    // ─ C. 戰略堆疊獎勵 ─
-    //   ‧ 放在目標欄 → 大加分（連鎖越深獎勵越高）
-    //   ‧ 非 combo 字佔保留欄 → 扣分
-    let strategyBonus = 0;
-    if (targetCol >= 0 && col === targetCol) {
-      // 連鎖深度倍率：3層=1.8x, 2層=1.4x, 1層=1x
-      const cascadeMul = 1 + (stackDepth - 1) * 0.4;
-      strategyBonus = Math.round(300 * targetCW * cascadeMul);
-    } else if (targetCol < 0 && reservedCols.has(col)) {
-      // 這個字不屬於任何規劃中的 combo，卻放在保留欄 → 扣分
-      strategyBonus = -200;
+    s += lr * 2;
+    if (s > bestS) {
+      bestS = s;
+      best = col;
     }
+  }
+  return best >= 0 ? best : Math.floor(COLS / 2);
+}
 
-    let colScore = comboScore + strategyBonus - blockPenalty;
-    colScore += landRow * 2;
-    colScore -= Math.abs(col - (COLS - 1) / 2) * 0.5;
+// 模擬剩餘整場遊戲，回傳評估分
+function simulateGame(startBoard, queue, startCleared, combos) {
+  const b = cloneBoard(startBoard);
+  const cleared = new Set(startCleared);
 
-    if (colScore > bestScore) {
-      bestScore = colScore;
+  for (const word of queue) {
+    // 跳過已消除 combo 的字
+    let needed = false;
+    for (let ci = 0; ci < combos.length; ci++) {
+      if (!cleared.has(ci) && combos[ci].includes(word)) {
+        needed = true;
+        break;
+      }
+    }
+    if (!needed) continue;
+
+    const col = greedyCol(b, word, combos, cleared);
+    const lr = simLandRow(b, col);
+    if (lr < 0) break; // 溢出 → 遊戲結束
+    b[lr][col] = { word };
+    simClear(b, combos, cleared);
+  }
+
+  // 評分：消除 combo 數（大權重）+ 剩餘空間
+  let score = cleared.size * 10000;
+  for (let c = 0; c < COLS; c++) {
+    const lr = simLandRow(b, c);
+    score += (lr >= 0 ? lr : -ROWS) * 5;
+  }
+  return score;
+}
+
+// 主決策：對每一欄模擬放下後跑完剩餘遊戲，選最佳結果
+function findBestColumn() {
+  if (!activeBlock) return Math.floor(COLS / 2);
+  const word = activeBlock.word;
+  const queue = [...wordQueue]; // 完整的未來發牌序列
+
+  let bestCol = Math.floor(COLS / 2);
+  let bestScore = -Infinity;
+
+  for (let col = 0; col < COLS; col++) {
+    const lr = simLandRow(board, col);
+    if (lr < 0) continue;
+
+    // 模擬：在此欄放下當前字 → 消除 → 跑完剩餘遊戲
+    const sb = cloneBoard(board);
+    sb[lr][col] = { word };
+    const sc = new Set(clearedCombos);
+    simClear(sb, comboList, sc);
+    const score = simulateGame(sb, queue, sc, comboList);
+
+    if (score > bestScore) {
+      bestScore = score;
       bestCol = col;
     }
   }
