@@ -355,15 +355,13 @@ function findBestColumn() {
   return quickGuessCol();
 }
 
-// ── 全模擬版型枚舉 ──
-// 每個 combo 可從 0 ~ (COLS - comboLen) 開始
-// 枚舉所有版型組合，對每種版型用佇列順序完整模擬遊戲（含落子、消除、重力）
-// 版型數 ≤ 上限時完整枚舉，否則隨機取樣
+// ── 兩階段搜索：Phase 1 啟發式 + Phase 2 全 DFS ──
+// Phase 1: 分析前 7 個字，找出最多字的 combo 優先放底部，其餘 garbage
+// Phase 2: 剩餘字用全搜索（DFS + 上界剪枝 + combo 合法欄優先）
 async function runAISearch(word) {
   const myGen = ++aiSearchGen;
   aiComputing = true;
   buildWordIndex();
-
   const t0 = performance.now();
 
   const fullSeq = [word, ...wordQueue];
@@ -372,7 +370,7 @@ async function runAISearch(word) {
   const numCombos = comboList.length;
   const TC = ROWS * COLS;
 
-  setMessage(`🤖 版型模擬中...`, true);
+  setMessage(`🤖 分析中...`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
@@ -380,25 +378,32 @@ async function runAISearch(word) {
   for (const ci of clearedCombos) initCl |= (1 << ci);
   const f0 = boardToFlat(board);
   let bestCl = popcount(initCl), bestSp = -1, bestPath = [];
+  let ops = 0;
+  let lastDebugSample = "";
   let planInstalled = false;
 
   function flatToDebugText(flat) {
-    const rows = [];
+    const lines = [];
     for (let r = 0; r < ROWS; r++) {
-      const cols = [];
+      const cs = [];
       for (let c = 0; c < COLS; c++) {
         const v = flat[r * COLS + c];
-        cols.push(v === 0 ? "." : String(v));
+        cs.push(v === 0 ? "." : (_iToW[v] || String(v)));
       }
-      rows.push(cols.join(" "));
+      lines.push(cs.join(" "));
     }
-    return rows.join("\n");
+    return lines.join("\n");
   }
 
-  // ── 活躍 combo 及每個字的歸屬 ──
+  // ── 活躍 combo 與字映射 ──
   const activeCI = [];
   for (let ci = 0; ci < numCombos; ci++) if (!(initCl & (1 << ci))) activeCI.push(ci);
-  const N = activeCI.length;
+
+  if (activeCI.length === 0) {
+    aiComputing = false;
+    setMessage(`🤖 所有組合已消除！`, true);
+    return;
+  }
 
   const wordToCi = new Int8Array(_iToW.length).fill(-1);
   const wordToPos = new Int8Array(_iToW.length).fill(-1);
@@ -412,53 +417,90 @@ async function runAISearch(word) {
     }
   }
 
-  // ── 計算版型總數 ──
-  const choices = new Uint8Array(N);
-  let totalLayouts = 1;
-  let overflow = false;
-  for (let i = 0; i < N; i++) {
-    const clen = _cIdx[activeCI[i]].length;
-    choices[i] = Math.max(1, COLS - clen + 1);
-    totalLayouts *= choices[i];
-    if (totalLayouts > 200000) { overflow = true; break; }
+  // 每個 combo word 的合法欄位集合（用於剪枝）
+  const wValid = new Array(_iToW.length).fill(null);
+  for (const ci of activeCI) {
+    const combo = _cIdx[ci];
+    const clen = combo.length;
+    for (let p = 0; p < clen; p++) {
+      const w = combo[p];
+      if (!wValid[w]) wValid[w] = new Set();
+      for (let sc = 0; sc <= COLS - clen; sc++) wValid[w].add(sc + p);
+    }
   }
 
-  const MAX_LAYOUTS = 200000;
-  const enumerate = !overflow && totalLayouts <= MAX_LAYOUTS;
-  const layoutCount = enumerate ? totalLayouts : MAX_LAYOUTS;
+  // ── Phase 1: 分析前 7 個字 ──
+  const P1 = Math.min(7, totalSteps);
+  const comboFreq = new Uint8Array(numCombos);
+  for (let s = 0; s < P1; s++) {
+    const ci = wordToCi[seqIdx[s]];
+    if (ci >= 0) comboFreq[ci]++;
+  }
 
-  setMessage(`🤖 模擬 ${layoutCount} 版型（${totalSteps} 步）...`, true);
+  // 優先 combo = 前 7 中出現最多的
+  let priCI = -1, priMax = 0;
+  for (const ci of activeCI) {
+    if (comboFreq[ci] > priMax) { priMax = comboFreq[ci]; priCI = ci; }
+  }
+
+  // 優先 combo 的有效起始欄
+  const priStarts = [];
+  if (priCI >= 0) {
+    const clen = _cIdx[priCI].length;
+    for (let sc = 0; sc <= COLS - clen; sc++) priStarts.push(sc);
+  } else {
+    priStarts.push(-1);
+  }
+
+  // 更新最佳結果
+  function tryUpdate(finalBoard, clMask, path) {
+    const cleared = popcount(clMask);
+    let space = 0;
+    for (let c = 0; c < COLS; c++)
+      for (let r = ROWS - 1; r >= 0; r--)
+        if (finalBoard[r * COLS + c] === 0) { space += r + 1; break; }
+    if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
+      bestCl = cleared; bestSp = space; bestPath = path;
+      autoPlan = path;
+      if (!planInstalled) { autoPlanStep = 1; planInstalled = true; }
+      if (autoPlanStep <= 1 && path.length > 0) autoTargetCol = path[0].col;
+      if (debugMode) {
+        const fm = path[0] ? `${path[0].word}@c${path[0].col}` : "-";
+        setDebugText(
+          `最佳: ${cleared}/${numCombos}\n首步: ${fm}\n` +
+          `${lastDebugSample ? lastDebugSample + "\n" : ""}` +
+          `盤面:\n${flatToDebugText(finalBoard)}`
+        );
+      }
+      return cleared === numCombos;
+    }
+    return false;
+  }
+
+  setMessage(`🤖 優先組合 #${priCI >= 0 ? priCI + 1 : "無"}（${priStarts.length} 起始欄）`, true);
   await new Promise(r => setTimeout(r, 0));
   if (myGen !== aiSearchGen) return;
 
-  let lastDebugSample = "";
+  // ── 嘗試每個優先起始欄 ──
+  for (const psc of priStarts) {
+    if (myGen !== aiSearchGen) return;
 
-  // ── 模擬單一版型 ──
-  function simulateLayout(cs) {
-    // 衝突檢測：同一字在不同 combo 被指定到不同欄
-    const wCol = new Int8Array(_iToW.length).fill(-1);
-    for (const ci of activeCI) {
-      const combo = _cIdx[ci];
-      for (let p = 0; p < combo.length; p++) {
-        const w = combo[p], c = cs[ci] + p;
-        if (wCol[w] !== -1 && wCol[w] !== c) return false;
-        wCol[w] = c;
-      }
-    }
-
+    // Phase 1: 啟發式模擬前 P1 步
     const sf = f0.slice();
     let cl = initCl;
-    const path = [];
+    const p1Path = [];
+    let p1Ok = true;
 
-    for (let s = 0; s < totalSteps; s++) {
+    for (let s = 0; s < P1; s++) {
       const wIdx = seqIdx[s];
       const ci = wordToCi[wIdx];
+      const pos = wordToPos[wIdx];
       let col;
 
-      if (ci >= 0 && !(cl & (1 << ci))) {
-        col = cs[ci] + wordToPos[wIdx];
+      if (ci === priCI && psc >= 0 && !(cl & (1 << priCI))) {
+        col = psc + pos; // 優先 combo → 指定位置
       } else {
-        // 已消除或無所屬 → 找最空欄
+        // Garbage → 最空欄
         let mh = -1; col = 0;
         for (let c = 0; c < COLS; c++) {
           let h = 0;
@@ -473,95 +515,152 @@ async function runAISearch(word) {
       for (let r = ROWS - 1; r >= 0; r--) {
         if (sf[r * COLS + col] === 0) { lr = r; break; }
       }
-      if (lr < 0) return false; // 溢出
+      if (lr < 0) { p1Ok = false; break; }
 
       sf[lr * COLS + col] = wIdx;
-      path.push({ word: fullSeq[s], col });
-
-      const beforeCl = cl;
-      const beforeBoard = debugMode ? sf.slice() : null;
+      const bCl = cl;
+      const bB = debugMode ? sf.slice() : null;
       cl = simClear(sf, _cIdx, cl);
-
-      if (debugMode && beforeBoard && cl !== beforeCl) {
-        const delta = popcount(cl) - popcount(beforeCl);
+      if (debugMode && bB && cl !== bCl) {
         lastDebugSample =
-          `消除樣本 (+${delta} 組)\n` +
-          `落子: ${_iToW[wIdx]} -> col ${col}\n` +
-          `消前:\n${flatToDebugText(beforeBoard)}\n` +
-          `消後:\n${flatToDebugText(sf)}`;
+          `消除 (+${popcount(cl) - popcount(bCl)} 組)\n` +
+          `落: ${_iToW[wIdx]} → col ${col}\n` +
+          `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(sf)}`;
       }
+      p1Path.push({ word: fullSeq[s], col });
     }
 
-    const cleared = popcount(cl);
-    let space = 0;
-    for (let c = 0; c < COLS; c++) {
-      for (let r = ROWS - 1; r >= 0; r--) {
-        if (sf[r * COLS + c] === 0) { space += r + 1; break; }
-      }
+    if (!p1Ok) continue;
+
+    // Phase 1 涵蓋全部步驟
+    if (P1 >= totalSteps) {
+      if (tryUpdate(sf, cl, [...p1Path])) break;
+      continue;
     }
 
-    if (cleared > bestCl || (cleared === bestCl && space > bestSp)) {
-      bestCl = cleared; bestSp = space; bestPath = path;
-      if (autoMode && path.length > 0 && autoPlanStep <= 1) autoTargetCol = path[0].col;
-      if (debugMode) {
-        const firstMove = path[0] ? `${path[0].word}@col${path[0].col}` : "-";
-        setDebugText(
-          `最佳更新: ${cleared}/${numCombos} 組\n` +
-          `首步: ${firstMove}\n` +
-          `${lastDebugSample ? `${lastDebugSample}\n` : ""}` +
-          `盤面:\n${flatToDebugText(sf)}`,
-        );
-      }
-      return cleared === numCombos; // true = 全消，可提前停止
-    }
-    return false;
-  }
+    // ── Phase 2: 全 DFS 搜索剩餘字 ──
+    const p2Start = P1;
+    const p2Len = totalSteps - p2Start;
 
-  // ── 主迴圈：枚舉或取樣版型 ──
-  const cs = new Uint8Array(numCombos);
-  let perfect = false;
+    // Board pool（避免 GC）
+    const pool = [];
+    for (let i = 0; i <= p2Len; i++) pool.push(new Uint8Array(TC));
+    pool[0].set(sf);
 
-  for (let li = 0; li < layoutCount; li++) {
-    if (myGen !== aiSearchGen) return;
+    const dfsCl = new Uint32Array(p2Len + 1);
+    dfsCl[0] = cl;
 
-    if (enumerate) {
-      // 完整枚舉：將 li 解碼為各 combo 的起始欄
-      let rem = li;
-      for (let i = 0; i < N; i++) {
-        cs[activeCI[i]] = rem % choices[i];
-        rem = (rem / choices[i]) | 0;
+    // 不可能消除的 combo bitmask（每層）
+    const dfsImp = new Uint32Array(p2Len + 1);
+    dfsImp[0] = 0;
+
+    const dfsPath = new Array(p2Len);
+
+    // 每步的欄位嘗試順序：combo 合法欄優先
+    const colOrd = [];
+    for (let d = 0; d < p2Len; d++) {
+      const w = seqIdx[p2Start + d];
+      const vc = wValid[w];
+      const ord = [];
+      if (vc) {
+        for (let c = 0; c < COLS; c++) if (vc.has(c)) ord.push(c);
+        for (let c = 0; c < COLS; c++) if (!vc.has(c)) ord.push(c);
+      } else {
+        for (let c = 0; c < COLS; c++) ord.push(c);
       }
-    } else {
-      // 隨機取樣
-      for (let i = 0; i < N; i++) {
-        cs[activeCI[i]] = Math.floor(Math.random() * choices[i]);
-      }
+      colOrd.push(ord);
     }
 
-    if (simulateLayout(cs)) { perfect = true; break; }
+    // Stack-based DFS
+    const colPtr = new Int8Array(p2Len).fill(0);
+    let depth = 0;
 
-    // 定期讓出 UI
-    if (li % 3000 === 2999) {
-      setMessage(`🤖 模擬中 ${li + 1}/${layoutCount}（最佳 ${bestCl}/${numCombos}）`, true);
-      await new Promise(r => setTimeout(r, 0));
+    while (depth >= 0) {
       if (myGen !== aiSearchGen) return;
+
+      if (colPtr[depth] >= COLS) {
+        colPtr[depth] = 0;
+        depth--;
+        continue;
+      }
+
+      const col = colOrd[depth][colPtr[depth]];
+      colPtr[depth]++;
+      ops++;
+
+      const step = p2Start + depth;
+      const wIdx = seqIdx[step];
+      const curB = pool[depth];
+
+      // 找落點
+      let lr = -1;
+      for (let r = ROWS - 1; r >= 0; r--) {
+        if (curB[r * COLS + col] === 0) { lr = r; break; }
+      }
+      if (lr < 0) continue; // 欄已滿
+
+      // ── 上界剪枝 ──
+      let imp = dfsImp[depth];
+      const ci = wordToCi[wIdx];
+      if (ci >= 0 && !(dfsCl[depth] & (1 << ci)) && wValid[wIdx] && !wValid[wIdx].has(col)) {
+        imp |= (1 << ci); // 放在不合法欄 → 該 combo 不可能消除
+      }
+      const allM = (1 << numCombos) - 1;
+      const ub = popcount(dfsCl[depth]) + popcount(allM & ~dfsCl[depth] & ~imp);
+      if (ub < bestCl) continue; // 不可能超越最佳
+
+      // 放置
+      const nb = pool[depth + 1];
+      nb.set(curB);
+      nb[lr * COLS + col] = wIdx;
+
+      const bCl = dfsCl[depth];
+      const bB = debugMode ? nb.slice() : null;
+      const nCl = simClear(nb, _cIdx, bCl);
+      dfsCl[depth + 1] = nCl;
+      dfsImp[depth + 1] = imp;
+
+      if (debugMode && bB && nCl !== bCl) {
+        lastDebugSample =
+          `消除 (+${popcount(nCl) - popcount(bCl)} 組)\n` +
+          `落: ${_iToW[wIdx]} → col ${col}\n` +
+          `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(nb)}`;
+      }
+
+      dfsPath[depth] = { word: fullSeq[step], col };
+
+      if (depth + 1 >= p2Len) {
+        // 葉節點：評估
+        const path = [...p1Path];
+        for (let i = 0; i <= depth; i++) path.push({ ...dfsPath[i] });
+        if (tryUpdate(nb, nCl, path)) { depth = -1; break; }
+      } else {
+        depth++;
+        colPtr[depth] = 0;
+      }
+
+      // 定期讓出 UI
+      if (ops % 50000 === 0) {
+        setMessage(`🤖 DFS ${ops} 節點（最佳 ${bestCl}/${numCombos}）`, true);
+        await new Promise(r => setTimeout(r, 0));
+      }
     }
+
+    if (bestCl === numCombos) break;
   }
 
   if (myGen !== aiSearchGen) return;
 
-  // ── 安裝最佳計畫 ──
-  if (bestPath.length > 0) {
+  // ── 安裝最佳方案 ──
+  if (bestPath.length > 0 && !planInstalled) {
     autoPlan = bestPath;
-    if (!planInstalled) autoPlanStep = 1;
-    if (autoPlanStep <= 1 && bestPath.length > 0) autoTargetCol = bestPath[0].col;
+    autoPlanStep = 1;
+    if (bestPath.length > 0) autoTargetCol = bestPath[0].col;
   }
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
   const elapsed = (performance.now() - t0).toFixed(1);
-  const method = enumerate ? `完整枚舉 ${totalLayouts}` : `隨機取樣 ${MAX_LAYOUTS}`;
-  const result = perfect ? "全消 ✓" : `${bestCl}/${numCombos} 組`;
-  setMessage(`🤖 完成！${method} 版型 → ${result}（${elapsed} ms）`, true);
+  setMessage(`🤖 完成！${bestCl}/${numCombos} 組（${ops} 節點，${elapsed} ms）`, true);
   aiComputing = false;
 }
 
