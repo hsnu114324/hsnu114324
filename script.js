@@ -53,6 +53,8 @@ let autoMode = false;       // 自動模式
 let autoTargetCol = -1;     // AI 目標欄
 let autoLastMoveTime = 0;   // 上次 AI 移動時間戳
 const AUTO_MOVE_MS = 100;   // AI 每步間隔 ms
+let autoPlan = [];           // 快取：整場最佳策略 [{word, col}, ...]
+let autoPlanStep = 0;        // 目前執行到第幾步
 
 function preventZoom() {
   // 攔截雙指縮放（pinch zoom）
@@ -230,15 +232,17 @@ function nextWord() {
   return wordQueue.shift();
 }
 
-// ── 自動模式 AI（Beam Search 全域最佳化）──
-// 對 wordQueue 中的「每一步」都展開所有 6 欄選擇，
-// 保留 top-K 條最優路徑，找到全局最佳策略。
+// ── 自動模式 AI（Beam Search 全域最佳化 + 全局規劃快取）──
+// 一次性模擬整場 wordQueue 的所有步驟，找出「消掉全部 combo」的最優路徑。
+// 計畫快取後，後續每步 O(1) 直接回傳。
 
-const BEAM_WIDTH = 50; // 同時追蹤的最優路徑數
+const BEAM_WIDTH = 100; // 同時追蹤的最優路徑數
 
-// 複製棋盤（輕量：只保留 word 字串）
+// 複製棋盤（存純字串，相容真實棋盤 {word,color} 及模擬棋盤字串）
 function cloneBoard(b) {
-  return b.map((row) => row.map((cell) => (cell ? cell.word : null)));
+  return b.map((row) => row.map((cell) =>
+    cell === null ? null : (typeof cell === "string" ? cell : cell.word)
+  ));
 }
 
 // 某欄的落點 row（-1 = 滿）
@@ -262,7 +266,7 @@ function simGravity(b) {
   }
 }
 
-// 消除 + 重力連鎖（原地修改棋盤）
+// 消除 + 重力連鎖
 function simClear(b, combos, cleared) {
   let again = true;
   while (again) {
@@ -288,18 +292,36 @@ function simClear(b, combos, cleared) {
   }
 }
 
-// 評估棋盤狀態分數（用於 beam 剪枝）
-function scoreState(b, cleared, combos) {
-  // 已消除 combo 數（最重要）
-  let s = cleared.size * 10000;
+// 棋盤狀態指紋（去重用）
+function boardKey(b, cleared) {
+  let k = "";
+  for (let r = 0; r < ROWS; r++) {
+    for (let c = 0; c < COLS; c++) {
+      k += (b[r][c] ?? ".") + ",";
+    }
+  }
+  for (let i = 0; i < comboList.length; i++) k += cleared.has(i) ? "1" : "0";
+  return k;
+}
 
-  // 剩餘空間（越多越好，避免溢出）
-  for (let c = 0; c < COLS; c++) {
-    const lr = simLandRow(b, c);
-    s += (lr >= 0 ? lr + 1 : -ROWS) * 5;
+// 評估函式：以「消掉全部 combo」為壓倒性最高目標
+function scoreState(b, cleared, combos) {
+  const total = combos.length;
+
+  // 第一層：已消除 combo 數（壓倒性權重）
+  let s = cleared.size * 1000000;
+
+  // 全清 → 特大獎勵 + 剩餘空間
+  if (cleared.size >= total) {
+    s += 5000000;
+    for (let c = 0; c < COLS; c++) {
+      const lr = simLandRow(b, c);
+      s += (lr >= 0 ? lr + 1 : 0) * 100;
+    }
+    return s;
   }
 
-  // 局部 combo 進度（平方獎勵：4/5 完成 >> 2/5 完成）
+  // 第二層：各 combo 局部進度（立方獎勵，越接近完成分越陡）
   for (let ci = 0; ci < combos.length; ci++) {
     if (cleared.has(ci)) continue;
     const combo = combos[ci];
@@ -314,15 +336,39 @@ function scoreState(b, cleared, combos) {
         if (!blocked) bestM = Math.max(bestM, matched);
       }
     }
-    s += bestM * bestM * 30;
+    s += bestM * bestM * bestM * 100;
+  }
+
+  // 第三層：剩餘空間（防溢出）
+  for (let c = 0; c < COLS; c++) {
+    const lr = simLandRow(b, c);
+    s += (lr >= 0 ? lr + 1 : -ROWS * 2) * 3;
   }
   return s;
 }
 
-// Beam Search 主決策
+// 清除快取計畫
+function clearAutoPlan() {
+  autoPlan = [];
+  autoPlanStep = 0;
+}
+
+// Beam Search 主決策（含全局規劃快取）
 function findBestColumn() {
   if (!activeBlock) return Math.floor(COLS / 2);
   const word = activeBlock.word;
+
+  // ── 檢查快取：計畫有效且字匹配 → 直接回傳 ──
+  if (autoPlan.length > 0 && autoPlanStep < autoPlan.length) {
+    const planned = autoPlan[autoPlanStep];
+    if (planned.word === word) {
+      autoPlanStep++;
+      return planned.col;
+    }
+    clearAutoPlan(); // 字不匹配 → 重新規劃
+  }
+
+  // ── 計算整場最佳策略 ──
 
   // 建立完整發牌序列：當前字 + wordQueue（只留活躍 combo 的字）
   const fullSeq = [word];
@@ -335,12 +381,12 @@ function findBestColumn() {
     }
   }
 
-  // 初始 beam：當前棋盤
+  // 初始 beam
   let beam = [
     {
       board: cloneBoard(board),
       cleared: new Set(clearedCombos),
-      firstCol: -1,
+      path: [], // [{word, col}, ...]
     },
   ];
 
@@ -359,7 +405,6 @@ function findBestColumn() {
       }
 
       if (!needed) {
-        // 不需要 → 直接帶入下一步（不複製，省記憶體）
         candidates.push(state);
         continue;
       }
@@ -377,22 +422,34 @@ function findBestColumn() {
         candidates.push({
           board: nb,
           cleared: nc,
-          firstCol: step === 0 ? col : state.firstCol,
+          path: [...state.path, { word: w, col }],
         });
       }
     }
 
-    // 評分 + 剪枝：保留 top BEAM_WIDTH 條路徑
-    candidates.forEach((c) => {
+    // 評分 + 去重 + 剪枝
+    const seen = new Map();
+    for (const c of candidates) {
       c._score = scoreState(c.board, c.cleared, comboList);
-    });
-    candidates.sort((a, b) => b._score - a._score);
-    beam = candidates.slice(0, BEAM_WIDTH);
+      const key = boardKey(c.board, c.cleared);
+      const existing = seen.get(key);
+      if (!existing || c._score > existing._score) {
+        seen.set(key, c);
+      }
+    }
+    const unique = [...seen.values()];
+    unique.sort((a, b) => b._score - a._score);
+    beam = unique.slice(0, BEAM_WIDTH);
   }
 
-  return beam.length > 0 && beam[0].firstCol >= 0
-    ? beam[0].firstCol
-    : Math.floor(COLS / 2);
+  // 提取最佳路徑 → 快取整場計畫
+  if (beam.length > 0 && beam[0].path.length > 0) {
+    autoPlan = beam[0].path;
+    autoPlanStep = 1; // 第 0 步是當前這步
+    return autoPlan[0].col;
+  }
+
+  return Math.floor(COLS / 2);
 }
 
 function toggleAutoMode() {
@@ -400,10 +457,12 @@ function toggleAutoMode() {
   autoBtn.textContent = autoMode ? "手動" : "自動";
   autoBtn.classList.toggle("active", autoMode);
   if (autoMode && activeBlock) {
+    clearAutoPlan();               // 重新規劃整場
     autoTargetCol = findBestColumn();
     autoLastMoveTime = 0;
   } else {
     autoTargetCol = -1;
+    clearAutoPlan();
   }
 }
 
@@ -824,6 +883,7 @@ function restartGame() {
   wordQueue = [];
   autoTargetCol = -1;
   autoLastMoveTime = 0;
+  clearAutoPlan();
   scoreEl.textContent = "0";
   updateProgress();
 
