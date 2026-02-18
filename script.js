@@ -338,6 +338,47 @@ function popcount(n) {
   return (((n + (n >> 4)) & 0x0F0F0F0F) * 0x01010101) >> 24;
 }
 
+// ── BFS 記憶體池（1GB 固定分配）──
+// 所有 BFS 狀態存在預分配的 typed arrays 中，避免 GC 和 JS 物件開銷
+const BFS_POOL_MAX = 10_000_000;   // 最多 1000 萬個狀態
+const BFS_HASH_SIZE = 1 << 24;     // 16M 雜湊表（開放定址）
+const BFS_HASH_MASK = BFS_HASH_SIZE - 1;
+let bfsPool = null;
+
+function initBFSPool() {
+  if (bfsPool) return true;
+  const TC = ROWS * COLS;
+  try {
+    bfsPool = {
+      TC,
+      boards:    new Uint8Array(BFS_POOL_MAX * TC),  // 480MB
+      cl:        new Uint32Array(BFS_POOL_MAX),       // 40MB
+      parentIdx: new Int32Array(BFS_POOL_MAX),        // 40MB
+      firstCol:  new Int8Array(BFS_POOL_MAX),         // 10MB
+      moveWord:  new Uint8Array(BFS_POOL_MAX),        // 10MB
+      moveCol:   new Int8Array(BFS_POOL_MAX),         // 10MB
+      hashTable: new Int32Array(BFS_HASH_SIZE),       // 64MB
+      hashGen:   new Uint16Array(BFS_HASH_SIZE),      // 32MB
+      frontierA: new Int32Array(BFS_POOL_MAX),        // 40MB
+      frontierB: new Int32Array(BFS_POOL_MAX),        // 40MB
+      count: 0, gen: 1, fALen: 0, fBLen: 0,
+    };
+    // Total: ~766MB < 1GB
+    return true;
+  } catch (e) {
+    bfsPool = null;
+    return false;
+  }
+}
+
+function resetBFSPool() {
+  bfsPool.count = 0;
+  bfsPool.gen = 1;
+  bfsPool.hashGen.fill(0);  // lazy clear: gen(1) !== 0 → all slots empty
+  bfsPool.fALen = 0;
+  bfsPool.fBLen = 0;
+}
+
 function clearAutoPlan() { autoPlan = []; autoPlanStep = 0; }
 
 // 快速猜測：選最空的欄（O(ROWS×COLS)，<0.1ms）
@@ -717,191 +758,243 @@ async function runAISearch(word) {
       buildDebugDiagram();
     }
 
-    // ── Phase 2: 全搜索 BFS ──
+    // ── Phase 2: 全搜索 BFS（記憶體池）──
     // Phase 1 固定的 combo 字只嘗試固定欄，其餘字嘗試所有欄（全搜索）
-    // 消除新 combo 時主動清理落後狀態，縮小記憶體
+    // 所有狀態存在預分配的 1GB typed array 池中
     // Phase 2 在 Phase 1 方塊掉落期間即開始計算（偷跑）
+    if (!initBFSPool()) {
+      setMessage("⚠️ 記憶體池分配失敗（需要 ~766MB）", false);
+      aiComputing = false;
+      return;
+    }
+    resetBFSPool();
+
     const p2Start = P1;
     const p2Len = totalSteps - p2Start;
-    let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
+    let prevBestCleared = popcount(cl);
 
-    // ── 主動清理 frontier：移除落後或被堵死的狀態 ──
-    function pruneFrontier() {
-      const keysToRemove = [];
-      for (const [key, state] of frontier) {
-        const sc = popcount(state.cl);
-        // 1) 落後超過 1 個 combo → 淘汰（不可能追上最佳）
-        if (sc < prevBestCleared - 1) { keysToRemove.push(key); continue; }
-        // 2) 檢查 Phase 1 固定的 combo 欄位是否被堵死
-        if (priCI >= 0 && !(state.cl & (1 << priCI))) {
-          const combo = _cIdx[priCI];
-          let blocked = false;
-          for (let p = 0; p < combo.length; p++) {
-            let hasSpace = false;
-            for (let r = 0; r < ROWS; r++) {
-              if (state.board[r * COLS + p] === 0) { hasSpace = true; break; }
-            }
-            if (!hasSpace) { blocked = true; break; }
-          }
-          if (blocked) { keysToRemove.push(key); continue; }
+    // ── 池輔助函數 ──
+    function poolHash(board, clMask) {
+      let h = 2166136261;
+      for (let i = 0; i < TC; i++) { h ^= board[i]; h = Math.imul(h, 16777619); }
+      h ^= clMask; h = Math.imul(h, 16777619);
+      return h >>> 0;
+    }
+
+    // 嘗試插入新狀態，回傳: >=0 新 index, -1 池滿, -2 重複
+    function poolInsert(board, clMask, fCol, pIdx, wIdx, col) {
+      const hash = poolHash(board, clMask);
+      const gen = bfsPool.gen;
+      let slot = hash & BFS_HASH_MASK;
+      for (let probe = 0; probe < BFS_HASH_SIZE; probe++) {
+        if (bfsPool.hashGen[slot] !== gen) {
+          // 空槽 → 插入
+          const idx = bfsPool.count;
+          if (idx >= BFS_POOL_MAX) return -1;
+          bfsPool.boards.set(board, idx * TC);
+          bfsPool.cl[idx] = clMask;
+          bfsPool.firstCol[idx] = fCol;
+          bfsPool.parentIdx[idx] = pIdx;
+          bfsPool.moveWord[idx] = wIdx;
+          bfsPool.moveCol[idx] = col;
+          bfsPool.count++;
+          bfsPool.hashTable[slot] = idx;
+          bfsPool.hashGen[slot] = gen;
+          return idx;
         }
+        // 已佔用 → 比較
+        const eIdx = bfsPool.hashTable[slot];
+        if (bfsPool.cl[eIdx] === clMask) {
+          const base = eIdx * TC;
+          let match = true;
+          for (let i = 0; i < TC; i++) {
+            if (bfsPool.boards[base + i] !== board[i]) { match = false; break; }
+          }
+          if (match) return -2; // 重複
+        }
+        slot = (slot + 1) & BFS_HASH_MASK;
       }
-      for (const key of keysToRemove) frontier.delete(key);
-      return keysToRemove.length;
+      return -1; // 雜湊表滿（不應發生）
     }
 
-    function pathToArray(tail) {
-      const arr = [];
-      let n = tail;
-      while (n) { arr.push({ word: n.word, col: n.col }); n = n.prev; }
-      arr.reverse();
-      return arr;
+    function poolPath(stateIdx) {
+      const moves = [];
+      let idx = stateIdx;
+      while (idx >= 0 && bfsPool.parentIdx[idx] >= 0) {
+        moves.push({ word: _iToW[bfsPool.moveWord[idx]] || "?", col: bfsPool.moveCol[idx] });
+        idx = bfsPool.parentIdx[idx];
+      }
+      moves.reverse();
+      return [...p1Path, ...moves];
     }
 
-    function stateKey(b, clMask) {
-      let k = "";
-      for (let i = 0; i < TC; i++) k += String.fromCharCode(b[i]);
-      k += String.fromCharCode(clMask & 0xffff, (clMask >> 16) & 0xffff);
-      return k;
+    function poolMemStr() {
+      const bytes = bfsPool.count * 59;
+      const pct = Math.round(bfsPool.count / BFS_POOL_MAX * 100);
+      if (bytes >= 1048576) return `${(bytes / 1048576).toFixed(1)}MB (${pct}%)`;
+      return `${(bytes / 1024).toFixed(0)}KB (${pct}%)`;
     }
 
-    // 初始 frontier
+    // 插入根狀態（Phase 1 結束盤面）
     peakStates = 1;
-    let frontier = new Map();
-    const initP1Tail = p1Path.reduce(
-      (prev, m) => ({ word: m.word, col: m.col, prev }), null
-    );
-    frontier.set(stateKey(sf, cl), {
-      board: sf.slice(), cl, firstCol: -1, pathTail: initP1Tail
-    });
+    const rootIdx = bfsPool.count;
+    bfsPool.boards.set(sf, rootIdx * TC);
+    bfsPool.cl[rootIdx] = cl;
+    bfsPool.firstCol[rootIdx] = -1;
+    bfsPool.parentIdx[rootIdx] = -1;
+    bfsPool.moveWord[rootIdx] = 0;
+    bfsPool.moveCol[rootIdx] = 0;
+    bfsPool.count++;
+    bfsPool.fALen = 1;
+    bfsPool.frontierA[0] = rootIdx;
 
     let perfect = false;
+    let poolFull = false;
+    const YIELD_INTERVAL = 5000;
+    const tempBoard = new Uint8Array(TC);
 
-    const YIELD_INTERVAL = 5000; // 每處理 N 個狀態讓出一次（更新 UI）
-
-    for (let d = 0; d < p2Len && !perfect; d++) {
+    for (let d = 0; d < p2Len && !perfect && !poolFull; d++) {
       if (myGen !== aiSearchGen) return;
 
       const wIdx = seqIdx[p2Start + d];
-      const wordStr = fullSeq[p2Start + d];
-      const nextFrontier = new Map();
 
-      // Phase 1 固定的 combo 字 → 只嘗試固定欄；其他字全搜索
+      // 新雜湊代數（本步去重用）
+      bfsPool.gen = (bfsPool.gen + 1) & 0xffff;
+      if (bfsPool.gen === 0) bfsPool.gen = 1;
+      bfsPool.fBLen = 0;
+
       const wCi = wordToCi[wIdx];
-      const fc2 = wordFixedCol[wIdx]; // >=0: Phase1 固定欄, -1: 未固定
+      const fc2 = wordFixedCol[wIdx];
 
-      let statesDone = 0; // 本步已處理的狀態數
-      const totalInFrontier = frontier.size;
+      let statesDone = 0;
+      const totalInFrontier = bfsPool.fALen;
+      let dedupCount = 0;
 
-      for (const [, state] of frontier) {
-        // combo 字且 combo 尚未消除 → 只嘗試固定欄
-        const useDetermined = fc2 >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
+      for (let fi = 0; fi < bfsPool.fALen && !perfect && !poolFull; fi++) {
+        const pIdx = bfsPool.frontierA[fi];
+        const pCl = bfsPool.cl[pIdx];
+        const pBase = pIdx * TC;
+        const pFC = bfsPool.firstCol[pIdx];
+        const useDetermined = fc2 >= 0 && wCi >= 0 && !(pCl & (1 << wCi));
 
         for (let col = useDetermined ? fc2 : 0; col < (useDetermined ? fc2 + 1 : COLS); col++) {
-          // 全搜索：非固定字嘗試所有欄位（含 combo 佔用的欄位）
+          // 找落點
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
-            if (state.board[r * COLS + col] === 0) { lr = r; break; }
+            if (bfsPool.boards[pBase + r * COLS + col] === 0) { lr = r; break; }
           }
           if (lr < 0) continue;
 
-          const nb = state.board.slice();
-          nb[lr * COLS + col] = wIdx;
+          // 複製盤面 + 放字
+          for (let i = 0; i < TC; i++) tempBoard[i] = bfsPool.boards[pBase + i];
+          tempBoard[lr * COLS + col] = wIdx;
 
-          const bCl = state.cl;
-          const bB = debugMode ? nb.slice() : null;
-          const nCl = simClear(nb, _cIdx, bCl);
+          const bB = debugMode ? tempBoard.slice() : null;
+          const nCl = simClear(tempBoard, _cIdx, pCl);
           ops++;
 
-          if (debugMode && bB && nCl !== bCl) {
+          if (debugMode && bB && nCl !== pCl) {
             lastDebugSample =
-              `消除 (+${popcount(nCl) - popcount(bCl)} 組)\n` +
+              `消除 (+${popcount(nCl) - popcount(pCl)} 組)\n` +
               `落: ${_iToW[wIdx]} → col ${col}\n` +
-              `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(nb)}`;
+              `消前:\n${flatToDebugText(bB)}\n消後:\n${flatToDebugText(tempBoard)}`;
           }
 
-          const key = stateKey(nb, nCl);
-          const fCol = state.firstCol >= 0 ? state.firstCol : col;
-          const newTail = { word: wordStr, col, prev: state.pathTail };
+          const fCol = pFC >= 0 ? pFC : col;
+          const result = poolInsert(tempBoard, nCl, fCol, pIdx, wIdx, col);
+          if (result === -2) { dedupCount++; continue; }
+          if (result === -1) { poolFull = true; break; }
 
-          if (!nextFrontier.has(key)) {
-            nextFrontier.set(key, { board: nb, cl: nCl, firstCol: fCol, pathTail: newTail });
-          }
+          bfsPool.frontierB[bfsPool.fBLen++] = result;
 
           if (popcount(nCl) === numCombos) {
-            const fullPath = pathToArray(newTail);
-            if (tryUpdate(nb, nCl, fullPath)) { perfect = true; }
+            if (tryUpdate(tempBoard.slice(), nCl, poolPath(result))) { perfect = true; }
             break;
           }
         }
-        if (perfect) break;
 
-        // 每處理 YIELD_INTERVAL 個狀態，讓出控制權並更新 UI
         statesDone++;
         if (statesDone % YIELD_INTERVAL === 0) {
           const pct = Math.round(statesDone / totalInFrontier * 100);
-          const mem = estimateMemoryStr(nextFrontier.size);
-          setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} ${pct}% | 記憶體 ${mem}`, true);
+          setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} ${pct}% | ${poolMemStr()}`, true);
           await new Promise(r => setTimeout(r, 0));
           if (myGen !== aiSearchGen) return;
         }
       }
       if (perfect) break;
 
-      // 計算去重數：嘗試的組合數 vs 實際保留的狀態數
-      const rawBranches = totalInFrontier * (fc2 >= 0 ? 1 : COLS);
-      const dedupCount = rawBranches - nextFrontier.size;
+      // 交換 frontier
+      const tmpF = bfsPool.frontierA;
+      bfsPool.frontierA = bfsPool.frontierB;
+      bfsPool.frontierB = tmpF;
+      bfsPool.fALen = bfsPool.fBLen;
+      peakStates = Math.max(peakStates, bfsPool.count);
 
-      frontier = nextFrontier;
-      peakStates = Math.max(peakStates, frontier.size);
-
-      // 找出 frontier 中最佳狀態
-      let stepBestCl = -1, stepBestSp = -1, stepBestState = null;
-      for (const [, state] of frontier) {
-        const cleared = popcount(state.cl);
+      // 找本步最佳狀態
+      let stepBestCl = -1, stepBestSp = -1, stepBestIdx = -1;
+      for (let fi = 0; fi < bfsPool.fALen; fi++) {
+        const idx = bfsPool.frontierA[fi];
+        const cleared = popcount(bfsPool.cl[idx]);
         let space = 0;
+        const base = idx * TC;
         for (let c = 0; c < COLS; c++)
           for (let r = ROWS - 1; r >= 0; r--)
-            if (state.board[r * COLS + c] === 0) { space += r + 1; break; }
+            if (bfsPool.boards[base + r * COLS + c] === 0) { space += r + 1; break; }
         if (cleared > stepBestCl || (cleared === stepBestCl && space > stepBestSp)) {
-          stepBestCl = cleared; stepBestSp = space; stepBestState = state;
+          stepBestCl = cleared; stepBestSp = space; stepBestIdx = idx;
         }
       }
 
-      if (stepBestState) {
-        const fullPath = pathToArray(stepBestState.pathTail);
-        tryUpdate(stepBestState.board, stepBestState.cl, fullPath);
+      if (stepBestIdx >= 0) {
+        const bestBoard = bfsPool.boards.slice(stepBestIdx * TC, (stepBestIdx + 1) * TC);
+        tryUpdate(bestBoard, bfsPool.cl[stepBestIdx], poolPath(stepBestIdx));
       }
 
-      // ── 消除檢測：如果最佳狀態消除了新的 combo → 主動清理 frontier ──
+      // ── 消除時剪枝 frontier（過濾陣列，不影響池記憶體）──
       let stepPruned = 0;
       let stepEvent = "";
       if (stepBestCl > prevBestCleared) {
         const clDelta = stepBestCl - prevBestCleared;
         prevBestCleared = stepBestCl;
-        // 主動清理：移除落後 / 被堵死的狀態，縮小記憶體
-        stepPruned = pruneFrontier();
-        peakStates = Math.max(peakStates, frontier.size);
+        let wp = 0;
+        for (let fi = 0; fi < bfsPool.fALen; fi++) {
+          const idx = bfsPool.frontierA[fi];
+          if (popcount(bfsPool.cl[idx]) < prevBestCleared - 1) { stepPruned++; continue; }
+          if (priCI >= 0 && !(bfsPool.cl[idx] & (1 << priCI))) {
+            const combo = _cIdx[priCI];
+            const base = idx * TC;
+            let blocked = false;
+            for (let p = 0; p < combo.length; p++) {
+              let hasSpace = false;
+              for (let r = 0; r < ROWS; r++) {
+                if (bfsPool.boards[base + r * COLS + p] === 0) { hasSpace = true; break; }
+              }
+              if (!hasSpace) { blocked = true; break; }
+            }
+            if (blocked) { stepPruned++; continue; }
+          }
+          bfsPool.frontierA[wp++] = idx;
+        }
+        bfsPool.fALen = wp;
         stepEvent = `★消除+${clDelta}`;
         if (stepPruned > 0) stepEvent += ` ✂${stepPruned}`;
       }
+      if (poolFull) stepEvent += (stepEvent ? " " : "") + "⚠池滿";
 
-      // 偵錯：紀錄步驟
+      // 偵錯
       if (debugMode) {
-        const isCombo = fc2 >= 0;
         debugSteps.push({
           step: P1 + d + 1, word: _iToW[wIdx],
-          inSize: totalInFrontier, outSize: frontier.size,
-          dedup: Math.max(0, dedupCount), pruned: stepPruned,
+          inSize: totalInFrontier, outSize: bfsPool.fALen,
+          dedup: dedupCount, pruned: stepPruned,
           cleared: stepBestCl, fixed: priCI >= 0 ? 1 : 0,
-          mem: estimateMemoryStr(frontier.size),
-          event: stepEvent || (isCombo ? "combo" : "")
+          mem: poolMemStr(),
+          event: stepEvent || (fc2 >= 0 ? "combo" : "")
         });
         buildDebugDiagram();
       }
 
-      const mem = estimateMemoryStr(frontier.size);
-      setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} | 記憶體 ${mem}`, true);
+      setMessage(`🤖 BFS ${P1 + d + 1}/${totalSteps} | ${poolMemStr()}`, true);
       await new Promise(r => setTimeout(r, 0));
       if (myGen !== aiSearchGen) return;
     }
@@ -919,12 +1012,13 @@ async function runAISearch(word) {
   if (autoTargetCol < 0) autoTargetCol = Math.floor(COLS / 2);
 
   const elapsed = (performance.now() - t0).toFixed(1);
-  const peakMem = estimateMemoryStr(peakStates);
-  setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | 記憶體 ${peakMem}`, true);
+  const peakMem = bfsPool ? `${(bfsPool.count * 59 / 1048576).toFixed(1)}MB (${Math.round(bfsPool.count / BFS_POOL_MAX * 100)}%)` : estimateMemoryStr(peakStates);
+  setMessage(`🤖 BFS ${totalSteps}/${totalSteps} | ${peakMem}`, true);
   if (debugMode) {
     buildDebugDiagram();
     const cur = debugBoxEl.textContent || "";
-    setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms, 峰值${peakStates}態`);
+    const poolInfo = bfsPool ? `, 池 ${bfsPool.count}/${BFS_POOL_MAX}態` : `, 峰值${peakStates}態`;
+    setDebugText(cur + `\n\n✅ 計算完成: ${ops}節點, ${elapsed}ms${poolInfo}`);
   }
   aiComputing = false;
 }
