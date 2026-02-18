@@ -574,6 +574,8 @@ async function runAISearch(word) {
     const fixedSet = new Set(); // 已固定的 combo index
     if (priCI >= 0) fixedSet.add(priCI);
     let prevBestCleared = popcount(cl); // 追蹤已消除數，用於檢測新消除
+    // 追蹤所有已固定 combo 佔用的最右欄 +1（garbage 要避開 0 ~ fixedMaxEnd-1）
+    let fixedMaxEnd = comboMaxEnd;
 
     // 掃描剩餘 Q，找下一個最多字的未固定 combo 並固定；回傳新固定的 combo index（-1=無）
     function fixNextCombo(fromStep) {
@@ -594,11 +596,13 @@ async function runAISearch(word) {
         for (let p = 0; p < combo.length; p++) {
           if (dynFixed[combo[p]] === -1) dynFixed[combo[p]] = p;
         }
+        // 更新佔用欄位範圍
+        if (combo.length > fixedMaxEnd) fixedMaxEnd = combo.length;
         if (debugMode) {
           const name = combo.map(w => _iToW[w]).join(",");
           setDebugText(
             `新剪枝: combo #${nextCI + 1}（${name}）固定 col 0~${combo.length - 1}\n` +
-            `已固定 ${fixedSet.size}/${activeCI.length} 組`
+            `已固定 ${fixedSet.size}/${activeCI.length} 組，combo 佔用 col 0~${fixedMaxEnd - 1}`
           );
         }
       }
@@ -676,11 +680,19 @@ async function runAISearch(word) {
       const totalInFrontier = frontier.size;
 
       for (const [, state] of frontier) {
+        // combo 字且 combo 尚未消除 → 只嘗試固定欄
         const useDetermined = fc2 >= 0 && wCi >= 0 && !(state.cl & (1 << wCi));
-        const colStart = useDetermined ? fc2 : 0;
-        const colEnd = useDetermined ? fc2 + 1 : COLS;
 
-        for (let col = colStart; col < colEnd; col++) {
+        for (let col = useDetermined ? fc2 : 0; col < (useDetermined ? fc2 + 1 : COLS); col++) {
+          // 非固定字（garbage）→ 避開已固定 combo 佔用的欄位，除非所有 combo 欄的 combo 都已消除
+          if (!useDetermined && col < fixedMaxEnd) {
+            // 檢查此欄是否仍被活躍 combo 佔用
+            let colNeeded = false;
+            for (const ci of fixedSet) {
+              if (!(state.cl & (1 << ci)) && col < _cIdx[ci].length) { colNeeded = true; break; }
+            }
+            if (colNeeded) continue; // 跳過 combo 佔用的欄位
+          }
           let lr = -1;
           for (let r = ROWS - 1; r >= 0; r--) {
             if (state.board[r * COLS + col] === 0) { lr = r; break; }
