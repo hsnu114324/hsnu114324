@@ -1732,13 +1732,23 @@ function drawCell(row, col, cellData) {
   const maxWidth = cellSize - 6;
   const isCN = /[\u4e00-\u9fff]/.test(cellData.word);
   const minFont = isCN ? 12 : 11;
-  const fontSize = Math.max(minFont, Math.floor(cellSize * 0.28));
+  let fontSize = Math.max(minFont, Math.floor(cellSize * 0.28));
   ctx.font = `bold ${fontSize}px sans-serif`;
 
-  // 先嘗試空白換行
+  // 第 1 步：空白換行
   let lines = wrapText(cellData.word, maxWidth, fontSize);
 
-  // 仍塞不下 → 改用逐字換行（字體大小不縮小）
+  // 第 2 步：仍塞不下 → 縮小字體（到最小值為止）
+  while (
+    lines.some((line) => ctx.measureText(line).width > maxWidth) &&
+    fontSize > minFont
+  ) {
+    fontSize -= 1;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+    lines = wrapText(cellData.word, maxWidth, fontSize);
+  }
+
+  // 第 3 步：縮到最小仍塞不下 → 逐字換行
   if (lines.some((line) => ctx.measureText(line).width > maxWidth)) {
     lines = wrapTextByChar(cellData.word, maxWidth, fontSize);
   }
