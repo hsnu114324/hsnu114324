@@ -5,14 +5,9 @@ const STORAGE_KEY = "word_tetris_rows_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
+const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 
-// 預設群組（與 settings.js 同步）
-//const GROUP_WORDS1 = ["11,12", "13,14"];
-//const GROUP_WORDS2 = ["21,22", "23,24"];
-//const GROUP_WORDS3 = ["31,32", "33,34"];
-//const GROUP_WORDS4 = ["41,42", "43,44"];
-//const GROUP_WORDS5 = ["51,52", "53,54"];
-//const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
+let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
@@ -43,6 +38,7 @@ const rightBtn = document.getElementById("rightBtn");
 
 const PICK_KEY = "word_tetris_pick_count_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
+groupData = loadGroupData();  // 載入群組資料（必須在 loadWordRows 之前）
 let ALL_WORD_ROWS = loadWordRows();
 let allComboList = buildComboList(ALL_WORD_ROWS);
 
@@ -150,12 +146,22 @@ function isValidRowString(row) {
   return parts.length >= 2 && parts.length <= 5;
 }
 
+function loadGroupData() {
+  try {
+    const raw = localStorage.getItem(GROUP_DATA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed;
+    return [];
+  } catch { return []; }
+}
+
 function loadActiveGroups() {
   try {
     const raw = localStorage.getItem(GROUPS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < GROUP_ALL.length);
+    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < groupData.length);
     return [];
   } catch { return []; }
 }
@@ -182,7 +188,7 @@ function loadWordRows() {
     const groupRows = [];
     for (const gi of ag) {
       const removedSet = new Set((removed[gi] || []).map(s => s.trim().toLowerCase()));
-      for (const row of GROUP_ALL[gi]) {
+      for (const row of groupData[gi]) {
         const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
         if (!removedSet.has(key)) {
           groupRows.push(row);
@@ -192,7 +198,7 @@ function loadWordRows() {
     if (groupRows.length > 0) return groupRows;
     // 所有群組 word 都已消除 → fallback 到完整群組（重新開始）
     const allRows = [];
-    for (const gi of ag) allRows.push(...GROUP_ALL[gi]);
+    for (const gi of ag) allRows.push(...groupData[gi]);
     return allRows;
   }
 
@@ -249,7 +255,7 @@ function autoRemoveClearedRows(clearedComboIndices) {
       for (const gi of ag) {
         if (!removed[gi]) removed[gi] = [];
         const existingSet = new Set(removed[gi].map(s => s.trim().toLowerCase()));
-        for (const row of GROUP_ALL[gi]) {
+        for (const row of groupData[gi]) {
           const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
           if (keysToRemove.has(key) && !existingSet.has(key)) {
             removed[gi].push(row);
@@ -1948,7 +1954,8 @@ function gameLoop(ts) {
 }
 
 function restartGame() {
-  // 重新從 localStorage 讀取最新的 word 資料（可能已被自動移除模式更新）
+  // 重新從 localStorage 讀取群組資料與最新的 word 資料
+  groupData = loadGroupData();
   ALL_WORD_ROWS = loadWordRows();
   allComboList = buildComboList(ALL_WORD_ROWS);
 

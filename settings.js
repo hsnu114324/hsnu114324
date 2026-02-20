@@ -5,6 +5,7 @@ const LENS_KEY = "word_tetris_allowed_lens_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
+const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -4084,8 +4085,9 @@ function saveRows() {
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
-  // 儲存群組狀態
+  // 儲存群組狀態與群組資料
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
+  localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
 
   // 提示訊息
   let modeText;
