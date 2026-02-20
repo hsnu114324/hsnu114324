@@ -1543,13 +1543,7 @@ function playClearAnimation(markedPositions) {
 }
 
 function updateProgress() {
-  const activeCount = comboList.length - clearedCombos.size;
-  const reserveCount = comboReserve.length;
-  if (reserveCount > 0) {
-    progressEl.textContent = `${clearedCombos.size}/${totalComboCount}（在場${activeCount}＋候補${reserveCount}）`;
-  } else {
-    progressEl.textContent = `${clearedCombos.size}/${totalComboCount}`;
-  }
+  progressEl.textContent = `${clearedCombos.size}/${totalComboCount}`;
 }
 
 async function clearMatches() {
@@ -1611,11 +1605,12 @@ async function clearMatches() {
       return;
     }
 
-    const activeCount = comboList.length - clearedCombos.size;
-    const reserveInfo = comboReserve.length > 0
-      ? `，候補 ${comboReserve.length} 組`
-      : "";
-    setMessage(`消除 ${totalCleared} 格（${clearedCombos.size}/${totalComboCount}，在場 ${activeCount}${reserveInfo}）`, true);
+    let msg = `消除 ${totalCleared} 格（${clearedCombos.size}/${totalComboCount}）`;
+    if (added > 0) {
+      const activeCount = comboList.length - clearedCombos.size;
+      msg += `　＋${added} 組補入（在場 ${activeCount}，候補 ${comboReserve.length}）`;
+    }
+    setMessage(msg, true);
   }
 }
 
