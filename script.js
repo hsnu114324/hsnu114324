@@ -1741,10 +1741,10 @@ function drawCell(row, col, cellData) {
     lines = wrapTextByChar(cellData.word, maxWidth, fontSize);
   }
 
-  // 逐字換行後仍太長，繼續縮小到 6px
+  // 逐字換行後仍太長，繼續縮小到 9px
   while (
     lines.some((line) => ctx.measureText(line).width > maxWidth) &&
-    fontSize > 6
+    fontSize > 9
   ) {
     fontSize -= 1;
     ctx.font = `bold ${fontSize}px sans-serif`;
