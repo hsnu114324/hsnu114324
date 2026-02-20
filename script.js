@@ -31,6 +31,7 @@ const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
 
 const PICK_KEY = "word_tetris_pick_count_v1";
+const LENS_KEY = "word_tetris_allowed_lens_v1";
 const ALL_WORD_ROWS = loadWordRows();
 const allComboList = buildComboList(ALL_WORD_ROWS);
 
@@ -157,19 +158,37 @@ function loadPickCount() {
   }
 }
 
-// 從全部 combo 中隨機抽 n 組（0 = 全部）
+function loadAllowedLens() {
+  try {
+    const raw = localStorage.getItem(LENS_KEY);
+    if (!raw) return null; // null = 不篩選（全部允許）
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
+    return null;
+  } catch { return null; }
+}
+
+// 從全部 combo 中隨機抽 n 組（0 = 全部），並依允許長度篩選
 function pickRandomCombos() {
+  const allowedLens = loadAllowedLens();
+  // 先依長度篩選
+  let pool = allComboList;
+  if (allowedLens) {
+    pool = allComboList.filter(combo => allowedLens.has(combo.length));
+    if (pool.length === 0) pool = allComboList; // 全被過濾掉時 fallback
+  }
+
   const n = loadPickCount();
-  if (n <= 0 || n >= allComboList.length) {
-    return [...allComboList];
+  if (n <= 0 || n >= pool.length) {
+    return [...pool];
   }
   // Fisher-Yates 取前 n 個
-  const indices = Array.from({ length: allComboList.length }, (_, i) => i);
+  const indices = Array.from({ length: pool.length }, (_, i) => i);
   for (let i = indices.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
-  return indices.slice(0, n).sort((a, b) => a - b).map((i) => allComboList[i]);
+  return indices.slice(0, n).sort((a, b) => a - b).map((i) => pool[i]);
 }
 
 function setMessage(text, isOk = false) {
