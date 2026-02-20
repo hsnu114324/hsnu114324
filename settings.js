@@ -2,6 +2,7 @@ const STORAGE_KEY = "word_tetris_rows_v1";
 const PICK_KEY = "word_tetris_pick_count_v1";
 const DEBUG_KEY = "word_tetris_debug_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
+const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
@@ -3788,6 +3789,7 @@ const resetBtn = document.getElementById("resetBtn");
 const pickCountInput = document.getElementById("pickCount");
 const totalCountEl = document.getElementById("totalCount");
 const debugToggle = document.getElementById("debugToggle");
+const autoRemoveToggle = document.getElementById("autoRemoveToggle");
 const len2Toggle = document.getElementById("len2Toggle");
 const len3Toggle = document.getElementById("len3Toggle");
 const len4Toggle = document.getElementById("len4Toggle");
@@ -4021,6 +4023,7 @@ function saveRows() {
   localStorage.setItem(PICK_KEY, String(pickCount));
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
+  localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
 
   const pickText = pickCount === 0
     ? "全部"
@@ -4050,6 +4053,7 @@ newRowInput.addEventListener("keydown", (event) => {
 preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
+autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
 
 // 初始化允許長度 checkbox
 const _savedLens = loadAllowedLens();

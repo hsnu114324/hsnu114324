@@ -2,6 +2,7 @@ const COLS = 6;
 const ROWS = 8;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
+const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
@@ -159,6 +160,48 @@ function loadPickCount() {
     return isNaN(val) || val < 0 ? 0 : val;
   } catch {
     return 0;
+  }
+}
+
+function isAutoRemoveMode() {
+  return localStorage.getItem(AUTO_REMOVE_KEY) === "1";
+}
+
+// 將 combo 陣列正規化為可比對的字串（去空白、小寫）
+function normalizeComboKey(combo) {
+  return combo.map(w => w.trim().toLowerCase()).join(",");
+}
+
+// 自動移除已消除的 combo 對應的 row（從 localStorage）
+function autoRemoveClearedRows(clearedComboIndices) {
+  if (!isAutoRemoveMode()) return;
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return;
+    let storedRows = JSON.parse(raw);
+    if (!Array.isArray(storedRows)) return;
+
+    // 收集要移除的 combo 的正規化 key
+    const keysToRemove = new Set();
+    for (const ci of clearedComboIndices) {
+      if (ci < comboList.length) {
+        keysToRemove.add(normalizeComboKey(comboList[ci]));
+      }
+    }
+
+    // 過濾掉匹配的 row
+    const before = storedRows.length;
+    storedRows = storedRows.filter(row => {
+      const parts = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+      const key = parts.join(",");
+      return !keysToRemove.has(key);
+    });
+
+    if (storedRows.length < before) {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+    }
+  } catch (e) {
+    // 忽略錯誤，不影響遊戲
   }
 }
 
@@ -1556,6 +1599,7 @@ function updateProgress() {
 async function clearMatches() {
   let totalCleared = 0;
   const prevClearedSize = clearedCombos.size;
+  const newlyClearedIndices = []; // 本輪新消除的 combo 索引
 
   while (true) {
     const groups = findMatchedGroups();
@@ -1563,6 +1607,9 @@ async function clearMatches() {
 
     const marked = new Set();
     groups.forEach(({ cells, comboIndex }) => {
+      if (!clearedCombos.has(comboIndex)) {
+        newlyClearedIndices.push(comboIndex);
+      }
       clearedCombos.add(comboIndex);
       cells.forEach(({ row, col }) => marked.add(`${row}-${col}`));
     });
@@ -1593,6 +1640,11 @@ async function clearMatches() {
 
     // 清理佇列：已消除 combo 的字不再出現
     purgeWordQueue();
+
+    // 自動移除模式：從 localStorage 移除已消除的 combo
+    if (newlyClearedIndices.length > 0) {
+      autoRemoveClearedRows(newlyClearedIndices);
+    }
 
     // 從候補區補入新 combo（每消一組補一組）
     const newlyClearedCount = clearedCombos.size - prevClearedSize;
