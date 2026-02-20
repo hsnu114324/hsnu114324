@@ -236,8 +236,7 @@ function replenishCombos(newlyClearedCount) {
 }
 
 function setMessage(text, isOk = false) {
-  const px = Math.max(10, Math.floor(cellSize * 0.28));
-  messageEl.textContent = `[${px}px] ${text}`;
+  messageEl.textContent = text;
   messageEl.classList.toggle("ok", isOk);
 }
 
@@ -1724,25 +1723,16 @@ function drawCell(row, col, cellData) {
   ctx.textBaseline = "middle";
 
   const maxWidth = cellSize - 6;
-  let fontSize = Math.max(10, Math.floor(cellSize * 0.28));
+  const fontSize = Math.max(10, Math.floor(cellSize * 0.28));
+  ctx.font = `bold ${fontSize}px sans-serif`;
+
+  // 先嘗試空白換行
   let lines = wrapText(cellData.word, maxWidth, fontSize);
 
-  // 如果拆行後單行仍太長，縮小字體（先縮到 9px）
-  ctx.font = `bold ${fontSize}px sans-serif`;
-  while (
-    lines.some((line) => ctx.measureText(line).width > maxWidth) &&
-    fontSize > 10
-  ) {
-    fontSize -= 1;
-    ctx.font = `bold ${fontSize}px sans-serif`;
-  }
-
-  // 字體到 10px 仍塞不下 → 改用逐字換行
-  if (fontSize <= 10 && lines.some((line) => ctx.measureText(line).width > maxWidth)) {
+  // 仍塞不下 → 改用逐字換行（字體大小不縮小）
+  if (lines.some((line) => ctx.measureText(line).width > maxWidth)) {
     lines = wrapTextByChar(cellData.word, maxWidth, fontSize);
   }
-
-  // 逐字換行後仍太長，不再繼續縮小（最小 10px）
 
   const lineHeight = fontSize + 2;
   const totalHeight = lines.length * lineHeight;
