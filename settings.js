@@ -6,13 +6,32 @@ const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 
 // 預設群組
-const GROUP_WORDS = [
-  ["11,12", "13,14"],          // 群組 1
-  ["21,22", "23,24"],          // 群組 2
-  ["31,32", "33,34"],          // 群組 3
-  ["41,42", "43,44"],          // 群組 4
-  ["51,52", "53,54"],          // 群組 5
+const GROUP_WORDS1 = [
+  "11,12", 
+  "13,14"
 ];
+
+const GROUP_WORDS2 = [
+  "21,22", 
+  "23,24"
+];
+
+const GROUP_WORDS3 = [
+  "31,32", 
+  "33,34"
+];
+
+const GROUP_WORDS4 = [
+  "41,42", 
+  "43,44"
+];
+
+const GROUP_WORDS5 = [
+  "51,52", 
+  "53,54"
+];
+
+const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
@@ -3982,7 +4001,7 @@ function loadActiveGroups() {
     const raw = localStorage.getItem(GROUPS_KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return new Set(parsed.filter(n => n >= 0 && n < GROUP_WORDS.length));
+    if (Array.isArray(parsed)) return new Set(parsed.filter(n => n >= 0 && n < GROUP_ALL.length));
     return new Set();
   } catch { return new Set(); }
 }
@@ -4050,7 +4069,7 @@ function saveRows() {
   let modeText;
   if (hasGroup) {
     const names = [...activeGroups].sort().map(i => `群組${i + 1}`).join("＋");
-    const totalWords = [...activeGroups].reduce((s, i) => s + GROUP_WORDS[i].length, 0);
+    const totalWords = [...activeGroups].reduce((s, i) => s + GROUP_ALL[i].length, 0);
     modeText = `${names}（共 ${totalWords} 組）`;
   } else {
     const pickText = pickCount === 0

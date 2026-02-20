@@ -6,13 +6,12 @@ const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 
 // 預設群組（與 settings.js 同步）
-const GROUP_WORDS = [
-  ["11,12", "13,14"],
-  ["21,22", "23,24"],
-  ["31,32", "33,34"],
-  ["41,42", "43,44"],
-  ["51,52", "53,54"],
-];
+const GROUP_WORDS1 = ["11,12", "13,14"];
+const GROUP_WORDS2 = ["21,22", "23,24"];
+const GROUP_WORDS3 = ["31,32", "33,34"];
+const GROUP_WORDS4 = ["41,42", "43,44"];
+const GROUP_WORDS5 = ["51,52", "53,54"];
+const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
@@ -155,7 +154,7 @@ function loadActiveGroups() {
     const raw = localStorage.getItem(GROUPS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < GROUP_WORDS.length);
+    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < GROUP_ALL.length);
     return [];
   } catch { return []; }
 }
@@ -166,7 +165,7 @@ function loadWordRows() {
   if (ag.length > 0) {
     const groupRows = [];
     for (const gi of ag) {
-      groupRows.push(...GROUP_WORDS[gi]);
+      groupRows.push(...GROUP_ALL[gi]);
     }
     if (groupRows.length > 0) return groupRows;
   }
