@@ -282,8 +282,15 @@ function nextWordColor(word) {
 function resizeCanvas() {
   const maxWidth = Math.min(window.innerWidth - 24, 460);
   cellSize = Math.floor(maxWidth / COLS);
-  canvas.width = cellSize * COLS;
-  canvas.height = cellSize * ROWS;
+  const dpr = window.devicePixelRatio || 1;
+  const w = cellSize * COLS;
+  const h = cellSize * ROWS;
+  // 內部解析度依 DPI 放大，CSS 尺寸維持不變
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  canvas.style.width = w + "px";
+  canvas.style.height = h + "px";
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawGrid();
 }
 
@@ -1618,8 +1625,8 @@ async function clearMatches() {
 function playClearAllAnimation() {
   for (let i = 0; i < 5; i++) {
     setTimeout(() => {
-      const cx = Math.random() * canvas.width;
-      const cy = Math.random() * canvas.height * 0.6;
+      const cx = Math.random() * cellSize * COLS;
+      const cy = Math.random() * cellSize * ROWS * 0.6;
       for (let j = 0; j < 20; j++) {
         const angle = (Math.PI * 2 * j) / 20 + Math.random() * 0.3;
         const speed = 2 + Math.random() * 3;
@@ -1744,7 +1751,7 @@ function drawCell(row, col, cellData) {
 }
 
 function drawGrid() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, cellSize * COLS, cellSize * ROWS);
   for (let row = 0; row < ROWS; row += 1) {
     for (let col = 0; col < COLS; col += 1) {
       ctx.strokeStyle = "rgba(255,255,255,0.07)";
