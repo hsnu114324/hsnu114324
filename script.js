@@ -7,12 +7,12 @@ const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 
 // 預設群組（與 settings.js 同步）
-const GROUP_WORDS1 = ["11,12", "13,14"];
-const GROUP_WORDS2 = ["21,22", "23,24"];
-const GROUP_WORDS3 = ["31,32", "33,34"];
-const GROUP_WORDS4 = ["41,42", "43,44"];
-const GROUP_WORDS5 = ["51,52", "53,54"];
-const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
+//const GROUP_WORDS1 = ["11,12", "13,14"];
+//const GROUP_WORDS2 = ["21,22", "23,24"];
+//const GROUP_WORDS3 = ["31,32", "33,34"];
+//const GROUP_WORDS4 = ["41,42", "43,44"];
+//const GROUP_WORDS5 = ["51,52", "53,54"];
+//const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
