@@ -9,26 +9,36 @@ const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_WORDS1 = [
   "11,12", 
   "13,14"
+  "15,16"
+  "17,18,19"
 ];
 
 const GROUP_WORDS2 = [
   "21,22", 
   "23,24"
+  "25,26"
+  "27,28,29"
 ];
 
 const GROUP_WORDS3 = [
   "31,32", 
   "33,34"
+  "35,36"
+  "37,38,39"
 ];
 
 const GROUP_WORDS4 = [
   "41,42", 
   "43,44"
+  "45,46"
+  "47,48,49"
 ];
 
 const GROUP_WORDS5 = [
   "51,52", 
   "53,54"
+  "55,56"
+  "57,58,59"
 ];
 
 const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
