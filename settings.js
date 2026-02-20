@@ -4,6 +4,7 @@ const DEBUG_KEY = "word_tetris_debug_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
+const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -4020,6 +4021,17 @@ function loadActiveGroups() {
 function toggleGroup(idx) {
   if (activeGroups.has(idx)) {
     activeGroups.delete(idx);
+    // 關閉群組時清除該群組的已移除記錄（下次重新啟用會是完整的）
+    try {
+      const raw = localStorage.getItem(GROUP_REMOVED_KEY);
+      if (raw) {
+        const removed = JSON.parse(raw);
+        if (removed && removed[idx]) {
+          delete removed[idx];
+          localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
+        }
+      }
+    } catch (e) { /* ignore */ }
   } else {
     activeGroups.add(idx);
   }

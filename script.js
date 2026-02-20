@@ -4,6 +4,7 @@ const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
+const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 
 // 預設群組（與 settings.js 同步）
 const GROUP_WORDS1 = ["11,12", "13,14"];
@@ -159,15 +160,40 @@ function loadActiveGroups() {
   } catch { return []; }
 }
 
+function loadGroupRemoved() {
+  try {
+    const raw = localStorage.getItem(GROUP_REMOVED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed;
+    return {};
+  } catch { return {}; }
+}
+
+function saveGroupRemoved(removed) {
+  localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
+}
+
 function loadWordRows() {
   // 優先使用群組模式
   const ag = loadActiveGroups();
   if (ag.length > 0) {
+    const removed = isAutoRemoveMode() ? loadGroupRemoved() : {};
     const groupRows = [];
     for (const gi of ag) {
-      groupRows.push(...GROUP_ALL[gi]);
+      const removedSet = new Set((removed[gi] || []).map(s => s.trim().toLowerCase()));
+      for (const row of GROUP_ALL[gi]) {
+        const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        if (!removedSet.has(key)) {
+          groupRows.push(row);
+        }
+      }
     }
     if (groupRows.length > 0) return groupRows;
+    // 所有群組 word 都已消除 → fallback 到完整群組（重新開始）
+    const allRows = [];
+    for (const gi of ag) allRows.push(...GROUP_ALL[gi]);
+    return allRows;
   }
 
   // 無群組啟用 → 使用自訂 word
@@ -205,33 +231,56 @@ function normalizeComboKey(combo) {
 // 自動移除已消除的 combo 對應的 row（從 localStorage）
 function autoRemoveClearedRows(clearedComboIndices) {
   if (!isAutoRemoveMode()) return;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return;
-    let storedRows = JSON.parse(raw);
-    if (!Array.isArray(storedRows)) return;
 
-    // 收集要移除的 combo 的正規化 key
-    const keysToRemove = new Set();
-    for (const ci of clearedComboIndices) {
-      if (ci < comboList.length) {
-        keysToRemove.add(normalizeComboKey(comboList[ci]));
+  // 收集要移除的 combo 的正規化 key
+  const keysToRemove = new Set();
+  for (const ci of clearedComboIndices) {
+    if (ci < comboList.length) {
+      keysToRemove.add(normalizeComboKey(comboList[ci]));
+    }
+  }
+  if (keysToRemove.size === 0) return;
+
+  const ag = loadActiveGroups();
+  if (ag.length > 0) {
+    // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
+    try {
+      const removed = loadGroupRemoved();
+      for (const gi of ag) {
+        if (!removed[gi]) removed[gi] = [];
+        const existingSet = new Set(removed[gi].map(s => s.trim().toLowerCase()));
+        for (const row of GROUP_ALL[gi]) {
+          const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+          if (keysToRemove.has(key) && !existingSet.has(key)) {
+            removed[gi].push(row);
+          }
+        }
       }
+      saveGroupRemoved(removed);
+    } catch (e) {
+      // 忽略錯誤
     }
+  } else {
+    // 自訂模式：從 STORAGE_KEY 移除
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) return;
+      let storedRows = JSON.parse(raw);
+      if (!Array.isArray(storedRows)) return;
 
-    // 過濾掉匹配的 row
-    const before = storedRows.length;
-    storedRows = storedRows.filter(row => {
-      const parts = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-      const key = parts.join(",");
-      return !keysToRemove.has(key);
-    });
+      const before = storedRows.length;
+      storedRows = storedRows.filter(row => {
+        const parts = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+        const key = parts.join(",");
+        return !keysToRemove.has(key);
+      });
 
-    if (storedRows.length < before) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+      if (storedRows.length < before) {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+      }
+    } catch (e) {
+      // 忽略錯誤
     }
-  } catch (e) {
-    // 忽略錯誤，不影響遊戲
   }
 }
 
