@@ -1730,7 +1730,9 @@ function drawCell(row, col, cellData) {
   ctx.textBaseline = "middle";
 
   const maxWidth = cellSize - 6;
-  const fontSize = Math.max(12, Math.floor(cellSize * 0.28));
+  const isCN = /[\u4e00-\u9fff]/.test(cellData.word);
+  const minFont = isCN ? 12 : 11;
+  const fontSize = Math.max(minFont, Math.floor(cellSize * 0.28));
   ctx.font = `bold ${fontSize}px sans-serif`;
 
   // 先嘗試空白換行
