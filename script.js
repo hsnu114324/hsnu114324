@@ -1730,25 +1730,18 @@ function drawCell(row, col, cellData) {
   ctx.font = `bold ${fontSize}px sans-serif`;
   while (
     lines.some((line) => ctx.measureText(line).width > maxWidth) &&
-    fontSize > 9
+    fontSize > 10
   ) {
     fontSize -= 1;
     ctx.font = `bold ${fontSize}px sans-serif`;
   }
 
-  // 字體到 9px 仍塞不下 → 改用逐字換行
-  if (fontSize <= 9 && lines.some((line) => ctx.measureText(line).width > maxWidth)) {
+  // 字體到 10px 仍塞不下 → 改用逐字換行
+  if (fontSize <= 10 && lines.some((line) => ctx.measureText(line).width > maxWidth)) {
     lines = wrapTextByChar(cellData.word, maxWidth, fontSize);
   }
 
-  // 逐字換行後仍太長，繼續縮小到 9px
-  while (
-    lines.some((line) => ctx.measureText(line).width > maxWidth) &&
-    fontSize > 9
-  ) {
-    fontSize -= 1;
-    ctx.font = `bold ${fontSize}px sans-serif`;
-  }
+  // 逐字換行後仍太長，不再繼續縮小（最小 10px）
 
   const lineHeight = fontSize + 2;
   const totalHeight = lines.length * lineHeight;
