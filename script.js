@@ -35,7 +35,7 @@ const LENS_KEY = "word_tetris_allowed_lens_v1";
 const ALL_WORD_ROWS = loadWordRows();
 const allComboList = buildComboList(ALL_WORD_ROWS);
 
-const MAX_ACTIVE_COMBOS = 10;  // 同時在場的最大 combo 數量
+const MAX_ACTIVE_COMBOS = 6;   // 同時在場的最大 combo 數量
 
 let comboList = [];        // 目前在場的 combos（會隨消除＋補充而成長）
 let comboReserve = [];     // 尚未上場的 combos（等待補入）
@@ -1692,6 +1692,24 @@ function wrapText(text, maxWidth, fontSize) {
   return lines;
 }
 
+// 將文字拆成多行，依字元逐字換行
+function wrapTextByChar(text, maxWidth, fontSize) {
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  const lines = [];
+  let current = "";
+  for (const ch of text) {
+    const test = current + ch;
+    if (ctx.measureText(test).width <= maxWidth) {
+      current = test;
+    } else {
+      if (current) lines.push(current);
+      current = ch;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
 function drawCell(row, col, cellData) {
   const x = col * cellSize;
   const y = row * cellSize;
@@ -1706,10 +1724,24 @@ function drawCell(row, col, cellData) {
 
   const maxWidth = cellSize - 6;
   let fontSize = Math.max(10, Math.floor(cellSize * 0.28));
-  const lines = wrapText(cellData.word, maxWidth, fontSize);
+  let lines = wrapText(cellData.word, maxWidth, fontSize);
 
-  // 如果拆行後單行仍太長，縮小字體
+  // 如果拆行後單行仍太長，縮小字體（先縮到 9px）
   ctx.font = `bold ${fontSize}px sans-serif`;
+  while (
+    lines.some((line) => ctx.measureText(line).width > maxWidth) &&
+    fontSize > 9
+  ) {
+    fontSize -= 1;
+    ctx.font = `bold ${fontSize}px sans-serif`;
+  }
+
+  // 字體到 9px 仍塞不下 → 改用逐字換行
+  if (fontSize <= 9 && lines.some((line) => ctx.measureText(line).width > maxWidth)) {
+    lines = wrapTextByChar(cellData.word, maxWidth, fontSize);
+  }
+
+  // 逐字換行後仍太長，繼續縮小到 6px
   while (
     lines.some((line) => ctx.measureText(line).width > maxWidth) &&
     fontSize > 6
