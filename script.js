@@ -3,6 +3,16 @@ const ROWS = 8;
 const FALL_MS = 550;
 const STORAGE_KEY = "word_tetris_rows_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
+const GROUPS_KEY = "word_tetris_active_groups_v1";
+
+// 預設群組（與 settings.js 同步）
+const GROUP_WORDS = [
+  ["11,12", "13,14"],
+  ["21,22", "23,24"],
+  ["31,32", "33,34"],
+  ["41,42", "43,44"],
+  ["51,52", "53,54"],
+];
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
@@ -140,7 +150,28 @@ function isValidRowString(row) {
   return parts.length >= 2 && parts.length <= 5;
 }
 
+function loadActiveGroups() {
+  try {
+    const raw = localStorage.getItem(GROUPS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < GROUP_WORDS.length);
+    return [];
+  } catch { return []; }
+}
+
 function loadWordRows() {
+  // 優先使用群組模式
+  const ag = loadActiveGroups();
+  if (ag.length > 0) {
+    const groupRows = [];
+    for (const gi of ag) {
+      groupRows.push(...GROUP_WORDS[gi]);
+    }
+    if (groupRows.length > 0) return groupRows;
+  }
+
+  // 無群組啟用 → 使用自訂 word
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [...DEFAULT_WORD_ROWS];

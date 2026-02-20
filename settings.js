@@ -3,6 +3,16 @@ const PICK_KEY = "word_tetris_pick_count_v1";
 const DEBUG_KEY = "word_tetris_debug_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
 const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
+const GROUPS_KEY = "word_tetris_active_groups_v1";
+
+// 預設群組
+const GROUP_WORDS = [
+  ["11,12", "13,14"],          // 群組 1
+  ["21,22", "23,24"],          // 群組 2
+  ["31,32", "33,34"],          // 群組 3
+  ["41,42", "43,44"],          // 群組 4
+  ["51,52", "53,54"],          // 群組 5
+];
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
@@ -3761,9 +3771,12 @@ const len2Toggle = document.getElementById("len2Toggle");
 const len3Toggle = document.getElementById("len3Toggle");
 const len4Toggle = document.getElementById("len4Toggle");
 const len5Toggle = document.getElementById("len5Toggle");
+const groupBtnBar = document.getElementById("groupBtnBar");
+const groupBtns = groupBtnBar.querySelectorAll(".group-btn");
 
 let rows = loadRows();
 let pickCount = loadPickCount();
+let activeGroups = loadActiveGroups(); // Set of active group indices (0-4)
 
 function preventZoom() {
   document.addEventListener(
@@ -3964,11 +3977,49 @@ function loadAllowedLens() {
   } catch { return [2, 3, 4, 5]; }
 }
 
+function loadActiveGroups() {
+  try {
+    const raw = localStorage.getItem(GROUPS_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return new Set(parsed.filter(n => n >= 0 && n < GROUP_WORDS.length));
+    return new Set();
+  } catch { return new Set(); }
+}
+
+// 切換群組按鈕狀態
+function toggleGroup(idx) {
+  if (activeGroups.has(idx)) {
+    activeGroups.delete(idx);
+  } else {
+    activeGroups.add(idx);
+  }
+  updateGroupUI();
+}
+
+// 更新群組按鈕外觀及自訂區域 disable 狀態
+function updateGroupUI() {
+  groupBtns.forEach(btn => {
+    const gi = parseInt(btn.dataset.group, 10);
+    btn.classList.toggle("active", activeGroups.has(gi));
+  });
+  // 有群組啟用 → 停用自訂區域
+  const hasGroup = activeGroups.size > 0;
+  const customSection = document.querySelector(".custom-words-section");
+  if (customSection) {
+    customSection.classList.toggle("custom-words-disabled", hasGroup);
+  }
+}
+
 function saveRows() {
-  if (!rows.length) {
+  const hasGroup = activeGroups.size > 0;
+
+  // 若沒有啟用群組，自訂 word 必須至少 1 列
+  if (!hasGroup && !rows.length) {
     setMessage("至少要保留 1 列才能儲存。");
     return;
   }
+
   // 讀取並驗證抽取組數
   pickCount = parseInt(pickCountInput.value, 10) || 0;
   if (pickCount < 0) pickCount = 0;
@@ -3986,19 +4037,31 @@ function saveRows() {
     return;
   }
 
+  // 儲存自訂 word（即使群組模式也保留自訂資料不遺失）
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
   localStorage.setItem(PICK_KEY, String(pickCount));
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
+  // 儲存群組狀態
+  localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
 
-  const pickText = pickCount === 0
-    ? "全部"
-    : `隨機 ${pickCount}/${rows.length} 組`;
+  // 提示訊息
+  let modeText;
+  if (hasGroup) {
+    const names = [...activeGroups].sort().map(i => `群組${i + 1}`).join("＋");
+    const totalWords = [...activeGroups].reduce((s, i) => s + GROUP_WORDS[i].length, 0);
+    modeText = `${names}（共 ${totalWords} 組）`;
+  } else {
+    const pickText = pickCount === 0
+      ? "全部"
+      : `隨機 ${pickCount}/${rows.length} 組`;
+    modeText = `自訂 ${pickText}`;
+  }
   const lenText = allowedLens.length === 4
     ? "全部長度"
     : allowedLens.map(n => n + "格").join("、");
-  setMessage(`已儲存（${pickText}，${lenText}），回遊戲頁重新開始即可套用。`, true);
+  setMessage(`已儲存（${modeText}，${lenText}），回遊戲頁重新開始即可套用。`, true);
 }
 
 function resetDefault() {
@@ -4017,6 +4080,14 @@ newRowInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") addRow();
 });
 
+// 群組按鈕綁定
+groupBtns.forEach(btn => {
+  tapBind(btn, () => {
+    const gi = parseInt(btn.dataset.group, 10);
+    toggleGroup(gi);
+  });
+});
+
 preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
@@ -4028,6 +4099,9 @@ len2Toggle.checked = _savedLens.includes(2);
 len3Toggle.checked = _savedLens.includes(3);
 len4Toggle.checked = _savedLens.includes(4);
 len5Toggle.checked = _savedLens.includes(5);
+
+// 初始化群組按鈕狀態
+updateGroupUI();
 
 renderRows();
 
