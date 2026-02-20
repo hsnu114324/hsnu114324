@@ -6,7 +6,7 @@ const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
 
 const DEFAULT_WORD_ROWS = [
-  "der -e,ice cream",
+  "das,ice",
   "1,2,3,4,5",
   "6,7,8,9,10",
   "11,12,13,14,15",
