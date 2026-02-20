@@ -33,8 +33,8 @@ const rightBtn = document.getElementById("rightBtn");
 
 const PICK_KEY = "word_tetris_pick_count_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
-const ALL_WORD_ROWS = loadWordRows();
-const allComboList = buildComboList(ALL_WORD_ROWS);
+let ALL_WORD_ROWS = loadWordRows();
+let allComboList = buildComboList(ALL_WORD_ROWS);
 
 const MAX_ACTIVE_COMBOS = 6;   // 同時在場的最大 combo 數量
 
@@ -1869,6 +1869,10 @@ function gameLoop(ts) {
 }
 
 function restartGame() {
+  // 重新從 localStorage 讀取最新的 word 資料（可能已被自動移除模式更新）
+  ALL_WORD_ROWS = loadWordRows();
+  allComboList = buildComboList(ALL_WORD_ROWS);
+
   // 每次重新開始都重新抽取並分配在場/候補
   initComboPool();
 
