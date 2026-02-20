@@ -1981,7 +1981,7 @@ const DEFAULT_WORD_ROWS = [
   "古箏,   die Guzheng",   
   "體操,   die Gymnastik",   
   "園藝,   gärtnern",   
-  "皮帶,   der Gürtel
+  "皮帶,   der Gürtel",
   "髮帶,   das Haarband",   
   "頭髮,   die Haare",   
   "染頭髮,   Haare färben lassen",   

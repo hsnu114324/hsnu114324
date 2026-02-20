@@ -16,17 +16,6 @@
         <p>格式：每列用逗號分隔，限制 2~5 欄（例如：<code>new,york,city</code>）。</p>
         <p id="message" class="message"></p>
 
-        <div class="input-group">
-          <input
-            id="newRowInput"
-            type="text"
-            placeholder="輸入新列，例如：bubble,milk,tea"
-          />
-          <button id="addBtn" type="button">新增</button>
-        </div>
-
-        <div id="rowList" class="row-list"></div>
-
         <div class="pick-section">
           <label class="pick-label">
             每局隨機抽取
@@ -55,10 +44,22 @@
           <button id="resetBtn" type="button">還原預設</button>
           <a class="btn-link" href="./index.html">回遊戲</a>
         </div>
+
+        <hr style="margin:16px 0;border:none;border-top:1px solid #ddd;" />
+
+        <div class="input-group">
+          <input
+            id="newRowInput"
+            type="text"
+            placeholder="輸入新列，例如：bubble,milk,tea"
+          />
+          <button id="addBtn" type="button">新增</button>
+        </div>
+
+        <div id="rowList" class="row-list"></div>
       </section>
     </main>
 
     <script src="./settings.js"></script>
   </body>
 </html>
-

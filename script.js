@@ -35,7 +35,11 @@ const LENS_KEY = "word_tetris_allowed_lens_v1";
 const ALL_WORD_ROWS = loadWordRows();
 const allComboList = buildComboList(ALL_WORD_ROWS);
 
-let comboList = [];
+const MAX_ACTIVE_COMBOS = 10;  // 同時在場的最大 combo 數量
+
+let comboList = [];        // 目前在場的 combos（會隨消除＋補充而成長）
+let comboReserve = [];     // 尚未上場的 combos（等待補入）
+let totalComboCount = 0;   // 全部 combo 數量（在場 + 候補 + 已消除）
 
 let cellSize = 44;
 let board = createEmptyBoard();
@@ -169,7 +173,7 @@ function loadAllowedLens() {
 }
 
 // 從全部 combo 中隨機抽 n 組（0 = 全部），並依允許長度篩選
-function pickRandomCombos() {
+function pickFilteredCombos() {
   const allowedLens = loadAllowedLens();
   // 先依長度篩選
   let pool = allComboList;
@@ -189,6 +193,46 @@ function pickRandomCombos() {
     [indices[i], indices[j]] = [indices[j], indices[i]];
   }
   return indices.slice(0, n).sort((a, b) => a - b).map((i) => pool[i]);
+}
+
+// 初始化 combo 池：取前 MAX_ACTIVE_COMBOS 個上場，其餘放候補
+function initComboPool() {
+  const all = pickFilteredCombos();
+  // 洗牌讓上場順序隨機
+  for (let i = all.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [all[i], all[j]] = [all[j], all[i]];
+  }
+  totalComboCount = all.length;
+  if (all.length <= MAX_ACTIVE_COMBOS) {
+    comboList = all;
+    comboReserve = [];
+  } else {
+    comboList = all.slice(0, MAX_ACTIVE_COMBOS);
+    comboReserve = all.slice(MAX_ACTIVE_COMBOS);
+  }
+}
+
+// 消除 combo 後，從候補區補入新 combo（每消一組補一組）
+function replenishCombos(newlyClearedCount) {
+  let added = 0;
+  for (let i = 0; i < newlyClearedCount && comboReserve.length > 0; i++) {
+    const newCombo = comboReserve.shift();
+    comboList.push(newCombo);
+    // 把新 combo 的字立刻混入現有佇列
+    const newWords = [...newCombo];
+    for (let j = newWords.length - 1; j > 0; j--) {
+      const k = Math.floor(Math.random() * (j + 1));
+      [newWords[j], newWords[k]] = [newWords[k], newWords[j]];
+    }
+    // 隨機插入 wordQueue
+    for (const w of newWords) {
+      const pos = Math.floor(Math.random() * (wordQueue.length + 1));
+      wordQueue.splice(pos, 0, w);
+    }
+    added++;
+  }
+  return added;
 }
 
 function setMessage(text, isOk = false) {
@@ -1499,11 +1543,18 @@ function playClearAnimation(markedPositions) {
 }
 
 function updateProgress() {
-  progressEl.textContent = `${clearedCombos.size}/${comboList.length}`;
+  const activeCount = comboList.length - clearedCombos.size;
+  const reserveCount = comboReserve.length;
+  if (reserveCount > 0) {
+    progressEl.textContent = `${clearedCombos.size}/${totalComboCount}（在場${activeCount}＋候補${reserveCount}）`;
+  } else {
+    progressEl.textContent = `${clearedCombos.size}/${totalComboCount}`;
+  }
 }
 
 async function clearMatches() {
   let totalCleared = 0;
+  const prevClearedSize = clearedCombos.size;
 
   while (true) {
     const groups = findMatchedGroups();
@@ -1542,15 +1593,29 @@ async function clearMatches() {
     // 清理佇列：已消除 combo 的字不再出現
     purgeWordQueue();
 
-    // 檢查是否破關
-    if (clearedCombos.size >= comboList.length) {
+    // 從候補區補入新 combo（每消一組補一組）
+    const newlyClearedCount = clearedCombos.size - prevClearedSize;
+    const added = replenishCombos(newlyClearedCount);
+    if (added > 0) {
+      // 重建字詞索引（comboList 已增加）
+      buildWordIndex();
+    }
+
+    updateProgress();
+
+    // 檢查是否破關：所有 combo 都已消除且候補區為空
+    if (clearedCombos.size >= comboList.length && comboReserve.length === 0) {
       running = false;
       setMessage("🎉 恭喜破關！所有組合都已消除！", true);
       playClearAllAnimation();
       return;
     }
 
-    setMessage(`消除 ${totalCleared} 格（${clearedCombos.size}/${comboList.length}）`, true);
+    const activeCount = comboList.length - clearedCombos.size;
+    const reserveInfo = comboReserve.length > 0
+      ? `，候補 ${comboReserve.length} 組`
+      : "";
+    setMessage(`消除 ${totalCleared} 格（${clearedCombos.size}/${totalComboCount}，在場 ${activeCount}${reserveInfo}）`, true);
   }
 }
 
@@ -1722,8 +1787,8 @@ function gameLoop(ts) {
 }
 
 function restartGame() {
-  // 每次重新開始都重新抽取
-  comboList = pickRandomCombos();
+  // 每次重新開始都重新抽取並分配在場/候補
+  initComboPool();
 
   board = createEmptyBoard();
   activeBlock = null;
@@ -1749,11 +1814,11 @@ function restartGame() {
   scoreEl.textContent = "0";
   updateProgress();
 
-  const pickN = loadPickCount();
-  const pickInfo = (pickN > 0 && pickN < allComboList.length)
-    ? `（已抽 ${comboList.length}/${allComboList.length} 組）`
+  const activeInfo = `在場 ${comboList.length} 組`;
+  const reserveInfo = comboReserve.length > 0
+    ? `，候補 ${comboReserve.length} 組`
     : "";
-  setMessage(`遊戲開始${pickInfo}，左/右移動，下鍵直接落地`, true);
+  setMessage(`遊戲開始（共 ${totalComboCount} 組，${activeInfo}${reserveInfo}），左/右移動，下鍵直接落地`, true);
 
   spawnBlock();
   cancelAnimationFrame(gameLoopId);
