@@ -236,7 +236,8 @@ function replenishCombos(newlyClearedCount) {
 }
 
 function setMessage(text, isOk = false) {
-  messageEl.textContent = text;
+  const px = Math.max(10, Math.floor(cellSize * 0.28));
+  messageEl.textContent = `[${px}px] ${text}`;
   messageEl.classList.toggle("ok", isOk);
 }
 
