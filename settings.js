@@ -4085,9 +4085,10 @@ function saveRows() {
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
-  // 儲存群組狀態與群組資料
+  // 儲存群組狀態與群組資料，並重置已移除記錄
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
+  localStorage.removeItem(GROUP_REMOVED_KEY);
 
   // 提示訊息
   let modeText;
