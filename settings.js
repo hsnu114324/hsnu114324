@@ -3827,40 +3827,90 @@ function setMessage(text, ok = false) {
   messageEl.classList.toggle("ok", ok);
 }
 
+const PAGE_SIZE = 50;  // 每頁顯示筆數
+let renderedCount = 0; // 目前已渲染的筆數
+
 function renderRows() {
   rowListEl.innerHTML = "";
+  renderedCount = 0;
+
   if (!rows.length) {
     const empty = document.createElement("div");
     empty.className = "row-item";
     empty.innerHTML = "<span>目前沒有資料列，請先新增至少 1 列</span>";
     rowListEl.appendChild(empty);
+    updateTotalCount();
     return;
   }
 
-  rows.forEach((row, index) => {
+  renderMoreRows();
+  updateTotalCount();
+}
+
+function renderMoreRows() {
+  const end = Math.min(renderedCount + PAGE_SIZE, rows.length);
+
+  // 移除舊的「載入更多」按鈕
+  const oldMore = rowListEl.querySelector(".load-more-btn");
+  if (oldMore) oldMore.remove();
+
+  const frag = document.createDocumentFragment();
+  for (let i = renderedCount; i < end; i++) {
     const item = document.createElement("div");
     item.className = "row-item";
+    item.dataset.idx = i;
 
     const content = document.createElement("code");
-    content.textContent = row;
+    content.textContent = rows[i];
 
     const removeBtn = document.createElement("button");
     removeBtn.type = "button";
     removeBtn.textContent = "移除";
-    removeBtn.className = "danger";
-    tapBind(removeBtn, () => {
-      rows.splice(index, 1);
-      renderRows();
-      setMessage("已移除一列，按「儲存」生效。");
-    });
+    removeBtn.className = "danger remove-row-btn";
 
     item.appendChild(content);
     item.appendChild(removeBtn);
-    rowListEl.appendChild(item);
-  });
+    frag.appendChild(item);
+  }
+  rowListEl.appendChild(frag);
+  renderedCount = end;
 
-  updateTotalCount();
+  // 還有更多資料 → 顯示「載入更多」按鈕
+  if (renderedCount < rows.length) {
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "load-more-btn";
+    moreBtn.textContent = `載入更多（已顯示 ${renderedCount}/${rows.length}）`;
+    moreBtn.style.cssText = "width:100%;padding:12px;margin-top:8px;font-size:15px;cursor:pointer;";
+    tapBind(moreBtn, () => renderMoreRows());
+    rowListEl.appendChild(moreBtn);
+  }
 }
+
+// 事件委派：統一處理「移除」按鈕點擊
+rowListEl.addEventListener("click", (e) => {
+  const btn = e.target.closest(".remove-row-btn");
+  if (!btn) return;
+  const item = btn.closest(".row-item");
+  if (!item) return;
+  const idx = parseInt(item.dataset.idx, 10);
+  if (isNaN(idx) || idx < 0 || idx >= rows.length) return;
+  rows.splice(idx, 1);
+  renderRows();
+  setMessage("已移除一列，按「儲存」生效。");
+});
+rowListEl.addEventListener("touchstart", (e) => {
+  const btn = e.target.closest(".remove-row-btn");
+  if (!btn) return;
+  e.preventDefault();
+  const item = btn.closest(".row-item");
+  if (!item) return;
+  const idx = parseInt(item.dataset.idx, 10);
+  if (isNaN(idx) || idx < 0 || idx >= rows.length) return;
+  rows.splice(idx, 1);
+  renderRows();
+  setMessage("已移除一列，按「儲存」生效。");
+}, { passive: false });
 
 function addRow() {
   const input = newRowInput.value.trim();
