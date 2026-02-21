@@ -6,6 +6,7 @@ const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
+const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
@@ -180,40 +181,53 @@ function saveGroupRemoved(removed) {
   localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
 }
 
+function isCustomActive() {
+  return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
+}
+
 function loadWordRows() {
-  // 優先使用群組模式
   const ag = loadActiveGroups();
+  const ca = isCustomActive();
+  const rows = [];
+
+  // 載入群組 word
   if (ag.length > 0) {
     const removed = isAutoRemoveMode() ? loadGroupRemoved() : {};
-    const groupRows = [];
     for (const gi of ag) {
       const removedSet = new Set((removed[gi] || []).map(s => s.trim().toLowerCase()));
       for (const row of groupData[gi]) {
         const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
         if (!removedSet.has(key)) {
-          groupRows.push(row);
+          rows.push(row);
         }
       }
     }
-    if (groupRows.length > 0) return groupRows;
-    // 所有群組 word 都已消除 → fallback 到完整群組（重新開始）
-    const allRows = [];
-    for (const gi of ag) allRows.push(...groupData[gi]);
-    return allRows;
   }
 
-  // 無群組啟用 → 使用自訂 word
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [...DEFAULT_WORD_ROWS];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [...DEFAULT_WORD_ROWS];
-    const validRows = parsed.filter(isValidRowString);
-    if (!validRows.length) return [...DEFAULT_WORD_ROWS];
-    return validRows;
-  } catch (error) {
-    return [...DEFAULT_WORD_ROWS];
+  // 載入自定義 word
+  if (ca) {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const r of parsed) {
+            if (isValidRowString(r)) rows.push(r);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
   }
+
+  if (rows.length > 0) return rows;
+
+  // fallback：若所有來源都空，嘗試完整群組或預設
+  if (ag.length > 0) {
+    const allRows = [];
+    for (const gi of ag) allRows.push(...groupData[gi]);
+    if (allRows.length > 0) return allRows;
+  }
+  return [...DEFAULT_WORD_ROWS];
 }
 
 function loadPickCount() {
@@ -247,9 +261,9 @@ function autoRemoveClearedRows(clearedComboIndices) {
   }
   if (keysToRemove.size === 0) return;
 
+  // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
   const ag = loadActiveGroups();
   if (ag.length > 0) {
-    // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
     try {
       const removed = loadGroupRemoved();
       for (const gi of ag) {
@@ -266,8 +280,10 @@ function autoRemoveClearedRows(clearedComboIndices) {
     } catch (e) {
       // 忽略錯誤
     }
-  } else {
-    // 自訂模式：從 STORAGE_KEY 移除
+  }
+
+  // 自訂模式：從 STORAGE_KEY 移除
+  if (isCustomActive()) {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (!raw) return;

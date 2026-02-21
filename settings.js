@@ -6,6 +6,7 @@ const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
 const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
+const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -3599,12 +3600,18 @@ const len3Toggle = document.getElementById("len3Toggle");
 const len4Toggle = document.getElementById("len4Toggle");
 const len5Toggle = document.getElementById("len5Toggle");
 const groupBtnBar = document.getElementById("groupBtnBar");
-const groupBtns = groupBtnBar.querySelectorAll(".group-btn");
+const groupBtns = groupBtnBar.querySelectorAll(".group-btn[data-group]");
+const customSourceBtn = document.getElementById("customSourceBtn");
+const customInputArea = document.getElementById("customInputArea");
 
-let rows = loadRows();
+// ── 資料 ──
+let customRows = loadCustomRows();       // 自定義來源 (string[])
+let displayRows = [];                    // 顯示列表 [{text, source}, ...]
 let pickCount = loadPickCount();
-let activeGroups = loadActiveGroups(); // Set of active group indices (0-4)
+let activeGroups = loadActiveGroups();    // Set<number>
+let customActive = loadCustomActive();   // boolean
 
+// ── 工具 ──
 function preventZoom() {
   document.addEventListener(
     "touchmove",
@@ -3617,7 +3624,6 @@ function preventZoom() {
   document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
 }
 
-// touchstart 直接觸發，不等 click 的 300ms
 function tapBind(el, callback) {
   let touched = false;
   el.addEventListener(
@@ -3652,7 +3658,8 @@ function normalizeRowString(row) {
     .join(",");
 }
 
-function loadRows() {
+// ── 載入 ──
+function loadCustomRows() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [...DEFAULT_WORD_ROWS];
@@ -3676,128 +3683,10 @@ function loadPickCount() {
   }
 }
 
-function updateTotalCount() {
-  totalCountEl.textContent = String(rows.length);
-  pickCountInput.max = rows.length;
-  if (pickCount > rows.length) {
-    pickCount = rows.length;
-    pickCountInput.value = pickCount;
-  }
-}
-
-function setMessage(text, ok = false) {
-  messageEl.textContent = text;
-  messageEl.classList.toggle("ok", ok);
-}
-
-const PAGE_SIZE = 50;  // 每頁顯示筆數
-let renderedCount = 0; // 目前已渲染的筆數
-
-function renderRows() {
-  rowListEl.innerHTML = "";
-  renderedCount = 0;
-
-  if (!rows.length) {
-    const empty = document.createElement("div");
-    empty.className = "row-item";
-    empty.innerHTML = "<span>目前沒有資料列，請先新增至少 1 列</span>";
-    rowListEl.appendChild(empty);
-    updateTotalCount();
-    return;
-  }
-
-  renderMoreRows();
-  updateTotalCount();
-}
-
-function renderMoreRows() {
-  const end = Math.min(renderedCount + PAGE_SIZE, rows.length);
-
-  // 移除舊的「載入更多」按鈕
-  const oldMore = rowListEl.querySelector(".load-more-btn");
-  if (oldMore) oldMore.remove();
-
-  const frag = document.createDocumentFragment();
-  for (let i = renderedCount; i < end; i++) {
-    const item = document.createElement("div");
-    item.className = "row-item";
-    item.dataset.idx = i;
-
-    const content = document.createElement("code");
-    content.textContent = rows[i];
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "移除";
-    removeBtn.className = "danger remove-row-btn";
-
-    item.appendChild(content);
-    item.appendChild(removeBtn);
-    frag.appendChild(item);
-  }
-  rowListEl.appendChild(frag);
-  renderedCount = end;
-
-  // 還有更多資料 → 顯示「載入更多」按鈕
-  if (renderedCount < rows.length) {
-    const moreBtn = document.createElement("button");
-    moreBtn.type = "button";
-    moreBtn.className = "load-more-btn";
-    moreBtn.textContent = `載入更多（已顯示 ${renderedCount}/${rows.length}）`;
-    moreBtn.style.cssText = "width:100%;padding:12px;margin-top:8px;font-size:15px;cursor:pointer;";
-    tapBind(moreBtn, () => renderMoreRows());
-    rowListEl.appendChild(moreBtn);
-  }
-}
-
-// 事件委派：統一處理「移除」按鈕點擊
-rowListEl.addEventListener("click", (e) => {
-  const btn = e.target.closest(".remove-row-btn");
-  if (!btn) return;
-  const item = btn.closest(".row-item");
-  if (!item) return;
-  const idx = parseInt(item.dataset.idx, 10);
-  if (isNaN(idx) || idx < 0 || idx >= rows.length) return;
-  rows.splice(idx, 1);
-  renderRows();
-  setMessage("已移除一列，按「儲存」生效。");
-});
-rowListEl.addEventListener("touchstart", (e) => {
-  const btn = e.target.closest(".remove-row-btn");
-  if (!btn) return;
-  e.preventDefault();
-  const item = btn.closest(".row-item");
-  if (!item) return;
-  const idx = parseInt(item.dataset.idx, 10);
-  if (isNaN(idx) || idx < 0 || idx >= rows.length) return;
-  rows.splice(idx, 1);
-  renderRows();
-  setMessage("已移除一列，按「儲存」生效。");
-}, { passive: false });
-
-function addRow() {
-  const input = newRowInput.value.trim();
-  if (!input) {
-    setMessage("請先輸入資料列。");
-    return;
-  }
-
-  const normalized = normalizeRowString(input);
-  if (!isValidRowString(normalized)) {
-    setMessage("格式錯誤：每列需要 2~5 欄，使用逗號分隔。");
-    return;
-  }
-
-  rows.push(normalized);
-  newRowInput.value = "";
-  renderRows();
-  setMessage("已新增一列，按「儲存」生效。", true);
-}
-
 function loadAllowedLens() {
   try {
     const raw = localStorage.getItem(LENS_KEY);
-    if (!raw) return [2, 3, 4, 5]; // 預設全開
+    if (!raw) return [2, 3, 4, 5];
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return parsed;
     return [2, 3, 4, 5];
@@ -3814,54 +3703,212 @@ function loadActiveGroups() {
   } catch { return new Set(); }
 }
 
-// 切換群組按鈕狀態
-function toggleGroup(idx) {
-  if (activeGroups.has(idx)) {
-    activeGroups.delete(idx);
-    // 關閉群組時清除該群組的已移除記錄（下次重新啟用會是完整的）
-    try {
-      const raw = localStorage.getItem(GROUP_REMOVED_KEY);
-      if (raw) {
-        const removed = JSON.parse(raw);
-        if (removed && removed[idx]) {
-          delete removed[idx];
-          localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
-        }
-      }
-    } catch (e) { /* ignore */ }
-  } else {
-    activeGroups.add(idx);
-  }
-  updateGroupUI();
+function loadCustomActive() {
+  return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
 }
 
-// 更新群組按鈕外觀及自訂區域 disable 狀態
-function updateGroupUI() {
+// ── 顯示列表管理 ──
+
+/** 根據目前的 activeGroups + customActive 建立 displayRows */
+function buildDisplayRows() {
+  displayRows = [];
+  for (const gi of activeGroups) {
+    for (const w of GROUP_ALL[gi]) {
+      displayRows.push({ text: w, source: "group-" + gi });
+    }
+  }
+  if (customActive) {
+    for (const w of customRows) {
+      displayRows.push({ text: w, source: "custom" });
+    }
+  }
+}
+
+function sourceLabel(source) {
+  if (source === "custom") return "[自定義]";
+  const idx = parseInt(source.split("-")[1], 10);
+  return "[群" + (idx + 1) + "]";
+}
+
+function updateTotalCount() {
+  totalCountEl.textContent = String(displayRows.length);
+  pickCountInput.max = displayRows.length;
+  if (pickCount > displayRows.length) {
+    pickCount = displayRows.length;
+    pickCountInput.value = pickCount;
+  }
+}
+
+function setMessage(text, ok = false) {
+  messageEl.textContent = text;
+  messageEl.classList.toggle("ok", ok);
+}
+
+const PAGE_SIZE = 50;
+let renderedCount = 0;
+
+function renderRows() {
+  rowListEl.innerHTML = "";
+  renderedCount = 0;
+
+  if (!displayRows.length) {
+    const empty = document.createElement("div");
+    empty.className = "row-item";
+    empty.innerHTML = "<span>請點選上方按鈕載入單字來源</span>";
+    rowListEl.appendChild(empty);
+    updateTotalCount();
+    return;
+  }
+
+  renderMoreRows();
+  updateTotalCount();
+}
+
+function renderMoreRows() {
+  const end = Math.min(renderedCount + PAGE_SIZE, displayRows.length);
+
+  const oldMore = rowListEl.querySelector(".load-more-btn");
+  if (oldMore) oldMore.remove();
+
+  const frag = document.createDocumentFragment();
+  for (let i = renderedCount; i < end; i++) {
+    const item = document.createElement("div");
+    item.className = "row-item";
+    item.dataset.idx = i;
+
+    const label = document.createElement("span");
+    label.className = "source-label";
+    label.textContent = sourceLabel(displayRows[i].source);
+    label.style.cssText = "color:#7ea6ff;font-size:12px;margin-right:6px;white-space:nowrap;";
+
+    const content = document.createElement("code");
+    content.textContent = displayRows[i].text;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.textContent = "移除";
+    removeBtn.className = "danger remove-row-btn";
+
+    item.appendChild(label);
+    item.appendChild(content);
+    item.appendChild(removeBtn);
+    frag.appendChild(item);
+  }
+  rowListEl.appendChild(frag);
+  renderedCount = end;
+
+  if (renderedCount < displayRows.length) {
+    const moreBtn = document.createElement("button");
+    moreBtn.type = "button";
+    moreBtn.className = "load-more-btn";
+    moreBtn.textContent = `載入更多（已顯示 ${renderedCount}/${displayRows.length}）`;
+    moreBtn.style.cssText = "width:100%;padding:12px;margin-top:8px;font-size:15px;cursor:pointer;";
+    tapBind(moreBtn, () => renderMoreRows());
+    rowListEl.appendChild(moreBtn);
+  }
+}
+
+// 事件委派：統一處理「移除」按鈕
+function handleRemoveRow(e) {
+  const btn = e.target.closest(".remove-row-btn");
+  if (!btn) return;
+  if (e.type === "touchstart") e.preventDefault();
+  const item = btn.closest(".row-item");
+  if (!item) return;
+  const idx = parseInt(item.dataset.idx, 10);
+  if (isNaN(idx) || idx < 0 || idx >= displayRows.length) return;
+  displayRows.splice(idx, 1);
+  renderRows();
+  setMessage("已移除一列，按「儲存」生效。");
+}
+rowListEl.addEventListener("click", handleRemoveRow);
+rowListEl.addEventListener("touchstart", handleRemoveRow, { passive: false });
+
+// ── 切換來源 ──
+
+function toggleGroup(idx) {
+  const key = "group-" + idx;
+  if (activeGroups.has(idx)) {
+    // 關閉：從 displayRows 移除該群組的項目
+    activeGroups.delete(idx);
+    displayRows = displayRows.filter(r => r.source !== key);
+  } else {
+    // 開啟：載入該群組的所有原始 word（完整重載）
+    activeGroups.add(idx);
+    for (const w of GROUP_ALL[idx]) {
+      displayRows.push({ text: w, source: key });
+    }
+  }
+  updateSourceUI();
+  renderRows();
+}
+
+function toggleCustom() {
+  if (customActive) {
+    // 關閉：從 displayRows 移除自定義項目
+    customActive = false;
+    displayRows = displayRows.filter(r => r.source !== "custom");
+  } else {
+    // 開啟：載入所有自定義 word（完整重載）
+    customActive = true;
+    for (const w of customRows) {
+      displayRows.push({ text: w, source: "custom" });
+    }
+  }
+  updateSourceUI();
+  renderRows();
+}
+
+function updateSourceUI() {
+  // 群組按鈕發光狀態
   groupBtns.forEach(btn => {
     const gi = parseInt(btn.dataset.group, 10);
     btn.classList.toggle("active", activeGroups.has(gi));
   });
-  // 有群組啟用 → 停用自訂區域
-  const hasGroup = activeGroups.size > 0;
-  const customSection = document.querySelector(".custom-words-section");
-  if (customSection) {
-    customSection.classList.toggle("custom-words-disabled", hasGroup);
-  }
+  // 自定義按鈕發光狀態
+  customSourceBtn.classList.toggle("active", customActive);
+  // 自定義輸入區域顯示/隱藏
+  customInputArea.style.display = customActive ? "" : "none";
 }
 
-function saveRows() {
-  const hasGroup = activeGroups.size > 0;
+// ── 新增自定義 word ──
+function addRow() {
+  const input = newRowInput.value.trim();
+  if (!input) {
+    setMessage("請先輸入資料列。");
+    return;
+  }
+  const normalized = normalizeRowString(input);
+  if (!isValidRowString(normalized)) {
+    setMessage("格式錯誤：每列需要 2~5 欄，使用逗號分隔。");
+    return;
+  }
+  customRows.push(normalized);
+  if (customActive) {
+    displayRows.push({ text: normalized, source: "custom" });
+  }
+  newRowInput.value = "";
+  renderRows();
+  setMessage("已新增一列，按「儲存」生效。", true);
+}
 
-  // 若沒有啟用群組，自訂 word 必須至少 1 列
-  if (!hasGroup && !rows.length) {
-    setMessage("至少要保留 1 列才能儲存。");
+// ── 儲存 ──
+function saveRows() {
+  // 至少要有一個來源啟用
+  if (activeGroups.size === 0 && !customActive) {
+    setMessage("請至少啟用一個單字來源。");
+    return;
+  }
+  // 如果有啟用但列表為空
+  if (displayRows.length === 0) {
+    setMessage("單字列表不能為空，請新增至少 1 列。");
     return;
   }
 
   // 讀取並驗證抽取組數
   pickCount = parseInt(pickCountInput.value, 10) || 0;
   if (pickCount < 0) pickCount = 0;
-  if (pickCount > rows.length) pickCount = rows.length;
+  if (pickCount > displayRows.length) pickCount = displayRows.length;
   pickCountInput.value = pickCount;
 
   // 收集允許的組合長度
@@ -3875,44 +3922,55 @@ function saveRows() {
     return;
   }
 
-  // 儲存自訂 word（即使群組模式也保留自訂資料不遺失）
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(rows));
+  // 從 displayRows 提取目前的自定義 word（可能已被移除部分）
+  if (customActive) {
+    customRows = displayRows.filter(r => r.source === "custom").map(r => r.text);
+  }
+
+  // 儲存
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(customRows));
   localStorage.setItem(PICK_KEY, String(pickCount));
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
-  // 儲存群組狀態與群組資料，並重置已移除記錄
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
+  localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   localStorage.removeItem(GROUP_REMOVED_KEY);
 
   // 提示訊息
-  let modeText;
-  if (hasGroup) {
+  const parts = [];
+  if (activeGroups.size > 0) {
     const names = [...activeGroups].sort().map(i => `群組${i + 1}`).join("＋");
-    const totalWords = [...activeGroups].reduce((s, i) => s + GROUP_ALL[i].length, 0);
-    modeText = `${names}（共 ${totalWords} 組）`;
-  } else {
-    const pickText = pickCount === 0
-      ? "全部"
-      : `隨機 ${pickCount}/${rows.length} 組`;
-    modeText = `自訂 ${pickText}`;
+    const totalWords = displayRows.filter(r => r.source.startsWith("group-")).length;
+    parts.push(`${names}（${totalWords} 組）`);
   }
+  if (customActive) {
+    const customCount = displayRows.filter(r => r.source === "custom").length;
+    parts.push(`自定義（${customCount} 組）`);
+  }
+  const modeText = parts.join("＋");
   const lenText = allowedLens.length === 4
     ? "全部長度"
     : allowedLens.map(n => n + "格").join("、");
   setMessage(`已儲存（${modeText}，${lenText}），回遊戲頁重新開始即可套用。`, true);
 }
 
+// ── 還原預設 ──
 function resetDefault() {
-  rows = [...DEFAULT_WORD_ROWS];
+  customRows = [...DEFAULT_WORD_ROWS];
+  activeGroups = new Set();
+  customActive = false;
   pickCount = 0;
   pickCountInput.value = 0;
+  autoRemoveToggle.checked = false;
+  buildDisplayRows();
+  updateSourceUI();
   renderRows();
-  updateTotalCount();
   setMessage("已還原預設，按「儲存」即可覆蓋。");
 }
 
+// ── 綁定事件 ──
 tapBind(addBtn, addRow);
 tapBind(saveBtn, saveRows);
 tapBind(resetBtn, resetDefault);
@@ -3927,21 +3985,23 @@ groupBtns.forEach(btn => {
     toggleGroup(gi);
   });
 });
+// 自定義按鈕綁定
+tapBind(customSourceBtn, toggleCustom);
 
+// ── 初始化 ──
 preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
 autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
 
-// 初始化允許長度 checkbox
 const _savedLens = loadAllowedLens();
 len2Toggle.checked = _savedLens.includes(2);
 len3Toggle.checked = _savedLens.includes(3);
 len4Toggle.checked = _savedLens.includes(4);
 len5Toggle.checked = _savedLens.includes(5);
 
-// 初始化群組按鈕狀態
-updateGroupUI();
-
+// 根據已存的狀態建立 displayRows
+buildDisplayRows();
+updateSourceUI();
 renderRows();
 

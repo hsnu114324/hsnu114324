@@ -33,13 +33,14 @@
         </div>
 
         <div class="pick-section">
-          <p class="pick-label" style="margin-bottom:6px;font-weight:bold;">預設群組（啟用後自訂單字失效）</p>
+          <p class="pick-label" style="margin-bottom:6px;font-weight:bold;">單字來源（可同時啟用多個）</p>
           <div id="groupBtnBar" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
             <button type="button" class="group-btn" data-group="0">群組 1</button>
             <button type="button" class="group-btn" data-group="1">群組 2</button>
             <button type="button" class="group-btn" data-group="2">群組 3</button>
             <button type="button" class="group-btn" data-group="3">群組 4</button>
             <button type="button" class="group-btn" data-group="4">群組 5</button>
+            <button type="button" class="group-btn" id="customSourceBtn">自定義</button>
           </div>
         </div>
 
@@ -65,18 +66,16 @@
 
         <hr style="margin:16px 0;border:none;border-top:1px solid #ddd;" />
 
-        <div class="custom-words-section">
-          <div class="input-group">
-            <input
-              id="newRowInput"
-              type="text"
-              placeholder="輸入新列，例如：bubble,milk,tea"
-            />
-            <button id="addBtn" type="button">新增</button>
-          </div>
-
-          <div id="rowList" class="row-list"></div>
+        <div id="customInputArea" class="input-group" style="display:none;">
+          <input
+            id="newRowInput"
+            type="text"
+            placeholder="輸入新的自定義列，例如：bubble,milk,tea"
+          />
+          <button id="addBtn" type="button">新增</button>
         </div>
+
+        <div id="rowList" class="row-list"></div>
       </section>
     </main>
 
