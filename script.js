@@ -191,10 +191,13 @@ function loadWordRows() {
   const rows = [];
 
   // 載入群組 word
+  // GROUP_REMOVED_KEY 同時記錄「設定頁手動移除」和「遊戲中自動移除」，需始終載入
   if (ag.length > 0) {
-    const removed = isAutoRemoveMode() ? loadGroupRemoved() : {};
+    const removed = loadGroupRemoved();
     for (const gi of ag) {
-      const removedSet = new Set((removed[gi] || []).map(s => s.trim().toLowerCase()));
+      const removedSet = new Set(
+        (removed[gi] || []).map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
+      );
       for (const row of groupData[gi]) {
         const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
         if (!removedSet.has(key)) {
@@ -268,7 +271,9 @@ function autoRemoveClearedRows(clearedComboIndices) {
       const removed = loadGroupRemoved();
       for (const gi of ag) {
         if (!removed[gi]) removed[gi] = [];
-        const existingSet = new Set(removed[gi].map(s => s.trim().toLowerCase()));
+        const existingSet = new Set(
+          removed[gi].map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
+        );
         for (const row of groupData[gi]) {
           const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
           if (keysToRemove.has(key) && !existingSet.has(key)) {

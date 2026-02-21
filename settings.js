@@ -3927,6 +3927,26 @@ function saveRows() {
     customRows = displayRows.filter(r => r.source === "custom").map(r => r.text);
   }
 
+  // 計算使用者在設定頁手動移除的群組 word，寫入 GROUP_REMOVED_KEY
+  const manualRemoved = {};
+  for (const gi of activeGroups) {
+    const key = "group-" + gi;
+    // displayRows 中屬於該群組的 word（正規化後）
+    const currentSet = new Set(
+      displayRows
+        .filter(r => r.source === key)
+        .map(r => r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(","))
+    );
+    // 原始群組中有，但 displayRows 中沒有的 → 被手動移除
+    const removedWords = GROUP_ALL[gi].filter(w => {
+      const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      return !currentSet.has(norm);
+    });
+    if (removedWords.length > 0) {
+      manualRemoved[gi] = removedWords;
+    }
+  }
+
   // 儲存
   localStorage.setItem(STORAGE_KEY, JSON.stringify(customRows));
   localStorage.setItem(PICK_KEY, String(pickCount));
@@ -3936,7 +3956,12 @@ function saveRows() {
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
-  localStorage.removeItem(GROUP_REMOVED_KEY);
+  // 若有手動移除的群組 word，儲存到 GROUP_REMOVED_KEY；否則清除
+  if (Object.keys(manualRemoved).length > 0) {
+    localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(manualRemoved));
+  } else {
+    localStorage.removeItem(GROUP_REMOVED_KEY);
+  }
 
   // 提示訊息
   const parts = [];
