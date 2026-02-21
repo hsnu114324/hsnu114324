@@ -3712,9 +3712,17 @@ function loadCustomActive() {
 /** 根據目前的 activeGroups + customActive 建立 displayRows */
 function buildDisplayRows() {
   displayRows = [];
+  // 讀取已移除的群組 word 記錄（含手動移除 + 自動移除）
+  const removed = loadGroupRemoved();
   for (const gi of activeGroups) {
+    const removedSet = new Set(
+      (removed[gi] || []).map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
+    );
     for (const w of GROUP_ALL[gi]) {
-      displayRows.push({ text: w, source: "group-" + gi });
+      const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      if (!removedSet.has(norm)) {
+        displayRows.push({ text: w, source: "group-" + gi });
+      }
     }
   }
   if (customActive) {
@@ -3722,6 +3730,16 @@ function buildDisplayRows() {
       displayRows.push({ text: w, source: "custom" });
     }
   }
+}
+
+function loadGroupRemoved() {
+  try {
+    const raw = localStorage.getItem(GROUP_REMOVED_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (parsed && typeof parsed === "object") return parsed;
+    return {};
+  } catch { return {}; }
 }
 
 function sourceLabel(source) {
