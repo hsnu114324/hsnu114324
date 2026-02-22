@@ -7,6 +7,7 @@ const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
+const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -3557,7 +3558,7 @@ const customInputArea = document.getElementById("customInputArea");
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
-let customRowsFull = [...customRows];    // 完整快照（toggle 關→開時從此還原，不受 save 影響）
+let customRowsFull = loadCustomRowsFull(); // 完整快照（持久化，toggle 關→開時從此還原，不受 save 影響）
 let displayRows = [];                    // 顯示列表 [{text, source}, ...]
 let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
@@ -3657,6 +3658,29 @@ function loadActiveGroups() {
 
 function loadCustomActive() {
   return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
+}
+
+/** 載入自定義 word 的完整快照（不受 save 截斷影響） */
+function loadCustomRowsFull() {
+  try {
+    const raw = localStorage.getItem(CUSTOM_FULL_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const valid = parsed
+          .map(r => normalizeRowString(String(r)))
+          .filter(isValidRowString);
+        if (valid.length > 0) return valid;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  // 若 CUSTOM_FULL_KEY 不存在，以 DEFAULT_WORD_ROWS 為完整來源
+  return [...DEFAULT_WORD_ROWS];
+}
+
+/** 持久化完整快照到 localStorage */
+function saveCustomRowsFull() {
+  localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(customRowsFull));
 }
 
 // ── 顯示列表管理 ──
@@ -3855,6 +3879,7 @@ function addRow() {
   }
   customRows.push(normalized);
   customRowsFull.push(normalized);  // 同步到完整快照
+  saveCustomRowsFull();             // 持久化完整快照
   if (customActive) {
     displayRows.push({ text: normalized, source: "custom" });
   }
@@ -3956,6 +3981,7 @@ function saveRows() {
 function resetDefault() {
   customRows = [...DEFAULT_WORD_ROWS];
   customRowsFull = [...DEFAULT_WORD_ROWS];  // 同步重置完整快照
+  saveCustomRowsFull();                     // 持久化完整快照
   activeGroups = new Set();
   customActive = false;
   pickCount = 0;
