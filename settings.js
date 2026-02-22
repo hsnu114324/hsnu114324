@@ -124,7 +124,7 @@ const GROUP_WORDS2 = [
 
 const GROUP_WORDS3 = [
 
-//  "-,所有格 第一格(Nominativ),所有格 第二格(Genitiv),所有格 第三格(Dativ),所有格 第四格(Akkusativ)",
+//  "1-,所有格 第一格(Nominativ),所有格 第二格(Genitiv),所有格 第三格(Dativ),所有格 第四格(Akkusativ)",
   "der ich,mein ,meines,meinem,meinen",
   "der du,dein ,deines,deinem,deinen",
   "der er,sein ,seines,seinem,seinen",
@@ -166,7 +166,7 @@ const GROUP_WORDS3 = [
 
 const GROUP_WORDS4 = [
 
-//  "-,第一格(Nominativ),第二格(Genitiv),第三格(Dativ),第四格(Akkusativ)",
+//  "2-,第一格(Nominativ),第二格(Genitiv),第三格(Dativ),第四格(Akkusativ)",
   "陽性 der,der Mann,des,dem Mann,den Mann",
   "陽性 ein,ein Mann,eines ,einem Mann,einen Mann",
   "陽性 kein,kein Mann,keines,keinem Mann,keinen Mann",
