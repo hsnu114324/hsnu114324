@@ -3557,6 +3557,7 @@ const customInputArea = document.getElementById("customInputArea");
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
+let customRowsFull = [...customRows];    // 完整快照（toggle 關→開時從此還原，不受 save 影響）
 let displayRows = [];                    // 顯示列表 [{text, source}, ...]
 let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
@@ -3818,9 +3819,9 @@ function toggleCustom() {
     customActive = false;
     displayRows = displayRows.filter(r => r.source !== "custom");
   } else {
-    // 開啟：載入所有自定義 word（完整重載）
+    // 開啟：從完整快照重載（跟群組行為一致，toggle 關→開會還原所有 word）
     customActive = true;
-    for (const w of customRows) {
+    for (const w of customRowsFull) {
       displayRows.push({ text: w, source: "custom" });
     }
   }
@@ -3853,6 +3854,7 @@ function addRow() {
     return;
   }
   customRows.push(normalized);
+  customRowsFull.push(normalized);  // 同步到完整快照
   if (customActive) {
     displayRows.push({ text: normalized, source: "custom" });
   }
@@ -3953,6 +3955,7 @@ function saveRows() {
 // ── 還原預設 ──
 function resetDefault() {
   customRows = [...DEFAULT_WORD_ROWS];
+  customRowsFull = [...DEFAULT_WORD_ROWS];  // 同步重置完整快照
   activeGroups = new Set();
   customActive = false;
   pickCount = 0;
