@@ -3528,58 +3528,6 @@ const DEFAULT_WORD_ROWS = [
 //  "土耳其藍,   türkis",   
 //  "門鈴,   die Türklingel",   
 //  "打包袋,   die Tüte zum Einpacken",    
-//
-//
-//
-//
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 
