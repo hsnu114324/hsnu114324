@@ -8,6 +8,7 @@
     />
     <title>資料表編輯</title>
     <link rel="stylesheet" href="./styles.css" />
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
   </head>
   <body>
     <main class="settings-page">
@@ -60,14 +61,14 @@
 
         <div class="pick-section">
           <p class="pick-label" style="margin-bottom:6px;font-weight:bold;">📊 學習統計（Google Sheets 同步）</p>
-          <div class="input-group" style="margin-bottom:8px;">
-            <input
-              id="sheetsUrlInput"
-              type="text"
-              placeholder="貼上 Google Apps Script 網址"
-              style="flex:1;"
-            />
-            <button id="saveSheetsUrlBtn" type="button" style="white-space:nowrap;">儲存網址</button>
+          <!-- Google 登入 -->
+          <div id="googleAuthArea" style="margin-bottom:10px;">
+            <div id="googleSignInBtn"></div>
+            <div id="googleUserInfo" style="display:none;align-items:center;gap:10px;padding:8px 12px;background:#e8f5e9;border-radius:8px;">
+              <img id="googleUserAvatar" alt="" style="width:28px;height:28px;border-radius:50%;" />
+              <span id="googleUserName" style="font-size:14px;font-weight:500;"></span>
+              <button id="googleSignOutBtn" type="button" style="margin-left:auto;font-size:12px;padding:4px 10px;">登出</button>
+            </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
             <button id="syncNowBtn" type="button">立即同步到 Sheets</button>

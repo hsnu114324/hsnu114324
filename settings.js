@@ -3993,20 +3993,139 @@ function resetDefault() {
   setMessage("已還原預設，按「儲存」即可覆蓋。");
 }
 
-// ── 學習統計（Google Sheets 同步） ──
+// ── 學習統計（Google Sheets 同步 + Google 登入） ──
 
 const STATS_KEY = "word_tetris_combo_stats_v1";
-const SHEETS_URL_KEY = "word_tetris_sheets_url_v1";
+const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
-const sheetsUrlInput = document.getElementById("sheetsUrlInput");
-const saveSheetsUrlBtn = document.getElementById("saveSheetsUrlBtn");
+// ★★★ 請在這裡填入你的設定 ★★★
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec";      // Google Apps Script 部署網址
+const GOOGLE_CLIENT_ID = "280426045341-s5tias2et5fgfkm6v4pasodaimi9usot.apps.googleusercontent.com";     // Google Cloud Console 的 OAuth Client ID
+// ★★★ 以上兩個值必須填入才能正常運作 ★★★
+
 const syncNowBtn = document.getElementById("syncNowBtn");
 const viewStatsBtn = document.getElementById("viewStatsBtn");
 const clearStatsBtn = document.getElementById("clearStatsBtn");
 const statsDisplay = document.getElementById("statsDisplay");
+const googleSignInBtn = document.getElementById("googleSignInBtn");
+const googleUserInfo = document.getElementById("googleUserInfo");
+const googleUserAvatar = document.getElementById("googleUserAvatar");
+const googleUserName = document.getElementById("googleUserName");
+const googleSignOutBtn = document.getElementById("googleSignOutBtn");
 
-// 載入已存的 Sheets URL
-sheetsUrlInput.value = localStorage.getItem(SHEETS_URL_KEY) || "";
+// ── Google 登入 ──
+
+/** 解碼 JWT credential（不需要外部 library） */
+function decodeJwt(token) {
+  const base64Url = token.split(".")[1];
+  const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+  const jsonPayload = decodeURIComponent(
+    atob(base64)
+      .split("")
+      .map(c => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+      .join("")
+  );
+  return JSON.parse(jsonPayload);
+}
+
+function loadGoogleUser() {
+  try {
+    const raw = localStorage.getItem(GOOGLE_USER_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
+
+function saveGoogleUser(user) {
+  localStorage.setItem(GOOGLE_USER_KEY, JSON.stringify(user));
+}
+
+function clearGoogleUser() {
+  localStorage.removeItem(GOOGLE_USER_KEY);
+}
+
+/** 登入成功回呼 */
+function handleGoogleCredentialResponse(response) {
+  try {
+    const payload = decodeJwt(response.credential);
+    const user = {
+      email: payload.email,
+      name: payload.name || payload.email,
+      picture: payload.picture || "",
+    };
+    saveGoogleUser(user);
+    updateGoogleAuthUI();
+    setMessage("✅ 已登入：" + user.email, true);
+  } catch (e) {
+    setMessage("❌ Google 登入失敗：" + e.message);
+  }
+}
+
+/** 更新登入 / 登出 UI */
+function updateGoogleAuthUI() {
+  const user = loadGoogleUser();
+  if (user) {
+    googleSignInBtn.style.display = "none";
+    googleUserInfo.style.display = "flex";
+    googleUserName.textContent = user.name + " (" + user.email + ")";
+    if (user.picture) {
+      googleUserAvatar.src = user.picture;
+      googleUserAvatar.style.display = "inline";
+    } else {
+      googleUserAvatar.style.display = "none";
+    }
+  } else {
+    googleSignInBtn.style.display = "block";
+    googleUserInfo.style.display = "none";
+  }
+}
+
+/** 初始化 GIS（等 library 載入完成後呼叫） */
+function initGoogleSignIn() {
+  if (typeof google === "undefined" || !google.accounts) {
+    // GIS library 尚未載入，延遲重試
+    setTimeout(initGoogleSignIn, 300);
+    return;
+  }
+  google.accounts.id.initialize({
+    client_id: GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredentialResponse,
+  });
+  // 僅在未登入時渲染按鈕
+  if (!loadGoogleUser()) {
+    google.accounts.id.renderButton(googleSignInBtn, {
+      theme: "outline",
+      size: "medium",
+      text: "signin_with",
+      locale: "zh-TW",
+    });
+  }
+  updateGoogleAuthUI();
+}
+
+tapBind(googleSignOutBtn, () => {
+  clearGoogleUser();
+  // 清除 GIS 狀態
+  if (typeof google !== "undefined" && google.accounts) {
+    google.accounts.id.disableAutoSelect();
+  }
+  updateGoogleAuthUI();
+  // 重新渲染登入按鈕
+  if (typeof google !== "undefined" && google.accounts) {
+    google.accounts.id.renderButton(googleSignInBtn, {
+      theme: "outline",
+      size: "medium",
+      text: "signin_with",
+      locale: "zh-TW",
+    });
+  }
+  setMessage("已登出 Google 帳號。");
+});
+
+// 頁面載入後初始化 GIS
+initGoogleSignIn();
+
+// ── 統計功能 ──
 
 function loadComboStats() {
   try {
@@ -4017,21 +4136,14 @@ function loadComboStats() {
   } catch { return {}; }
 }
 
-tapBind(saveSheetsUrlBtn, () => {
-  const url = sheetsUrlInput.value.trim();
-  if (url) {
-    localStorage.setItem(SHEETS_URL_KEY, url);
-    setMessage("Google Sheets 網址已儲存。", true);
-  } else {
-    localStorage.removeItem(SHEETS_URL_KEY);
-    setMessage("已清除 Google Sheets 網址。");
-  }
-});
-
 tapBind(syncNowBtn, async () => {
-  const url = localStorage.getItem(SHEETS_URL_KEY);
-  if (!url) {
-    setMessage("請先貼上並儲存 Google Apps Script 網址。");
+  if (APPS_SCRIPT_URL === "YOUR_APPS_SCRIPT_URL_HERE") {
+    setMessage("請先在 settings.js 中設定 APPS_SCRIPT_URL。");
+    return;
+  }
+  const user = loadGoogleUser();
+  if (!user) {
+    setMessage("請先登入 Google 帳號再同步。");
     return;
   }
   const stats = loadComboStats();
@@ -4042,11 +4154,16 @@ tapBind(syncNowBtn, async () => {
   syncNowBtn.disabled = true;
   syncNowBtn.textContent = "同步中...";
   try {
-    await fetch(url, {
+    await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ action: "sync", stats }),
+      body: JSON.stringify({
+        action: "sync",
+        stats,
+        userEmail: user.email,
+        userName: user.name,
+      }),
     });
     setMessage("✅ 統計已送出到 Google Sheets（因 no-cors 無法確認結果，請到 Sheet 確認）。", true);
   } catch (e) {

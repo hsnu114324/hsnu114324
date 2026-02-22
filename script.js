@@ -8,7 +8,10 @@ const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 const STATS_KEY = "word_tetris_combo_stats_v1";
-const SHEETS_URL_KEY = "word_tetris_sheets_url_v1";
+const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
+
+// ★★★ 與 settings.js 相同的 Apps Script 部署網址 ★★★
+const APPS_SCRIPT_URL = "YOUR_APPS_SCRIPT_URL_HERE";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
@@ -300,18 +303,29 @@ function trackComboCleared(clearedIndices) {
   saveComboStats(stats);
 }
 
-/** 將統計同步到 Google Sheets */
+/** 將統計同步到 Google Sheets（帶上登入使用者身份） */
 async function syncStatsToSheets() {
-  const url = localStorage.getItem(SHEETS_URL_KEY);
-  if (!url) return;
+  if (APPS_SCRIPT_URL === "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec") return;
+  // 讀取 Google 登入使用者
+  let user = null;
+  try {
+    const raw = localStorage.getItem(GOOGLE_USER_KEY);
+    if (raw) user = JSON.parse(raw);
+  } catch { /* ignore */ }
+  if (!user || !user.email) return; // 未登入則不同步
   const stats = loadComboStats();
   if (Object.keys(stats).length === 0) return;
   try {
-    await fetch(url, {
+    await fetch(APPS_SCRIPT_URL, {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({ action: "sync", stats }),
+      body: JSON.stringify({
+        action: "sync",
+        stats,
+        userEmail: user.email,
+        userName: user.name || user.email,
+      }),
     });
   } catch (e) {
     console.warn("同步 Google Sheets 失敗:", e);
