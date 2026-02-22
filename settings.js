@@ -3890,6 +3890,41 @@ function addRow() {
 
 // ── 儲存 ──
 function saveRows() {
+  // ── 自動加入尚未確認的「立即載入」字詞 ──
+  if (typeof _loadedFailedWords !== "undefined" && _loadedFailedWords.length > 0) {
+    let autoAdded = 0;
+    for (const w of _loadedFailedWords) {
+      const parts = w.raw.split(",");
+      let wordRow;
+      if (parts.length >= 2) {
+        wordRow = normalizeRowString(w.raw);
+      } else {
+        wordRow = normalizeRowString(w.comboKey);
+      }
+      if (!isValidRowString(wordRow)) continue;
+      const exists = displayRows.some(r => {
+        const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        return norm === wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      });
+      if (!exists) {
+        displayRows.push({ text: wordRow, source: "custom" });
+        customRows.push(wordRow);
+        customRowsFull.push(wordRow);
+        autoAdded++;
+      }
+    }
+    if (autoAdded > 0) {
+      if (!customActive) {
+        customActive = true;
+        updateSourceUI();
+      }
+      saveCustomRowsFull();
+      renderRows();
+    }
+    _loadedFailedWords = [];
+    if (failedWordsArea) failedWordsArea.style.display = "none";
+  }
+
   // 至少要有一個來源啟用
   if (activeGroups.size === 0 && !customActive) {
     setMessage("請至少啟用一個單字來源。");
