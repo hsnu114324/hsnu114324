@@ -4137,7 +4137,7 @@ function loadComboStats() {
 }
 
 tapBind(syncNowBtn, async () => {
-  if (APPS_SCRIPT_URL === "YOUR_APPS_SCRIPT_URL_HERE") {
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) {
     setMessage("請先在 settings.js 中設定 APPS_SCRIPT_URL。");
     return;
   }
@@ -4174,7 +4174,14 @@ tapBind(syncNowBtn, async () => {
   }
 });
 
+let statsFilterAbove50 = false; // 是否只顯示失敗率 > 50%
+
 tapBind(viewStatsBtn, () => {
+  statsFilterAbove50 = false;
+  renderStatsDisplay();
+});
+
+function renderStatsDisplay() {
   const stats = loadComboStats();
   const entries = Object.entries(stats);
   if (entries.length === 0) {
@@ -4196,45 +4203,87 @@ tapBind(viewStatsBtn, () => {
     return b.appear - a.appear;
   });
 
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:13px;">
-    <thead>
-      <tr style="border-bottom:2px solid #ddd;text-align:left;">
-        <th style="padding:4px 6px;">#</th>
-        <th style="padding:4px 6px;">組合</th>
-        <th style="padding:4px 6px;">出現</th>
-        <th style="padding:4px 6px;">消除</th>
-        <th style="padding:4px 6px;">失敗率</th>
-        <th style="padding:4px 6px;">最後</th>
-      </tr>
-    </thead><tbody>`;
+  // 統計各區間
+  const above50 = sorted.filter(s => s.failRate > 0.5);
+  const above70 = sorted.filter(s => s.failRate > 0.7);
 
-  const showCount = Math.min(sorted.length, 30);
-  for (let i = 0; i < showCount; i++) {
-    const s = sorted[i];
-    const failPct = (s.failRate * 100).toFixed(0);
-    const barColor = s.failRate > 0.7 ? "#ff4444" : s.failRate > 0.4 ? "#ffaa00" : "#44cc44";
-    html += `<tr style="border-bottom:1px solid #eee;">
-      <td style="padding:4px 6px;color:#888;">${i + 1}</td>
-      <td style="padding:4px 6px;word-break:break-all;"><code>${escapeHtml(s.display)}</code></td>
-      <td style="padding:4px 6px;text-align:center;">${s.appear}</td>
-      <td style="padding:4px 6px;text-align:center;">${s.cleared}</td>
-      <td style="padding:4px 6px;">
-        <span style="color:${barColor};font-weight:bold;">${failPct}%</span>
-        <div style="background:#eee;height:4px;border-radius:2px;margin-top:2px;">
-          <div style="background:${barColor};height:4px;border-radius:2px;width:${failPct}%;"></div>
-        </div>
-      </td>
-      <td style="padding:4px 6px;color:#888;font-size:11px;">${s.lastSeen}</td>
-    </tr>`;
-  }
-  html += `</tbody></table>`;
-  if (sorted.length > showCount) {
-    html += `<p style="color:#888;margin-top:8px;">（僅顯示前 ${showCount} 筆，共 ${sorted.length} 筆）</p>`;
+  // 要顯示的列表（依據篩選狀態）
+  const list = statsFilterAbove50 ? above50 : sorted;
+
+  // 摘要區
+  let html = `<div style="margin-bottom:10px;padding:8px 12px;background:#fff3cd;border-radius:6px;font-size:13px;">`;
+  html += `<b>📊 統計摘要</b>（共 ${sorted.length} 組）<br>`;
+  html += `<span style="color:#ff4444;">🔴 失敗率 &gt; 70%：<b>${above70.length}</b> 組</span>`;
+  html += `&nbsp;&nbsp;`;
+  html += `<span style="color:#e67700;">🟡 失敗率 &gt; 50%：<b>${above50.length}</b> 組</span>`;
+  html += `</div>`;
+
+  // 篩選切換按鈕
+  const btnStyle50 = statsFilterAbove50
+    ? "background:#e67700;color:#fff;border:none;"
+    : "background:#fff;color:#e67700;border:1px solid #e67700;";
+  const btnStyleAll = !statsFilterAbove50
+    ? "background:#4285f4;color:#fff;border:none;"
+    : "background:#fff;color:#4285f4;border:1px solid #4285f4;";
+  html += `<div style="margin-bottom:8px;display:flex;gap:6px;">`;
+  html += `<button id="_statsShowAll" style="${btnStyleAll}padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">全部 (${sorted.length})</button>`;
+  html += `<button id="_statsShow50" style="${btnStyle50}padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">失敗率 &gt; 50% (${above50.length})</button>`;
+  html += `</div>`;
+
+  if (list.length === 0) {
+    html += `<p style="color:#44cc44;font-weight:bold;">🎉 太棒了！沒有失敗率超過 50% 的組合。</p>`;
+  } else {
+    html += `<table style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="border-bottom:2px solid #ddd;text-align:left;">
+          <th style="padding:4px 6px;">#</th>
+          <th style="padding:4px 6px;">組合</th>
+          <th style="padding:4px 6px;">出現</th>
+          <th style="padding:4px 6px;">消除</th>
+          <th style="padding:4px 6px;">失敗率</th>
+          <th style="padding:4px 6px;">最後</th>
+        </tr>
+      </thead><tbody>`;
+
+    const showCount = Math.min(list.length, 50);
+    for (let i = 0; i < showCount; i++) {
+      const s = list[i];
+      const failPct = (s.failRate * 100).toFixed(0);
+      const barColor = s.failRate > 0.7 ? "#ff4444" : s.failRate > 0.5 ? "#e67700" : s.failRate > 0.4 ? "#ffaa00" : "#44cc44";
+      const rowBg = s.failRate > 0.5 ? "background:#fff8f0;" : "";
+      html += `<tr style="border-bottom:1px solid #eee;${rowBg}">
+        <td style="padding:4px 6px;color:#888;">${i + 1}</td>
+        <td style="padding:4px 6px;word-break:break-all;"><code>${escapeHtml(s.display)}</code></td>
+        <td style="padding:4px 6px;text-align:center;">${s.appear}</td>
+        <td style="padding:4px 6px;text-align:center;">${s.cleared}</td>
+        <td style="padding:4px 6px;">
+          <span style="color:${barColor};font-weight:bold;">${failPct}%</span>
+          <div style="background:#eee;height:4px;border-radius:2px;margin-top:2px;">
+            <div style="background:${barColor};height:4px;border-radius:2px;width:${failPct}%;"></div>
+          </div>
+        </td>
+        <td style="padding:4px 6px;color:#888;font-size:11px;">${s.lastSeen}</td>
+      </tr>`;
+    }
+    html += `</tbody></table>`;
+    if (list.length > showCount) {
+      html += `<p style="color:#888;margin-top:8px;">（僅顯示前 ${showCount} 筆，共 ${list.length} 筆）</p>`;
+    }
   }
 
   statsDisplay.style.display = "block";
   statsDisplay.innerHTML = html;
-});
+
+  // 綁定篩選按鈕事件（動態建立的 DOM）
+  document.getElementById("_statsShowAll")?.addEventListener("click", () => {
+    statsFilterAbove50 = false;
+    renderStatsDisplay();
+  });
+  document.getElementById("_statsShow50")?.addEventListener("click", () => {
+    statsFilterAbove50 = true;
+    renderStatsDisplay();
+  });
+}
 
 tapBind(clearStatsBtn, () => {
   if (confirm("確定要清除所有學習統計資料嗎？此操作無法還原。")) {

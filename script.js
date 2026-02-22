@@ -11,7 +11,7 @@ const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
 // ★★★ 與 settings.js 相同的 Apps Script 部署網址 ★★★
-const APPS_SCRIPT_URL = "YOUR_APPS_SCRIPT_URL_HERE";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
@@ -305,7 +305,7 @@ function trackComboCleared(clearedIndices) {
 
 /** 將統計同步到 Google Sheets（帶上登入使用者身份） */
 async function syncStatsToSheets() {
-  if (APPS_SCRIPT_URL === "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec") return;
+  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) return;
   // 讀取 Google 登入使用者
   let user = null;
   try {
