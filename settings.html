@@ -71,11 +71,12 @@
             </div>
           </div>
           <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-            <button id="syncNowBtn" type="button">立即同步到 Sheets</button>
             <button id="viewStatsBtn" type="button">查看失敗率排行</button>
+            <button id="loadFailedBtn" type="button">立即載入</button>
             <button id="clearStatsBtn" type="button" class="danger">清除統計</button>
           </div>
           <div id="statsDisplay" style="display:none;margin-top:8px;max-height:300px;overflow-y:auto;font-size:13px;background:#f9f9f9;border-radius:8px;padding:10px;"></div>
+          <div id="failedWordsArea" style="display:none;margin-top:12px;"></div>
         </div>
 
         <div class="actions">

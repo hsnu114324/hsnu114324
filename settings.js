@@ -4003,7 +4003,6 @@ const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3r
 const GOOGLE_CLIENT_ID = "280426045341-s5tias2et5fgfkm6v4pasodaimi9usot.apps.googleusercontent.com";     // Google Cloud Console 的 OAuth Client ID
 // ★★★ 以上兩個值必須填入才能正常運作 ★★★
 
-const syncNowBtn = document.getElementById("syncNowBtn");
 const viewStatsBtn = document.getElementById("viewStatsBtn");
 const clearStatsBtn = document.getElementById("clearStatsBtn");
 const statsDisplay = document.getElementById("statsDisplay");
@@ -4081,24 +4080,37 @@ function updateGoogleAuthUI() {
 }
 
 /** 初始化 GIS（等 library 載入完成後呼叫） */
+let _gisRetry = 0;
 function initGoogleSignIn() {
   if (typeof google === "undefined" || !google.accounts) {
-    // GIS library 尚未載入，延遲重試
+    _gisRetry++;
+    if (_gisRetry > 15) {
+      // 5 秒後放棄（可能是 file:// 或無網路）
+      console.warn("Google Identity Services 載入失敗，Google 登入功能不可用。請確認使用 http:// 或 https:// 開啟頁面。");
+      googleSignInBtn.innerHTML = '<p style="color:#888;font-size:12px;">⚠️ Google 登入不可用（需透過 http/https 開啟頁面）</p>';
+      updateGoogleAuthUI();
+      return;
+    }
     setTimeout(initGoogleSignIn, 300);
     return;
   }
-  google.accounts.id.initialize({
-    client_id: GOOGLE_CLIENT_ID,
-    callback: handleGoogleCredentialResponse,
-  });
-  // 僅在未登入時渲染按鈕
-  if (!loadGoogleUser()) {
-    google.accounts.id.renderButton(googleSignInBtn, {
-      theme: "outline",
-      size: "medium",
-      text: "signin_with",
-      locale: "zh-TW",
+  try {
+    google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: handleGoogleCredentialResponse,
     });
+    // 僅在未登入時渲染按鈕
+    if (!loadGoogleUser()) {
+      google.accounts.id.renderButton(googleSignInBtn, {
+        theme: "outline",
+        size: "medium",
+        text: "signin_with",
+        locale: "zh-TW",
+      });
+    }
+  } catch (e) {
+    console.warn("Google Sign-In 初始化失敗:", e);
+    googleSignInBtn.innerHTML = '<p style="color:#888;font-size:12px;">⚠️ Google 登入初始化失敗</p>';
   }
   updateGoogleAuthUI();
 }
@@ -4125,7 +4137,10 @@ tapBind(googleSignOutBtn, () => {
 // 頁面載入後初始化 GIS
 initGoogleSignIn();
 
-// ── 統計功能 ──
+// ── 統計功能（從 Google Sheets 讀取） ──
+
+const loadFailedBtn = document.getElementById("loadFailedBtn");
+const failedWordsArea = document.getElementById("failedWordsArea");
 
 function loadComboStats() {
   try {
@@ -4136,112 +4151,83 @@ function loadComboStats() {
   } catch { return {}; }
 }
 
-tapBind(syncNowBtn, async () => {
+/** 從 Google Sheets 取得統計資料 */
+async function fetchStatsFromSheets(action) {
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) {
-    setMessage("請先在 settings.js 中設定 APPS_SCRIPT_URL。");
-    return;
+    throw new Error("請先在 settings.js 中設定 APPS_SCRIPT_URL。");
   }
   const user = loadGoogleUser();
   if (!user) {
-    setMessage("請先登入 Google 帳號再同步。");
-    return;
+    throw new Error("請先登入 Google 帳號。");
   }
-  const stats = loadComboStats();
-  if (Object.keys(stats).length === 0) {
-    setMessage("目前沒有任何統計資料可同步。");
-    return;
-  }
-  syncNowBtn.disabled = true;
-  syncNowBtn.textContent = "同步中...";
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({
-        action: "sync",
-        stats,
-        userEmail: user.email,
-        userName: user.name,
-      }),
-    });
-    setMessage("✅ 統計已送出到 Google Sheets（因 no-cors 無法確認結果，請到 Sheet 確認）。", true);
-  } catch (e) {
-    setMessage("❌ 同步失敗：" + e.message);
-  } finally {
-    syncNowBtn.disabled = false;
-    syncNowBtn.textContent = "立即同步到 Sheets";
-  }
-});
+  const url = APPS_SCRIPT_URL + "?action=" + encodeURIComponent(action) + "&email=" + encodeURIComponent(user.email);
+  const resp = await fetch(url, { redirect: "follow" });
+  if (!resp.ok) throw new Error("HTTP " + resp.status);
+  return await resp.json();
+}
 
-let statsFilterAbove50 = false; // 是否只顯示失敗率 > 50%
+// ── 查看失敗率排行（從 Google Sheets） ──
 
-tapBind(viewStatsBtn, () => {
+let statsFilterAbove50 = false;
+let _cachedSheetStats = null; // 暫存，避免重複 fetch
+
+tapBind(viewStatsBtn, async () => {
   statsFilterAbove50 = false;
-  renderStatsDisplay();
+  _cachedSheetStats = null;
+  statsDisplay.style.display = "block";
+  statsDisplay.innerHTML = '<p style="color:#666;">⏳ 正在從 Google Sheets 載入統計資料...</p>';
+  try {
+    const data = await fetchStatsFromSheets("stats");
+    if (!data.ok) throw new Error(data.error || "未知錯誤");
+    _cachedSheetStats = data.stats || [];
+    renderStatsDisplay();
+  } catch (e) {
+    statsDisplay.innerHTML = `<p style="color:#c62828;">❌ 載入失敗：${escapeHtml(e.message)}</p>
+      <p style="color:#888;font-size:12px;">提示：確認 Apps Script 已部署為「所有人」可存取，且頁面使用 http/https 開啟。</p>`;
+  }
 });
 
 function renderStatsDisplay() {
-  const stats = loadComboStats();
-  const entries = Object.entries(stats);
-  if (entries.length === 0) {
+  const sorted = _cachedSheetStats || [];
+  if (sorted.length === 0) {
     statsDisplay.style.display = "block";
-    statsDisplay.innerHTML = "<p style='color:#888;'>目前還沒有統計資料。開始遊戲後就會自動記錄。</p>";
+    statsDisplay.innerHTML = "<p style='color:#666;'>Google Sheets 中尚無統計資料。玩幾局遊戲後資料會自動同步。</p>";
     return;
   }
 
-  // 計算失敗率，排序：失敗率高 → appear 多 的排前面
-  const sorted = entries.map(([key, s]) => ({
-    key,
-    display: s.display || key,
-    appear: s.appear || 0,
-    cleared: s.cleared || 0,
-    failRate: s.appear > 0 ? ((s.appear - s.cleared) / s.appear) : 0,
-    lastSeen: s.lastSeen || "",
-  })).sort((a, b) => {
-    if (b.failRate !== a.failRate) return b.failRate - a.failRate;
-    return b.appear - a.appear;
-  });
-
-  // 統計各區間
   const above50 = sorted.filter(s => s.failRate > 0.5);
   const above70 = sorted.filter(s => s.failRate > 0.7);
-
-  // 要顯示的列表（依據篩選狀態）
   const list = statsFilterAbove50 ? above50 : sorted;
 
-  // 摘要區
-  let html = `<div style="margin-bottom:10px;padding:8px 12px;background:#fff3cd;border-radius:6px;font-size:13px;">`;
-  html += `<b>📊 統計摘要</b>（共 ${sorted.length} 組）<br>`;
-  html += `<span style="color:#ff4444;">🔴 失敗率 &gt; 70%：<b>${above70.length}</b> 組</span>`;
-  html += `&nbsp;&nbsp;`;
-  html += `<span style="color:#e67700;">🟡 失敗率 &gt; 50%：<b>${above50.length}</b> 組</span>`;
+  let html = `<div style="margin-bottom:10px;padding:10px 14px;background:#f0f4ff;border-radius:8px;font-size:13px;border:1px solid #d0d8f0;">`;
+  html += `<div style="font-weight:bold;color:#333;margin-bottom:4px;">📊 統計摘要（共 ${sorted.length} 組）</div>`;
+  html += `<span style="color:#c62828;">🔴 失敗率 &gt; 70%：<b>${above70.length}</b> 組</span>`;
+  html += `<span style="margin-left:12px;color:#e65100;">🟠 失敗率 &gt; 50%：<b>${above50.length}</b> 組</span>`;
+  html += `<br><span style="color:#666;font-size:12px;margin-top:4px;display:inline-block;">💡 資料來源：Google Sheets（重新開始 / 遊戲結束 / 破關 時自動同步）</span>`;
   html += `</div>`;
 
-  // 篩選切換按鈕
   const btnStyle50 = statsFilterAbove50
-    ? "background:#e67700;color:#fff;border:none;"
-    : "background:#fff;color:#e67700;border:1px solid #e67700;";
+    ? "background:#e65100;color:#fff;border:none;"
+    : "background:#fff;color:#e65100;border:1px solid #e65100;";
   const btnStyleAll = !statsFilterAbove50
-    ? "background:#4285f4;color:#fff;border:none;"
-    : "background:#fff;color:#4285f4;border:1px solid #4285f4;";
-  html += `<div style="margin-bottom:8px;display:flex;gap:6px;">`;
-  html += `<button id="_statsShowAll" style="${btnStyleAll}padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">全部 (${sorted.length})</button>`;
-  html += `<button id="_statsShow50" style="${btnStyle50}padding:4px 12px;border-radius:4px;font-size:12px;cursor:pointer;">失敗率 &gt; 50% (${above50.length})</button>`;
+    ? "background:#1565c0;color:#fff;border:none;"
+    : "background:#fff;color:#1565c0;border:1px solid #1565c0;";
+  html += `<div style="margin-bottom:10px;display:flex;gap:8px;">`;
+  html += `<button id="_statsShowAll" style="${btnStyleAll}padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">全部 (${sorted.length})</button>`;
+  html += `<button id="_statsShow50" style="${btnStyle50}padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">失敗率 &gt; 50% (${above50.length})</button>`;
   html += `</div>`;
 
   if (list.length === 0) {
-    html += `<p style="color:#44cc44;font-weight:bold;">🎉 太棒了！沒有失敗率超過 50% 的組合。</p>`;
+    html += `<p style="color:#2e7d32;font-weight:bold;">🎉 太棒了！沒有失敗率超過 50% 的組合。</p>`;
   } else {
     html += `<table style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>
-        <tr style="border-bottom:2px solid #ddd;text-align:left;">
-          <th style="padding:4px 6px;">#</th>
-          <th style="padding:4px 6px;">組合</th>
-          <th style="padding:4px 6px;">出現</th>
-          <th style="padding:4px 6px;">消除</th>
-          <th style="padding:4px 6px;">失敗率</th>
-          <th style="padding:4px 6px;">最後</th>
+        <tr style="background:#e8eaf6;border-bottom:2px solid #c5cae9;text-align:left;">
+          <th style="padding:6px 8px;color:#333;">#</th>
+          <th style="padding:6px 8px;color:#333;">組合</th>
+          <th style="padding:6px 8px;color:#333;text-align:center;">出現</th>
+          <th style="padding:6px 8px;color:#333;text-align:center;">消除</th>
+          <th style="padding:6px 8px;color:#333;">失敗率</th>
         </tr>
       </thead><tbody>`;
 
@@ -4249,20 +4235,29 @@ function renderStatsDisplay() {
     for (let i = 0; i < showCount; i++) {
       const s = list[i];
       const failPct = (s.failRate * 100).toFixed(0);
-      const barColor = s.failRate > 0.7 ? "#ff4444" : s.failRate > 0.5 ? "#e67700" : s.failRate > 0.4 ? "#ffaa00" : "#44cc44";
-      const rowBg = s.failRate > 0.5 ? "background:#fff8f0;" : "";
+      const barColor = s.failRate > 0.7 ? "#c62828" : s.failRate > 0.5 ? "#e65100" : s.failRate > 0.3 ? "#f9a825" : "#2e7d32";
+      const rowBg = s.failRate > 0.7 ? "background:#ffebee;" : s.failRate > 0.5 ? "background:#fff3e0;" : "";
+      const parts = (s.display || s.comboKey || "").split(",");
+      let comboHtml;
+      if (parts.length >= 2) {
+        const hint = escapeHtml(parts[0]);
+        const words = parts.slice(1).map(w => escapeHtml(w.trim())).join(", ");
+        comboHtml = `<span style="color:#1565c0;font-weight:600;">${words}</span>` +
+                    `<br><span style="color:#888;font-size:11px;">${hint}</span>`;
+      } else {
+        comboHtml = `<span style="color:#333;font-weight:500;">${escapeHtml(s.display || s.comboKey || "")}</span>`;
+      }
       html += `<tr style="border-bottom:1px solid #eee;${rowBg}">
-        <td style="padding:4px 6px;color:#888;">${i + 1}</td>
-        <td style="padding:4px 6px;word-break:break-all;"><code>${escapeHtml(s.display)}</code></td>
-        <td style="padding:4px 6px;text-align:center;">${s.appear}</td>
-        <td style="padding:4px 6px;text-align:center;">${s.cleared}</td>
-        <td style="padding:4px 6px;">
-          <span style="color:${barColor};font-weight:bold;">${failPct}%</span>
-          <div style="background:#eee;height:4px;border-radius:2px;margin-top:2px;">
-            <div style="background:${barColor};height:4px;border-radius:2px;width:${failPct}%;"></div>
+        <td style="padding:6px 8px;color:#999;font-size:12px;">${i + 1}</td>
+        <td style="padding:6px 8px;word-break:break-all;">${comboHtml}</td>
+        <td style="padding:6px 8px;text-align:center;color:#555;">${s.appear}</td>
+        <td style="padding:6px 8px;text-align:center;color:#555;">${s.cleared}</td>
+        <td style="padding:6px 8px;">
+          <span style="color:${barColor};font-weight:bold;font-size:14px;">${failPct}%</span>
+          <div style="background:#e0e0e0;height:5px;border-radius:3px;margin-top:3px;">
+            <div style="background:${barColor};height:5px;border-radius:3px;width:${failPct}%;"></div>
           </div>
         </td>
-        <td style="padding:4px 6px;color:#888;font-size:11px;">${s.lastSeen}</td>
       </tr>`;
     }
     html += `</tbody></table>`;
@@ -4274,7 +4269,6 @@ function renderStatsDisplay() {
   statsDisplay.style.display = "block";
   statsDisplay.innerHTML = html;
 
-  // 綁定篩選按鈕事件（動態建立的 DOM）
   document.getElementById("_statsShowAll")?.addEventListener("click", () => {
     statsFilterAbove50 = false;
     renderStatsDisplay();
@@ -4285,11 +4279,139 @@ function renderStatsDisplay() {
   });
 }
 
+// ── 立即載入：從 Google Sheets 載入失敗率 > 50% 的 word ──
+
+let _loadedFailedWords = []; // 載入的失敗 word 列表
+
+tapBind(loadFailedBtn, async () => {
+  failedWordsArea.style.display = "block";
+  failedWordsArea.innerHTML = '<p style="color:#666;">⏳ 正在從 Google Sheets 載入失敗率 &gt; 50% 的組合...</p>';
+  loadFailedBtn.disabled = true;
+  loadFailedBtn.textContent = "載入中...";
+  try {
+    const data = await fetchStatsFromSheets("failed50");
+    if (!data.ok) throw new Error(data.error || "未知錯誤");
+    _loadedFailedWords = (data.words || []).map(w => ({
+      // display 格式：「中文提示,word1,word2,...」→ 取 word 部分作為 combo
+      raw: w.display || w.comboKey || "",
+      comboKey: w.comboKey || "",
+      failRate: w.failRate || 0,
+      appear: w.appear || 0,
+      cleared: w.cleared || 0,
+    }));
+    if (_loadedFailedWords.length === 0) {
+      failedWordsArea.innerHTML = '<p style="color:#2e7d32;font-weight:bold;">🎉 太棒了！沒有失敗率超過 50% 的組合。</p>';
+      return;
+    }
+    renderFailedWords();
+    setMessage(`✅ 已從 Google Sheets 載入 ${_loadedFailedWords.length} 組失敗率 > 50% 的單字。可手動移除不需要的，再按「儲存」生效。`, true);
+  } catch (e) {
+    failedWordsArea.innerHTML = `<p style="color:#c62828;">❌ 載入失敗：${escapeHtml(e.message)}</p>
+      <p style="color:#888;font-size:12px;">提示：確認 Apps Script 已部署為「所有人」可存取，且頁面使用 http/https 開啟。</p>`;
+  } finally {
+    loadFailedBtn.disabled = false;
+    loadFailedBtn.textContent = "立即載入";
+  }
+});
+
+function renderFailedWords() {
+  if (_loadedFailedWords.length === 0) {
+    failedWordsArea.style.display = "none";
+    return;
+  }
+  let html = `<div style="padding:10px 14px;background:#fff3e0;border-radius:8px;border:1px solid #ffe0b2;">`;
+  html += `<div style="font-weight:bold;color:#e65100;margin-bottom:8px;">📥 已載入失敗率 &gt; 50% 的組合（${_loadedFailedWords.length} 組）</div>`;
+  html += `<div style="font-size:12px;color:#888;margin-bottom:8px;">這些組合會加入下方的單字列表中。按「儲存」後，下次遊戲即會使用。</div>`;
+  html += `<div style="display:flex;gap:6px;margin-bottom:10px;">`;
+  html += `<button id="_addFailedToList" style="background:#e65100;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">全部加入單字列表</button>`;
+  html += `<button id="_clearFailed" style="background:#fff;color:#888;border:1px solid #ccc;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">清除</button>`;
+  html += `</div>`;
+  html += `<div style="max-height:200px;overflow-y:auto;">`;
+  for (let i = 0; i < _loadedFailedWords.length; i++) {
+    const w = _loadedFailedWords[i];
+    const failPct = (w.failRate * 100).toFixed(0);
+    const barColor = w.failRate > 0.7 ? "#c62828" : "#e65100";
+    const parts = w.raw.split(",");
+    let label;
+    if (parts.length >= 2) {
+      label = `<span style="color:#1565c0;font-weight:600;">${escapeHtml(parts.slice(1).join(", "))}</span>` +
+              ` <span style="color:#888;font-size:11px;">(${escapeHtml(parts[0])})</span>`;
+    } else {
+      label = `<span style="color:#333;">${escapeHtml(w.raw)}</span>`;
+    }
+    html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f0f0f0;" data-failed-idx="${i}">
+      <button class="_removeFailedItem" data-idx="${i}" style="background:none;border:1px solid #ccc;color:#c62828;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">移除</button>
+      ${label}
+      <span style="margin-left:auto;color:${barColor};font-weight:bold;font-size:12px;">${failPct}%</span>
+    </div>`;
+  }
+  html += `</div></div>`;
+
+  failedWordsArea.innerHTML = html;
+
+  // 「全部加入」按鈕
+  document.getElementById("_addFailedToList")?.addEventListener("click", () => {
+    let added = 0;
+    for (const w of _loadedFailedWords) {
+      // 用 comboKey 作為 word row（去掉中文提示，只留外文部分）
+      const parts = w.raw.split(",");
+      let wordRow;
+      if (parts.length >= 2) {
+        // 第一個是中文提示，其餘是外文
+        wordRow = normalizeRowString(w.raw);
+      } else {
+        wordRow = normalizeRowString(w.comboKey);
+      }
+      if (!isValidRowString(wordRow)) continue;
+      // 避免重複
+      const exists = displayRows.some(r => {
+        const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        return norm === wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      });
+      if (!exists) {
+        displayRows.push({ text: wordRow, source: "custom" });
+        customRows.push(wordRow);
+        customRowsFull.push(wordRow);
+        added++;
+      }
+    }
+    if (!customActive) {
+      customActive = true;
+      updateSourceUI();
+    }
+    saveCustomRowsFull();
+    renderRows();
+    _loadedFailedWords = [];
+    failedWordsArea.style.display = "none";
+    setMessage(`✅ 已加入 ${added} 組到單字列表。按「儲存」生效。`, true);
+  });
+
+  // 「清除」按鈕
+  document.getElementById("_clearFailed")?.addEventListener("click", () => {
+    _loadedFailedWords = [];
+    failedWordsArea.style.display = "none";
+  });
+
+  // 個別「移除」按鈕（事件代理）
+  failedWordsArea.addEventListener("click", (e) => {
+    const btn = e.target.closest("._removeFailedItem");
+    if (!btn) return;
+    const idx = parseInt(btn.dataset.idx, 10);
+    if (idx >= 0 && idx < _loadedFailedWords.length) {
+      _loadedFailedWords.splice(idx, 1);
+      renderFailedWords();
+    }
+  });
+}
+
+// ── 清除統計 ──
+
 tapBind(clearStatsBtn, () => {
-  if (confirm("確定要清除所有學習統計資料嗎？此操作無法還原。")) {
+  if (confirm("確定要清除所有學習統計資料嗎？此操作無法還原。\n（僅清除本機資料，Google Sheets 資料不受影響）")) {
     localStorage.removeItem(STATS_KEY);
     statsDisplay.style.display = "none";
-    setMessage("已清除所有統計資料。", true);
+    _cachedSheetStats = null;
+    setMessage("已清除本機統計資料。", true);
   }
 });
 

@@ -2069,6 +2069,9 @@ function gameLoop(ts) {
 }
 
 function restartGame() {
+  // 重新開始前，先同步統計到 Google Sheets
+  syncStatsToSheets();
+
   // 重新從 localStorage 讀取群組資料與最新的 word 資料
   groupData = loadGroupData();
   ALL_WORD_ROWS = loadWordRows();
