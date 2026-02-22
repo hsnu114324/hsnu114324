@@ -11,7 +11,7 @@ const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
 // ★★★ 與 settings.js 相同的 Apps Script 部署網址 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzkpHZm2sHTMddQqSXCWTUlxzliQ7n5kipiMnew06nPCQQ5e1VDw4FtDUxdyJ-xoEK6zA/exec";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 

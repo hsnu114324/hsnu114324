@@ -3999,7 +3999,7 @@ const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
 // ★★★ 請在這裡填入你的設定 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzGbCYeuhXOMa3reWgHk04ClUC_tMUUFX6XTAOAntd46qbLruiiFBjMgxkzZL98oCEGHw/exec";      // Google Apps Script 部署網址
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzkpHZm2sHTMddQqSXCWTUlxzliQ7n5kipiMnew06nPCQQ5e1VDw4FtDUxdyJ-xoEK6zA/exec";      // Google Apps Script 部署網址
 const GOOGLE_CLIENT_ID = "280426045341-s5tias2et5fgfkm6v4pasodaimi9usot.apps.googleusercontent.com";     // Google Cloud Console 的 OAuth Client ID
 // ★★★ 以上兩個值必須填入才能正常運作 ★★★
 
@@ -4152,8 +4152,8 @@ function loadComboStats() {
 }
 
 /**
- * 從 Google Sheets 取得統計資料（使用 JSONP，不受 CORS / file:// 限制）
- * Apps Script doGet 收到 callback 參數後，會回傳 callback({...}) 格式
+ * 從 Google Sheets 取得統計資料
+ * 策略：http/https 頁面先嘗試 fetch；失敗或 file:// 頁面改用 JSONP
  */
 function fetchStatsFromSheets(action) {
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) {
@@ -4163,13 +4163,50 @@ function fetchStatsFromSheets(action) {
   if (!user) {
     return Promise.reject(new Error("請先登入 Google 帳號。"));
   }
+
+  const baseUrl = APPS_SCRIPT_URL
+    + "?action=" + encodeURIComponent(action)
+    + "&email=" + encodeURIComponent(user.email);
+
+  // http / https → 嘗試 fetch，失敗再回退 JSONP
+  if (location.protocol === "http:" || location.protocol === "https:") {
+    return _fetchViaFetch(baseUrl).catch(fetchErr => {
+      console.warn("fetch 方式失敗，改用 JSONP:", fetchErr.message);
+      return _fetchViaJsonp(baseUrl);
+    });
+  }
+  // file:// → 直接用 JSONP
+  return _fetchViaJsonp(baseUrl);
+}
+
+/** 方式一：使用 fetch（適用 http/https 頁面） */
+function _fetchViaFetch(baseUrl) {
+  return fetch(baseUrl, { redirect: "follow" })
+    .then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(data => {
+      if (data && data.ok) return data;
+      throw new Error(data.error || "回傳資料異常");
+    });
+}
+
+/** 方式二：JSONP（適用 file:// 頁面，也可作備用） */
+function _fetchViaJsonp(baseUrl) {
   return new Promise((resolve, reject) => {
-    // 產生唯一的 callback 函式名稱
     const cbName = "_jsonpCb_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
     const timeout = setTimeout(() => {
       cleanup();
-      reject(new Error("請求逾時（15 秒），請確認 Apps Script 已重新部署。"));
-    }, 15000);
+      reject(new Error(
+        "請求逾時（20 秒）。\n\n" +
+        "🔧 請確認以下事項：\n" +
+        "1. google_apps_script.js 已完整貼入 Apps Script 編輯器\n" +
+        "2. 已點選「部署 → 管理部署 → ✏️ → 版本選「新版本」→ 部署」\n" +
+        "3. 存取權限設為「所有人」\n\n" +
+        "📋 測試網址（在瀏覽器新分頁開啟看是否回傳 JSON）：\n" + baseUrl
+      ));
+    }, 20000);
 
     function cleanup() {
       clearTimeout(timeout);
@@ -4178,23 +4215,28 @@ function fetchStatsFromSheets(action) {
       if (el) el.remove();
     }
 
-    // 掛載全域 callback
     window[cbName] = function (data) {
       cleanup();
-      resolve(data);
+      if (data && data.ok) {
+        resolve(data);
+      } else {
+        reject(new Error(data ? (data.error || "回傳資料異常") : "回傳為空"));
+      }
     };
 
-    // 建立 <script> 標籤發出 GET 請求
-    const url = APPS_SCRIPT_URL
-      + "?action=" + encodeURIComponent(action)
-      + "&email=" + encodeURIComponent(user.email)
-      + "&callback=" + encodeURIComponent(cbName);
+    const url = baseUrl + "&callback=" + encodeURIComponent(cbName);
     const script = document.createElement("script");
     script.id = cbName;
     script.src = url;
     script.onerror = () => {
       cleanup();
-      reject(new Error("Script 載入失敗，請確認網路連線及 Apps Script 網址。"));
+      reject(new Error(
+        "Script 載入失敗。\n\n" +
+        "🔧 最可能的原因：\n" +
+        "① Apps Script 尚未重新部署（需要「管理部署 → 新版本 → 部署」）\n" +
+        "② 部署網址已變更（重新部署後請更新 APPS_SCRIPT_URL）\n\n" +
+        "📋 請在瀏覽器新分頁開啟以下網址測試：\n" + baseUrl
+      ));
     };
     document.head.appendChild(script);
   });
@@ -4216,8 +4258,10 @@ tapBind(viewStatsBtn, async () => {
     _cachedSheetStats = data.stats || [];
     renderStatsDisplay();
   } catch (e) {
-    statsDisplay.innerHTML = `<p style="color:#c62828;">❌ 載入失敗：${escapeHtml(e.message)}</p>
-      <p style="color:#888;font-size:12px;">提示：確認 Apps Script 已部署為「所有人」可存取，且頁面使用 http/https 開啟。</p>`;
+    const msg = e.message || "未知錯誤";
+    // 將 \n 轉為 <br>，讓診斷資訊換行顯示
+    const htmlMsg = escapeHtml(msg).replace(/\n/g, "<br>");
+    statsDisplay.innerHTML = `<p style="color:#c62828;white-space:pre-wrap;">❌ ${htmlMsg}</p>`;
   }
 });
 
@@ -4340,8 +4384,9 @@ tapBind(loadFailedBtn, async () => {
     renderFailedWords();
     setMessage(`✅ 已從 Google Sheets 載入 ${_loadedFailedWords.length} 組失敗率 > 50% 的單字。可手動移除不需要的，再按「儲存」生效。`, true);
   } catch (e) {
-    failedWordsArea.innerHTML = `<p style="color:#c62828;">❌ 載入失敗：${escapeHtml(e.message)}</p>
-      <p style="color:#888;font-size:12px;">提示：確認 Apps Script 已部署為「所有人」可存取，且頁面使用 http/https 開啟。</p>`;
+    const msg = e.message || "未知錯誤";
+    const htmlMsg = escapeHtml(msg).replace(/\n/g, "<br>");
+    failedWordsArea.innerHTML = `<p style="color:#c62828;white-space:pre-wrap;">❌ ${htmlMsg}</p>`;
   } finally {
     loadFailedBtn.disabled = false;
     loadFailedBtn.textContent = "立即載入";
