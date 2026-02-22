@@ -4151,19 +4151,53 @@ function loadComboStats() {
   } catch { return {}; }
 }
 
-/** 從 Google Sheets 取得統計資料 */
-async function fetchStatsFromSheets(action) {
+/**
+ * 從 Google Sheets 取得統計資料（使用 JSONP，不受 CORS / file:// 限制）
+ * Apps Script doGet 收到 callback 參數後，會回傳 callback({...}) 格式
+ */
+function fetchStatsFromSheets(action) {
   if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) {
-    throw new Error("請先在 settings.js 中設定 APPS_SCRIPT_URL。");
+    return Promise.reject(new Error("請先在 settings.js 中設定 APPS_SCRIPT_URL。"));
   }
   const user = loadGoogleUser();
   if (!user) {
-    throw new Error("請先登入 Google 帳號。");
+    return Promise.reject(new Error("請先登入 Google 帳號。"));
   }
-  const url = APPS_SCRIPT_URL + "?action=" + encodeURIComponent(action) + "&email=" + encodeURIComponent(user.email);
-  const resp = await fetch(url, { redirect: "follow" });
-  if (!resp.ok) throw new Error("HTTP " + resp.status);
-  return await resp.json();
+  return new Promise((resolve, reject) => {
+    // 產生唯一的 callback 函式名稱
+    const cbName = "_jsonpCb_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("請求逾時（15 秒），請確認 Apps Script 已重新部署。"));
+    }, 15000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      delete window[cbName];
+      const el = document.getElementById(cbName);
+      if (el) el.remove();
+    }
+
+    // 掛載全域 callback
+    window[cbName] = function (data) {
+      cleanup();
+      resolve(data);
+    };
+
+    // 建立 <script> 標籤發出 GET 請求
+    const url = APPS_SCRIPT_URL
+      + "?action=" + encodeURIComponent(action)
+      + "&email=" + encodeURIComponent(user.email)
+      + "&callback=" + encodeURIComponent(cbName);
+    const script = document.createElement("script");
+    script.id = cbName;
+    script.src = url;
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Script 載入失敗，請確認網路連線及 Apps Script 網址。"));
+    };
+    document.head.appendChild(script);
+  });
 }
 
 // ── 查看失敗率排行（從 Google Sheets） ──
