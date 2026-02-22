@@ -7,6 +7,8 @@ const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
+const STATS_KEY = "word_tetris_combo_stats_v1";
+const SHEETS_URL_KEY = "word_tetris_sheets_url_v1";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
@@ -251,6 +253,71 @@ function normalizeComboKey(combo) {
   return combo.map(w => w.trim().toLowerCase()).join(",");
 }
 
+// ── Combo 統計追蹤（拼錯率統計） ──
+
+function loadComboStats() {
+  try {
+    const raw = localStorage.getItem(STATS_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return (typeof parsed === "object" && parsed !== null) ? parsed : {};
+  } catch { return {}; }
+}
+
+function saveComboStats(stats) {
+  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
+}
+
+/** 記錄 combo 出現（進入在場區） */
+function trackComboAppear(combos) {
+  const stats = loadComboStats();
+  for (const combo of combos) {
+    const key = normalizeComboKey(combo);
+    if (!stats[key]) {
+      stats[key] = { appear: 0, cleared: 0, display: combo.join(","), lastSeen: "" };
+    }
+    stats[key].appear++;
+    stats[key].lastSeen = new Date().toISOString().slice(0, 10);
+    stats[key].display = combo.join(","); // 保持最新顯示格式
+  }
+  saveComboStats(stats);
+}
+
+/** 記錄 combo 被成功消除 */
+function trackComboCleared(clearedIndices) {
+  if (clearedIndices.length === 0) return;
+  const stats = loadComboStats();
+  for (const ci of clearedIndices) {
+    if (ci >= comboList.length) continue;
+    const combo = comboList[ci];
+    const key = normalizeComboKey(combo);
+    if (!stats[key]) {
+      stats[key] = { appear: 0, cleared: 0, display: combo.join(","), lastSeen: "" };
+    }
+    stats[key].cleared++;
+    stats[key].lastSeen = new Date().toISOString().slice(0, 10);
+  }
+  saveComboStats(stats);
+}
+
+/** 將統計同步到 Google Sheets */
+async function syncStatsToSheets() {
+  const url = localStorage.getItem(SHEETS_URL_KEY);
+  if (!url) return;
+  const stats = loadComboStats();
+  if (Object.keys(stats).length === 0) return;
+  try {
+    await fetch(url, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain" },
+      body: JSON.stringify({ action: "sync", stats }),
+    });
+  } catch (e) {
+    console.warn("同步 Google Sheets 失敗:", e);
+  }
+}
+
 // 自動移除已消除的 combo 對應的 row（從 localStorage）
 function autoRemoveClearedRows(clearedComboIndices) {
   if (!isAutoRemoveMode()) return;
@@ -360,14 +427,18 @@ function initComboPool() {
     comboList = all.slice(0, MAX_ACTIVE_COMBOS);
     comboReserve = all.slice(MAX_ACTIVE_COMBOS);
   }
+  // 統計：記錄初始上場的 combo
+  trackComboAppear(comboList);
 }
 
 // 消除 combo 後，從候補區補入新 combo（每消一組補一組）
 function replenishCombos(newlyClearedCount) {
   let added = 0;
+  const newlyAdded = [];
   for (let i = 0; i < newlyClearedCount && comboReserve.length > 0; i++) {
     const newCombo = comboReserve.shift();
     comboList.push(newCombo);
+    newlyAdded.push(newCombo);
     // 把新 combo 的字立刻混入現有佇列
     const newWords = [...newCombo];
     for (let j = newWords.length - 1; j > 0; j--) {
@@ -381,6 +452,8 @@ function replenishCombos(newlyClearedCount) {
     }
     added++;
   }
+  // 統計：記錄新上場的 combo
+  if (newlyAdded.length > 0) trackComboAppear(newlyAdded);
   return added;
 }
 
@@ -1525,6 +1598,7 @@ function spawnBlock() {
   if (board[0][activeBlock.col] !== null) {
     running = false;
     setMessage("遊戲結束：方塊堆到最上方", false);
+    syncStatsToSheets(); // 遊戲結束時同步統計
     return;
   }
 
@@ -1747,6 +1821,11 @@ async function clearMatches() {
     // 清理佇列：已消除 combo 的字不再出現
     purgeWordQueue();
 
+    // 統計：記錄被消除的 combo
+    if (newlyClearedIndices.length > 0) {
+      trackComboCleared(newlyClearedIndices);
+    }
+
     // 自動移除模式：從 localStorage 移除已消除的 combo
     if (newlyClearedIndices.length > 0) {
       autoRemoveClearedRows(newlyClearedIndices);
@@ -1766,6 +1845,7 @@ async function clearMatches() {
     if (clearedCombos.size >= comboList.length && comboReserve.length === 0) {
       running = false;
       setMessage("🎉 恭喜破關！所有組合都已消除！", true);
+      syncStatsToSheets(); // 破關時同步統計
       playClearAllAnimation();
       return;
     }
