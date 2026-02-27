@@ -8,6 +8,7 @@ const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
+const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -3555,6 +3556,7 @@ const groupBtnBar = document.getElementById("groupBtnBar");
 const groupBtns = groupBtnBar.querySelectorAll(".group-btn[data-group]");
 const customSourceBtn = document.getElementById("customSourceBtn");
 const customInputArea = document.getElementById("customInputArea");
+const singleWordModeToggle = document.getElementById("singleWordModeToggle");
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
@@ -3563,6 +3565,7 @@ let displayRows = [];                    // 顯示列表 [{text, source}, ...]
 let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
+let singleWordMode = loadSingleWordMode(); // boolean
 
 // ── 工具 ──
 function preventZoom() {
@@ -3658,6 +3661,10 @@ function loadActiveGroups() {
 
 function loadCustomActive() {
   return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
+}
+
+function loadSingleWordMode() {
+  return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1";
 }
 
 /** 載入自定義 word 的完整快照（不受 save 截斷影響） */
@@ -3986,6 +3993,7 @@ function saveRows() {
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
+  localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordModeToggle.checked ? "1" : "0");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   // 若有手動移除的群組 word，儲存到 GROUP_REMOVED_KEY；否則清除
   if (Object.keys(manualRemoved).length > 0) {
@@ -4556,6 +4564,7 @@ preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
 autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
+singleWordModeToggle.checked = singleWordMode;
 
 const _savedLens = loadAllowedLens();
 len2Toggle.checked = _savedLens.includes(2);

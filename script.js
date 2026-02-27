@@ -7,6 +7,7 @@ const GROUPS_KEY = "word_tetris_active_groups_v1";
 const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
+const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
 const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
@@ -130,7 +131,26 @@ function tapBind(el, callback) {
   });
 }
 
+function isSingleWordMode() {
+  return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1";
+}
+
+/**
+ * 單字模式拆字：將一個德文單字拆成最多 maxBlocks 個字母方塊
+ * 例如 "Apfel" → ["A","p","f","el"]（前 3 個各取 1 字母，剩餘歸最後一塊）
+ */
+function splitWordToBlocks(word, maxBlocks = 4) {
+  const chars = [...word]; // 正確處理 multi-byte 字元
+  if (chars.length <= 1) return [word]; // 單字元不拆
+  if (chars.length <= maxBlocks) return chars;
+  // 前 (maxBlocks-1) 個各取 1 字母，剩餘合併到最後一塊
+  const result = chars.slice(0, maxBlocks - 1);
+  result.push(chars.slice(maxBlocks - 1).join(""));
+  return result;
+}
+
 function buildComboList(rows) {
+  const swMode = isSingleWordMode();
   return rows.map((row, index) => {
     const words = row
       .split(",")
@@ -138,6 +158,16 @@ function buildComboList(rows) {
       .filter(Boolean);
     if (words.length < 2 || words.length > 5) {
       throw new Error(`第 ${index + 1} 組資料需要 2~5 個欄位`);
+    }
+    // 單字模式：若只有 2 欄（提示 + 單字），將第 2 欄拆成字母方塊
+    if (swMode && words.length === 2) {
+      const hint = words[0];
+      const letterBlocks = splitWordToBlocks(words[1], 4);
+      const expanded = [hint, ...letterBlocks];
+      // 確保拆完後仍在 2~5 範圍內
+      if (expanded.length >= 2 && expanded.length <= 5) {
+        return expanded;
+      }
     }
     return words;
   });

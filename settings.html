@@ -13,7 +13,7 @@
   <body>
     <main class="settings-page">
       <section class="card">
-        <h1>編輯資料表 <span class="version-tag">v2.0</span></h1>
+        <h1>編輯資料表 <span class="version-tag">v3.0</span></h1>
         <p>格式：每列用逗號分隔，限制 2~5 欄（例如：<code>new,york,city</code>）。</p>
         <p id="message" class="message"></p>
 
@@ -88,6 +88,10 @@
         <hr style="margin:16px 0;border:none;border-top:1px solid #ddd;" />
 
         <div id="customInputArea" class="input-group" style="display:none;">
+          <label class="pick-label" style="display:block;padding:8px 0;margin-bottom:4px;">
+            <input id="singleWordModeToggle" type="checkbox" style="width:20px;height:20px;vertical-align:middle;margin-right:8px;" />
+            單字模式（第 2 格德文自動拆成字母方塊，最多 4 塊）
+          </label>
           <input
             id="newRowInput"
             type="text"
