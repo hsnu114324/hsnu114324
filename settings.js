@@ -3557,6 +3557,9 @@ const groupBtns = groupBtnBar.querySelectorAll(".group-btn[data-group]");
 const customSourceBtn = document.getElementById("customSourceBtn");
 const customInputArea = document.getElementById("customInputArea");
 const singleWordModeBtn = document.getElementById("singleWordModeBtn");
+const lenSection = document.getElementById("lenSection");
+const sourceSection = document.getElementById("sourceSection");
+const singleWordModeHint = document.getElementById("singleWordModeHint");
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
@@ -3916,8 +3919,32 @@ function updateSourceUI() {
   });
   // 自定義按鈕發光狀態
   customSourceBtn.classList.toggle("active", customActive);
-  // 單字模式按鈕發光狀態
-  singleWordModeBtn.classList.toggle("active", singleWordMode);
+
+  // ── 單字模式按鈕外觀 ──
+  if (singleWordMode) {
+    singleWordModeBtn.style.background = "#ff9800";
+    singleWordModeBtn.style.borderColor = "#e6a800";
+    singleWordModeBtn.style.boxShadow = "0 0 12px 3px rgba(255,152,0,0.55), inset 0 0 6px rgba(255,152,0,0.15)";
+    singleWordModeBtn.textContent = "🔤 單字模式 ON";
+  } else {
+    singleWordModeBtn.style.background = "#2a2a2a";
+    singleWordModeBtn.style.borderColor = "#666";
+    singleWordModeBtn.style.boxShadow = "none";
+    singleWordModeBtn.textContent = "🔤 單字模式";
+  }
+  // 提示文字
+  if (singleWordModeHint) singleWordModeHint.style.display = singleWordMode ? "" : "none";
+
+  // ── 單字模式 → 反灰「允許的組合長度」和「單字來源」 ──
+  if (lenSection) {
+    lenSection.style.opacity = singleWordMode ? "0.35" : "";
+    lenSection.style.pointerEvents = singleWordMode ? "none" : "";
+  }
+  if (sourceSection) {
+    sourceSection.style.opacity = singleWordMode ? "0.35" : "";
+    sourceSection.style.pointerEvents = singleWordMode ? "none" : "";
+  }
+
   // 自定義輸入區域顯示/隱藏（自定義 或 單字模式 開啟時都顯示）
   customInputArea.style.display = (customActive || singleWordMode) ? "" : "none";
 }
@@ -3988,8 +4015,13 @@ function saveRows() {
     if (failedWordsArea) failedWordsArea.style.display = "none";
   }
 
+  // 單字模式：強制自定義啟用，跳過來源/長度檢查
+  if (singleWordMode) {
+    customActive = true;
+  }
+
   // 至少要有一個來源啟用
-  if (activeGroups.size === 0 && !customActive) {
+  if (!singleWordMode && activeGroups.size === 0 && !customActive) {
     setMessage("請至少啟用一個單字來源。");
     return;
   }
@@ -4005,15 +4037,19 @@ function saveRows() {
   if (pickCount > displayRows.length) pickCount = displayRows.length;
   pickCountInput.value = pickCount;
 
-  // 收集允許的組合長度
+  // 收集允許的組合長度（單字模式下長度由拆字決定，這裡仍然儲存以便切回時使用）
   const allowedLens = [];
   if (len2Toggle.checked) allowedLens.push(2);
   if (len3Toggle.checked) allowedLens.push(3);
   if (len4Toggle.checked) allowedLens.push(4);
   if (len5Toggle.checked) allowedLens.push(5);
-  if (allowedLens.length === 0) {
+  if (!singleWordMode && allowedLens.length === 0) {
     setMessage("至少要勾選一種組合長度。");
     return;
+  }
+  // 單字模式下若沒勾選任何長度，預設全勾
+  if (allowedLens.length === 0) {
+    allowedLens.push(2, 3, 4, 5);
   }
 
   // 從 displayRows 提取目前的自定義 word（可能已被移除部分）

@@ -13,7 +13,7 @@
   <body>
     <main class="settings-page">
       <section class="card">
-        <h1>編輯資料表 <span class="version-tag">v4.0</span></h1>
+        <h1>編輯資料表 <span class="version-tag">v5.0</span></h1>
         <p>格式：每列用逗號分隔，限制 2~5 欄（例如：<code>new,york,city</code>）。</p>
         <p id="message" class="message"></p>
 
@@ -25,7 +25,20 @@
           </label>
         </div>
 
-        <div class="pick-section">
+        <div class="pick-section" style="text-align:center;">
+          <button type="button" id="singleWordModeBtn"
+            style="width:100%;padding:14px 0;font-size:1.05rem;font-weight:700;
+                   border:2px solid #e6a800;border-radius:10px;
+                   background:#ff9800;color:#000;cursor:pointer;
+                   transition:box-shadow 0.2s,opacity 0.2s;">
+            🔤 單字模式
+          </button>
+          <p id="singleWordModeHint" style="margin:6px 0 0;font-size:0.78rem;color:#999;display:none;">
+            一次只發一組單字，拼對消去後才發下一組。自定義來源自動啟用，組合長度由拆字決定。
+          </p>
+        </div>
+
+        <div id="lenSection" class="pick-section">
           <p class="pick-label" style="margin-bottom:6px;font-weight:bold;">允許的組合長度</p>
           <label class="pick-label" style="display:block;padding:10px 0;"><input id="len2Toggle" type="checkbox" checked style="width:20px;height:20px;vertical-align:middle;margin-right:8px;" /> 2 格</label>
           <label class="pick-label" style="display:block;padding:10px 0;"><input id="len3Toggle" type="checkbox" checked style="width:20px;height:20px;vertical-align:middle;margin-right:8px;" /> 3 格</label>
@@ -33,7 +46,7 @@
           <label class="pick-label" style="display:block;padding:10px 0;"><input id="len5Toggle" type="checkbox" checked style="width:20px;height:20px;vertical-align:middle;margin-right:8px;" /> 5 格</label>
         </div>
 
-        <div class="pick-section">
+        <div id="sourceSection" class="pick-section">
           <p class="pick-label" style="margin-bottom:6px;font-weight:bold;">單字來源（可同時啟用多個）</p>
           <div id="groupBtnBar" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
             <button type="button" class="group-btn" data-group="0">群組 1</button>
@@ -42,7 +55,6 @@
             <button type="button" class="group-btn" data-group="3">群組 4</button>
             <button type="button" class="group-btn" data-group="4">群組 5</button>
             <button type="button" class="group-btn" id="customSourceBtn">自定義</button>
-            <button type="button" class="group-btn" id="singleWordModeBtn" style="background:#ffe082;">單字模式</button>
           </div>
         </div>
 
