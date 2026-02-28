@@ -433,11 +433,15 @@ function autoRemoveClearedRows(clearedComboIndices) {
   }
   if (keysToRemove.size === 0) return;
 
+  // 實際被移除的 word 數（用於更新 pickCount）
+  let totalRemoved = 0;
+
   // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
   const ag = loadActiveGroups();
   if (ag.length > 0) {
     try {
       const removed = loadGroupRemoved();
+      let groupRemoved = 0;
       for (const gi of ag) {
         if (!removed[gi]) removed[gi] = [];
         const existingSet = new Set(
@@ -447,10 +451,14 @@ function autoRemoveClearedRows(clearedComboIndices) {
           const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
           if (keysToRemove.has(key) && !existingSet.has(key)) {
             removed[gi].push(row);
+            groupRemoved++;
           }
         }
       }
-      saveGroupRemoved(removed);
+      if (groupRemoved > 0) {
+        saveGroupRemoved(removed);
+        totalRemoved += groupRemoved;
+      }
     } catch (e) {
       // 忽略錯誤
     }
@@ -473,6 +481,7 @@ function autoRemoveClearedRows(clearedComboIndices) {
           storedRows = filterRows(storedRows);
           if (storedRows.length < before) {
             localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+            totalRemoved += (before - storedRows.length);
           }
         }
       }
@@ -489,6 +498,17 @@ function autoRemoveClearedRows(clearedComboIndices) {
             localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(fullRows));
           }
         }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // ── 同步遞減「隨機抽取組數」，讓重新開始時組數跟著減少 ──
+  if (totalRemoved > 0) {
+    try {
+      const currentPick = loadPickCount();
+      if (currentPick > 0) {
+        const newPick = Math.max(0, currentPick - totalRemoved);
+        localStorage.setItem(PICK_KEY, String(newPick));
       }
     } catch (e) { /* ignore */ }
   }
