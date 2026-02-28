@@ -8,6 +8,7 @@ const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
+const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
 const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
@@ -455,27 +456,41 @@ function autoRemoveClearedRows(clearedComboIndices) {
     }
   }
 
-  // 自訂模式：從 STORAGE_KEY 移除
+  // 自訂模式：從 STORAGE_KEY 和 CUSTOM_FULL_KEY 同步移除
   if (isCustomActive()) {
+    const filterRows = (arr) => arr.filter(row => {
+      const parts = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+      const key = parts.join(",");
+      return !keysToRemove.has(key);
+    });
+    // STORAGE_KEY（customRows）
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
-      if (!raw) return;
-      let storedRows = JSON.parse(raw);
-      if (!Array.isArray(storedRows)) return;
-
-      const before = storedRows.length;
-      storedRows = storedRows.filter(row => {
-        const parts = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
-        const key = parts.join(",");
-        return !keysToRemove.has(key);
-      });
-
-      if (storedRows.length < before) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+      if (raw) {
+        let storedRows = JSON.parse(raw);
+        if (Array.isArray(storedRows)) {
+          const before = storedRows.length;
+          storedRows = filterRows(storedRows);
+          if (storedRows.length < before) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+          }
+        }
       }
-    } catch (e) {
-      // 忽略錯誤
-    }
+    } catch (e) { /* ignore */ }
+    // CUSTOM_FULL_KEY（customRowsFull 的持久副本，確保設定頁不會復活已移除的 word）
+    try {
+      const rawFull = localStorage.getItem(CUSTOM_FULL_KEY);
+      if (rawFull) {
+        let fullRows = JSON.parse(rawFull);
+        if (Array.isArray(fullRows)) {
+          const before = fullRows.length;
+          fullRows = filterRows(fullRows);
+          if (fullRows.length < before) {
+            localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(fullRows));
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
   }
 }
 

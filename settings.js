@@ -3570,6 +3570,11 @@ let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
 
+// ── 單字模式開啟前的「備份」，關閉時用來還原 ──
+let _prevActiveGroups = null;   // Set<number> | null
+let _prevCustomActive = null;   // boolean | null
+let _prevLenChecks = null;      // {len2, len3, len4, len5} | null
+
 // ── 工具 ──
 function preventZoom() {
   document.addEventListener(
@@ -3698,6 +3703,36 @@ function saveCustomRowsFull() {
 /** 根據目前的 activeGroups + customActive 建立 displayRows */
 function buildDisplayRows() {
   displayRows = [];
+
+  // 單字模式：不載入群組，只載入自定義 2 欄項目
+  if (singleWordMode) {
+    customActive = true;
+    // 備份先前的群組 / 長度狀態（若尚未備份）
+    if (_prevActiveGroups === null) {
+      _prevActiveGroups = new Set(activeGroups);
+      _prevCustomActive = customActive;
+      _prevLenChecks = {
+        len2: len2Toggle.checked,
+        len3: len3Toggle.checked,
+        len4: len4Toggle.checked,
+        len5: len5Toggle.checked,
+      };
+    }
+    activeGroups = new Set();
+    len2Toggle.checked = true;
+    len3Toggle.checked = false;
+    len4Toggle.checked = false;
+    len5Toggle.checked = false;
+
+    for (const w of customRowsFull) {
+      const parts = w.split(",").map(s => s.trim()).filter(Boolean);
+      if (parts.length !== 2) continue;
+      displayRows.push({ text: w, source: "custom" });
+    }
+    return;
+  }
+
+  // ── 非單字模式的正常流程 ──
   // 讀取已移除的群組 word 記錄（含手動移除 + 自動移除）
   const removed = loadGroupRemoved();
   for (const gi of activeGroups) {
@@ -3711,18 +3746,10 @@ function buildDisplayRows() {
       }
     }
   }
-  if (customActive || singleWordMode) {
-    const sourceRows = singleWordMode ? customRowsFull : customRows;
-    for (const w of sourceRows) {
-      // 單字模式：只加入 2 欄項目（中文提示 + 德文單字）
-      if (singleWordMode) {
-        const parts = w.split(",").map(s => s.trim()).filter(Boolean);
-        if (parts.length !== 2) continue;
-      }
+  if (customActive) {
+    for (const w of customRows) {
       displayRows.push({ text: w, source: "custom" });
     }
-    // 單字模式下確保 customActive 也同步為 true
-    if (singleWordMode && !customActive) customActive = true;
   }
 }
 
@@ -3876,29 +3903,79 @@ function toggleCustom() {
 /** 單字模式：一鍵套用「自定義 + 只顯示2欄項目 + 德文拆字」 */
 function toggleSingleWordMode() {
   if (singleWordMode) {
-    // 關閉：恢復完整自定義列表
+    // ────── 關閉 ──────
     singleWordMode = false;
-    // 重新加入所有 custom word
+
+    // 還原「組合長度」勾選狀態
+    if (_prevLenChecks) {
+      len2Toggle.checked = _prevLenChecks.len2;
+      len3Toggle.checked = _prevLenChecks.len3;
+      len4Toggle.checked = _prevLenChecks.len4;
+      len5Toggle.checked = _prevLenChecks.len5;
+      _prevLenChecks = null;
+    }
+
+    // 還原「單字來源」狀態
+    if (_prevActiveGroups !== null) {
+      activeGroups = _prevActiveGroups;
+      _prevActiveGroups = null;
+    }
+    if (_prevCustomActive !== null) {
+      customActive = _prevCustomActive;
+      _prevCustomActive = null;
+    }
+
+    // 重建 displayRows：先移除所有 custom，再依還原狀態加回
     displayRows = displayRows.filter(r => r.source !== "custom");
+    // 移除所有群組 items 再依 activeGroups 重新加入
+    displayRows = displayRows.filter(r => !r.source || r.source === "custom");
+    for (const gi of activeGroups) {
+      const key = "group-" + gi;
+      for (const w of (GROUP_ALL[gi] || [])) {
+        displayRows.push({ text: w, source: key });
+      }
+    }
     if (customActive) {
       for (const w of customRowsFull) {
         displayRows.push({ text: w, source: "custom" });
       }
     }
   } else {
-    // 開啟
+    // ────── 開啟 ──────
+    // 先備份目前的狀態，關閉時用來還原
+    _prevActiveGroups = new Set(activeGroups);
+    _prevCustomActive = customActive;
+    _prevLenChecks = {
+      len2: len2Toggle.checked,
+      len3: len3Toggle.checked,
+      len4: len4Toggle.checked,
+      len5: len5Toggle.checked,
+    };
+
     singleWordMode = true;
-    // 自動啟用自定義
-    if (!customActive) {
-      customActive = true;
-      // 載入完整 custom 快照
+
+    // 組合長度 → 只勾選「2 格」
+    len2Toggle.checked = true;
+    len3Toggle.checked = false;
+    len4Toggle.checked = false;
+    len5Toggle.checked = false;
+
+    // 單字來源 → 只啟用「自定義」，群組全關
+    activeGroups = new Set();
+    customActive = true;
+
+    // 移除所有群組 items，保留或載入 custom
+    displayRows = displayRows.filter(r => r.source === "custom");
+    if (displayRows.length === 0) {
+      // 若 custom 尚未載入，從完整快照載入
       for (const w of customRowsFull) {
         displayRows.push({ text: w, source: "custom" });
       }
     }
+
     // 篩選：只保留「2 欄」的自定義項目（中文提示 + 德文單字）
     displayRows = displayRows.filter(r => {
-      if (r.source !== "custom") return true; // 群組項目不動
+      if (r.source !== "custom") return true;
       const parts = r.text.split(",").map(s => s.trim()).filter(Boolean);
       return parts.length === 2;
     });
@@ -4132,9 +4209,16 @@ function resetDefault() {
   activeGroups = new Set();
   customActive = false;
   singleWordMode = false;
+  _prevActiveGroups = null;
+  _prevCustomActive = null;
+  _prevLenChecks = null;
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
+  len2Toggle.checked = true;
+  len3Toggle.checked = true;
+  len4Toggle.checked = true;
+  len5Toggle.checked = true;
   buildDisplayRows();
   updateSourceUI();
   renderRows();
