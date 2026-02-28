@@ -3868,15 +3868,34 @@ function toggleGroup(idx) {
   renderRows();
 }
 
+/** 將 displayRows 中目前的 custom 項目同步回 customRowsFull / customRows，
+ *  確保手動移除的項目不會在模式切換時「復活」。 */
+function syncCustomFullFromDisplay() {
+  const currentCustom = displayRows
+    .filter(r => r.source === "custom")
+    .map(r => r.text);
+  // 只保留 customRowsFull 中仍在 displayRows 裡的項目（保持原本順序）
+  const keepSet = new Set(currentCustom.map(
+    w => w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",")
+  ));
+  customRowsFull = customRowsFull.filter(w => {
+    const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+    return keepSet.has(norm);
+  });
+  customRows = [...customRowsFull];
+  saveCustomRowsFull();
+}
+
 function toggleCustom() {
   if (customActive) {
-    // 關閉：從 displayRows 移除自定義項目
+    // 關閉前：同步手動移除到 customRowsFull
+    syncCustomFullFromDisplay();
     customActive = false;
     // 若單字模式仍開啟，也一併關閉
     if (singleWordMode) singleWordMode = false;
     displayRows = displayRows.filter(r => r.source !== "custom");
   } else {
-    // 開啟：從完整快照重載（跟群組行為一致，toggle 關→開會還原所有 word）
+    // 開啟：從完整快照重載
     customActive = true;
     for (const w of customRowsFull) {
       displayRows.push({ text: w, source: "custom" });
@@ -3888,6 +3907,9 @@ function toggleCustom() {
 
 /** 單字模式：一鍵套用「自定義 + 只顯示2欄項目 + 德文拆字」 */
 function toggleSingleWordMode() {
+  // 切換前：先把手動移除同步回 customRowsFull
+  syncCustomFullFromDisplay();
+
   singleWordMode = !singleWordMode;
 
   // 不管開啟或關閉，組合長度固定 2格、來源固定自定義
@@ -3898,7 +3920,7 @@ function toggleSingleWordMode() {
   activeGroups = new Set();
   customActive = true;
 
-  // 重建 displayRows：載入自定義詞組
+  // 重建 displayRows：從已同步的 customRowsFull 載入
   displayRows = [];
   for (const w of customRowsFull) {
     if (singleWordMode) {
