@@ -327,6 +327,12 @@ button {
   background: #2a3572;
 }
 
+/* 單字模式按鈕按壓效果 */
+#singleWordModeBtn:active {
+  transform: scale(0.96);
+  filter: brightness(0.85);
+}
+
 /* 自訂單字區域被停用 */
 .custom-words-disabled {
   opacity: 0.35;

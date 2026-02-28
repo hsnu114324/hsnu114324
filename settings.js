@@ -3923,11 +3923,13 @@ function updateSourceUI() {
   // ── 單字模式按鈕外觀 ──
   if (singleWordMode) {
     singleWordModeBtn.style.background = "#ff9800";
+    singleWordModeBtn.style.color = "#000";
     singleWordModeBtn.style.borderColor = "#e6a800";
     singleWordModeBtn.style.boxShadow = "0 0 12px 3px rgba(255,152,0,0.55), inset 0 0 6px rgba(255,152,0,0.15)";
     singleWordModeBtn.textContent = "🔤 單字模式 ON";
   } else {
     singleWordModeBtn.style.background = "#2a2a2a";
+    singleWordModeBtn.style.color = "#ccc";
     singleWordModeBtn.style.borderColor = "#666";
     singleWordModeBtn.style.boxShadow = "none";
     singleWordModeBtn.textContent = "🔤 單字模式";
