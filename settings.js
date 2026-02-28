@@ -3556,7 +3556,7 @@ const groupBtnBar = document.getElementById("groupBtnBar");
 const groupBtns = groupBtnBar.querySelectorAll(".group-btn[data-group]");
 const customSourceBtn = document.getElementById("customSourceBtn");
 const customInputArea = document.getElementById("customInputArea");
-const singleWordModeToggle = document.getElementById("singleWordModeToggle");
+const singleWordModeBtn = document.getElementById("singleWordModeBtn");
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
@@ -3708,10 +3708,18 @@ function buildDisplayRows() {
       }
     }
   }
-  if (customActive) {
-    for (const w of customRows) {
+  if (customActive || singleWordMode) {
+    const sourceRows = singleWordMode ? customRowsFull : customRows;
+    for (const w of sourceRows) {
+      // 單字模式：只加入 2 欄項目（中文提示 + 德文單字）
+      if (singleWordMode) {
+        const parts = w.split(",").map(s => s.trim()).filter(Boolean);
+        if (parts.length !== 2) continue;
+      }
       displayRows.push({ text: w, source: "custom" });
     }
+    // 單字模式下確保 customActive 也同步為 true
+    if (singleWordMode && !customActive) customActive = true;
   }
 }
 
@@ -3848,6 +3856,8 @@ function toggleCustom() {
   if (customActive) {
     // 關閉：從 displayRows 移除自定義項目
     customActive = false;
+    // 若單字模式仍開啟，也一併關閉
+    if (singleWordMode) singleWordMode = false;
     displayRows = displayRows.filter(r => r.source !== "custom");
   } else {
     // 開啟：從完整快照重載（跟群組行為一致，toggle 關→開會還原所有 word）
@@ -3860,6 +3870,44 @@ function toggleCustom() {
   renderRows();
 }
 
+/** 單字模式：一鍵套用「自定義 + 只顯示2欄項目 + 德文拆字」 */
+function toggleSingleWordMode() {
+  if (singleWordMode) {
+    // 關閉：恢復完整自定義列表
+    singleWordMode = false;
+    // 重新加入所有 custom word
+    displayRows = displayRows.filter(r => r.source !== "custom");
+    if (customActive) {
+      for (const w of customRowsFull) {
+        displayRows.push({ text: w, source: "custom" });
+      }
+    }
+  } else {
+    // 開啟
+    singleWordMode = true;
+    // 自動啟用自定義
+    if (!customActive) {
+      customActive = true;
+      // 載入完整 custom 快照
+      for (const w of customRowsFull) {
+        displayRows.push({ text: w, source: "custom" });
+      }
+    }
+    // 篩選：只保留「2 欄」的自定義項目（中文提示 + 德文單字）
+    displayRows = displayRows.filter(r => {
+      if (r.source !== "custom") return true; // 群組項目不動
+      const parts = r.text.split(",").map(s => s.trim()).filter(Boolean);
+      return parts.length === 2;
+    });
+  }
+  updateSourceUI();
+  renderRows();
+  if (singleWordMode) {
+    const count = displayRows.filter(r => r.source === "custom").length;
+    setMessage(`✅ 單字模式已開啟：找到 ${count} 組「中文＋德文單字」，德文將自動拆成字母方塊。按「儲存」生效。`, true);
+  }
+}
+
 function updateSourceUI() {
   // 群組按鈕發光狀態
   groupBtns.forEach(btn => {
@@ -3868,8 +3916,10 @@ function updateSourceUI() {
   });
   // 自定義按鈕發光狀態
   customSourceBtn.classList.toggle("active", customActive);
-  // 自定義輸入區域顯示/隱藏
-  customInputArea.style.display = customActive ? "" : "none";
+  // 單字模式按鈕發光狀態
+  singleWordModeBtn.classList.toggle("active", singleWordMode);
+  // 自定義輸入區域顯示/隱藏（自定義 或 單字模式 開啟時都顯示）
+  customInputArea.style.display = (customActive || singleWordMode) ? "" : "none";
 }
 
 // ── 新增自定義 word ──
@@ -3962,7 +4012,13 @@ function saveRows() {
 
   // 從 displayRows 提取目前的自定義 word（可能已被移除部分）
   if (customActive) {
-    customRows = displayRows.filter(r => r.source === "custom").map(r => r.text);
+    if (singleWordMode) {
+      // 單字模式下 displayRows 只有 2 欄項目，不能覆蓋完整列表
+      // 保留 customRowsFull 作為完整資料，customRows 同步
+      customRows = [...customRowsFull];
+    } else {
+      customRows = displayRows.filter(r => r.source === "custom").map(r => r.text);
+    }
   }
 
   // 計算使用者在設定頁手動移除的群組 word，寫入 GROUP_REMOVED_KEY
@@ -3993,7 +4049,7 @@ function saveRows() {
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
-  localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordModeToggle.checked ? "1" : "0");
+  localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   // 若有手動移除的群組 word，儲存到 GROUP_REMOVED_KEY；否則清除
   if (Object.keys(manualRemoved).length > 0) {
@@ -4011,7 +4067,11 @@ function saveRows() {
   }
   if (customActive) {
     const customCount = displayRows.filter(r => r.source === "custom").length;
-    parts.push(`自定義（${customCount} 組）`);
+    if (singleWordMode) {
+      parts.push(`單字模式（${customCount} 組，德文自動拆字）`);
+    } else {
+      parts.push(`自定義（${customCount} 組）`);
+    }
   }
   const modeText = parts.join("＋");
   const lenText = allowedLens.length === 4
@@ -4027,6 +4087,7 @@ function resetDefault() {
   saveCustomRowsFull();                     // 持久化完整快照
   activeGroups = new Set();
   customActive = false;
+  singleWordMode = false;
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
@@ -4558,13 +4619,14 @@ groupBtns.forEach(btn => {
 });
 // 自定義按鈕綁定
 tapBind(customSourceBtn, toggleCustom);
+// 單字模式按鈕綁定
+tapBind(singleWordModeBtn, toggleSingleWordMode);
 
 // ── 初始化 ──
 preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
 autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
-singleWordModeToggle.checked = singleWordMode;
 
 const _savedLens = loadAllowedLens();
 len2Toggle.checked = _savedLens.includes(2);

@@ -136,16 +136,31 @@ function isSingleWordMode() {
 }
 
 /**
- * 單字模式拆字：將一個德文單字拆成最多 maxBlocks 個字母方塊
- * 例如 "Apfel" → ["A","p","f","el"]（前 3 個各取 1 字母，剩餘歸最後一塊）
+ * 單字模式拆字：將德文拆成方塊（含中文提示，最多 5 塊）
+ * 策略：
+ *   1. 先依空白分割（例如 "Guten Tag" → ["Guten", "Tag"]）
+ *   2. 若空白分割後只有 1 個 token（無空白），再依字母拆（最多 4 塊）
+ *   3. 最終結果 = [中文提示, ...德文方塊]，限制 2~5 塊
  */
-function splitWordToBlocks(word, maxBlocks = 4) {
+function splitGermanToBlocks(germanStr, maxGermanBlocks = 4) {
+  // 第 1 步：依空白分割
+  const spaceParts = germanStr.split(/\s+/).filter(Boolean);
+  if (spaceParts.length > 1) {
+    // 有空白 → 使用空白分割結果
+    if (spaceParts.length <= maxGermanBlocks) return spaceParts;
+    // 超過 maxGermanBlocks → 前 (max-1) 個各自一塊，其餘合併到最後一塊
+    const result = spaceParts.slice(0, maxGermanBlocks - 1);
+    result.push(spaceParts.slice(maxGermanBlocks - 1).join(" "));
+    return result;
+  }
+  // 第 2 步：無空白 → 依字母拆
+  const word = spaceParts[0] || germanStr;
   const chars = [...word]; // 正確處理 multi-byte 字元
-  if (chars.length <= 1) return [word]; // 單字元不拆
-  if (chars.length <= maxBlocks) return chars;
-  // 前 (maxBlocks-1) 個各取 1 字母，剩餘合併到最後一塊
-  const result = chars.slice(0, maxBlocks - 1);
-  result.push(chars.slice(maxBlocks - 1).join(""));
+  if (chars.length <= 1) return [word];
+  if (chars.length <= maxGermanBlocks) return chars;
+  // 前 (max-1) 個各取 1 字母，剩餘歸最後一塊
+  const result = chars.slice(0, maxGermanBlocks - 1);
+  result.push(chars.slice(maxGermanBlocks - 1).join(""));
   return result;
 }
 
@@ -159,12 +174,11 @@ function buildComboList(rows) {
     if (words.length < 2 || words.length > 5) {
       throw new Error(`第 ${index + 1} 組資料需要 2~5 個欄位`);
     }
-    // 單字模式：若只有 2 欄（提示 + 單字），將第 2 欄拆成字母方塊
+    // 單字模式：若只有 2 欄（中文提示 + 德文），將德文拆成方塊
     if (swMode && words.length === 2) {
       const hint = words[0];
-      const letterBlocks = splitWordToBlocks(words[1], 4);
-      const expanded = [hint, ...letterBlocks];
-      // 確保拆完後仍在 2~5 範圍內
+      const germanBlocks = splitGermanToBlocks(words[1], 4);
+      const expanded = [hint, ...germanBlocks];
       if (expanded.length >= 2 && expanded.length <= 5) {
         return expanded;
       }
@@ -244,13 +258,20 @@ function loadWordRows() {
 
   // 載入自定義 word
   if (ca) {
+    const swMode = isSingleWordMode();
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
           for (const r of parsed) {
-            if (isValidRowString(r)) rows.push(r);
+            if (!isValidRowString(r)) continue;
+            // 單字模式：只載入 2 欄項目（中文提示 + 德文單字）
+            if (swMode) {
+              const parts = r.split(",").map(s => s.trim()).filter(Boolean);
+              if (parts.length !== 2) continue;
+            }
+            rows.push(r);
           }
         }
       }
