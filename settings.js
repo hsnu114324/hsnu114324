@@ -3985,47 +3985,6 @@ function addRow() {
 
 // ── 儲存 ──
 function saveRows() {
-  // ── 自動加入尚未確認的「立即載入」字詞 ──
-  if (typeof _loadedFailedWords !== "undefined" && _loadedFailedWords.length > 0) {
-    let autoAdded = 0;
-    for (const w of _loadedFailedWords) {
-      // 優先使用 origRow（原始 2 欄格式），沒有的話用 raw（拆開的格式）
-      let wordRow;
-      if (w.origRow) {
-        wordRow = normalizeRowString(w.origRow);
-      } else {
-        const parts = w.raw.split(",");
-        if (parts.length >= 2) {
-          wordRow = normalizeRowString(w.raw);
-        } else {
-          wordRow = normalizeRowString(w.comboKey);
-        }
-      }
-      if (!isValidRowString(wordRow)) continue;
-      const normKey = wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
-      const exists = displayRows.some(r => {
-        const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
-        return norm === normKey;
-      });
-      if (!exists) {
-        displayRows.push({ text: wordRow, source: "custom" });
-        customRows.push(wordRow);
-        customRowsFull.push(wordRow);
-        autoAdded++;
-      }
-    }
-    if (autoAdded > 0) {
-      if (!customActive) {
-        customActive = true;
-        updateSourceUI();
-      }
-      saveCustomRowsFull();
-      renderRows();
-    }
-    _loadedFailedWords = [];
-    if (failedWordsArea) failedWordsArea.style.display = "none";
-  }
-
   // 單字模式：強制自定義啟用，跳過來源/長度檢查
   if (singleWordMode) {
     customActive = true;
@@ -4576,6 +4535,14 @@ tapBind(loadFailedBtn, async () => {
   }
 });
 
+/** 將 _loadedFailedWords 項目轉成可用的 row 字串 */
+function _failedWordToRow(w) {
+  if (w.origRow) return normalizeRowString(w.origRow);
+  const parts = w.raw.split(",");
+  if (parts.length >= 2) return normalizeRowString(w.raw);
+  return normalizeRowString(w.comboKey);
+}
+
 function renderFailedWords() {
   if (_loadedFailedWords.length === 0) {
     failedWordsArea.style.display = "none";
@@ -4583,9 +4550,10 @@ function renderFailedWords() {
   }
   let html = `<div style="padding:10px 14px;background:#fff3e0;border-radius:8px;border:1px solid #ffe0b2;">`;
   html += `<div style="font-weight:bold;color:#e65100;margin-bottom:8px;">📥 已載入失敗率 &gt; 50% 的組合（${_loadedFailedWords.length} 組）</div>`;
-  html += `<div style="font-size:12px;color:#888;margin-bottom:8px;">這些組合會加入下方的單字列表中。按「儲存」後，下次遊戲即會使用。</div>`;
-  html += `<div style="display:flex;gap:6px;margin-bottom:10px;">`;
+  html += `<div style="font-size:12px;color:#888;margin-bottom:8px;">請先手動移除不需要的項目，再選擇「加入」或「取代」，最後按「儲存」生效。</div>`;
+  html += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;">`;
   html += `<button id="_addFailedToList" style="background:#e65100;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">全部加入單字列表</button>`;
+  html += `<button id="_replaceFailedToList" style="background:#c62828;color:#fff;border:none;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">全部取代單字列表</button>`;
   html += `<button id="_clearFailed" style="background:#fff;color:#888;border:1px solid #ccc;padding:6px 14px;border-radius:6px;font-size:13px;cursor:pointer;">清除</button>`;
   html += `</div>`;
   html += `<div style="max-height:200px;overflow-y:auto;">`;
@@ -4593,13 +4561,15 @@ function renderFailedWords() {
     const w = _loadedFailedWords[i];
     const failPct = (w.failRate * 100).toFixed(0);
     const barColor = w.failRate > 0.7 ? "#c62828" : "#e65100";
-    const parts = w.raw.split(",");
+    // 優先用 origRow 顯示（單字模式下是原始 2 欄格式）
+    const displayStr = w.origRow || w.raw;
+    const parts = displayStr.split(",");
     let label;
     if (parts.length >= 2) {
       label = `<span style="color:#1565c0;font-weight:600;">${escapeHtml(parts.slice(1).join(", "))}</span>` +
               ` <span style="color:#888;font-size:11px;">(${escapeHtml(parts[0])})</span>`;
     } else {
-      label = `<span style="color:#333;">${escapeHtml(w.raw)}</span>`;
+      label = `<span style="color:#333;">${escapeHtml(displayStr)}</span>`;
     }
     html += `<div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #f0f0f0;" data-failed-idx="${i}">
       <button class="_removeFailedItem" data-idx="${i}" style="background:none;border:1px solid #ccc;color:#c62828;border-radius:4px;padding:2px 8px;font-size:11px;cursor:pointer;">移除</button>
@@ -4611,24 +4581,12 @@ function renderFailedWords() {
 
   failedWordsArea.innerHTML = html;
 
-  // 「全部加入」按鈕
+  // ── 「全部加入」按鈕：合併到現有單字列表 ──
   document.getElementById("_addFailedToList")?.addEventListener("click", () => {
     let added = 0;
     for (const w of _loadedFailedWords) {
-      // 優先使用 origRow（原始 2 欄格式），沒有的話用 raw（拆開的格式）
-      let wordRow;
-      if (w.origRow) {
-        wordRow = normalizeRowString(w.origRow);
-      } else {
-        const parts = w.raw.split(",");
-        if (parts.length >= 2) {
-          wordRow = normalizeRowString(w.raw);
-        } else {
-          wordRow = normalizeRowString(w.comboKey);
-        }
-      }
+      const wordRow = _failedWordToRow(w);
       if (!isValidRowString(wordRow)) continue;
-      // 避免重複
       const normKey = wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
       const exists = displayRows.some(r => {
         const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
@@ -4649,16 +4607,49 @@ function renderFailedWords() {
     renderRows();
     _loadedFailedWords = [];
     failedWordsArea.style.display = "none";
-    setMessage(`✅ 已加入 ${added} 組到單字列表。按「儲存」生效。`, true);
+    setMessage(`✅ 已合併 ${added} 組到單字列表。按「儲存」生效。`, true);
   });
 
-  // 「清除」按鈕
+  // ── 「全部取代」按鈕：用載入的字完全取代現有單字列表 ──
+  document.getElementById("_replaceFailedToList")?.addEventListener("click", () => {
+    const newCustomRows = [];
+    for (const w of _loadedFailedWords) {
+      const wordRow = _failedWordToRow(w);
+      if (!isValidRowString(wordRow)) continue;
+      // 去重
+      const normKey = wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      const exists = newCustomRows.some(r => {
+        const norm = r.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        return norm === normKey;
+      });
+      if (!exists) newCustomRows.push(wordRow);
+    }
+    // 取代記憶體中的自定義列表
+    customRows = [...newCustomRows];
+    customRowsFull = [...newCustomRows];
+    // 重建 displayRows：移除舊 custom，加入新的
+    displayRows = displayRows.filter(r => r.source !== "custom");
+    for (const w of newCustomRows) {
+      displayRows.push({ text: w, source: "custom" });
+    }
+    if (!customActive) {
+      customActive = true;
+    }
+    saveCustomRowsFull();
+    updateSourceUI();
+    renderRows();
+    _loadedFailedWords = [];
+    failedWordsArea.style.display = "none";
+    setMessage(`🔄 已用 ${newCustomRows.length} 組取代整個自定義單字列表。按「儲存」生效。`, true);
+  });
+
+  // ── 「清除」按鈕 ──
   document.getElementById("_clearFailed")?.addEventListener("click", () => {
     _loadedFailedWords = [];
     failedWordsArea.style.display = "none";
   });
 
-  // 個別「移除」按鈕（事件代理）
+  // ── 個別「移除」按鈕（事件代理） ──
   failedWordsArea.addEventListener("click", (e) => {
     const btn = e.target.closest("._removeFailedItem");
     if (!btn) return;
