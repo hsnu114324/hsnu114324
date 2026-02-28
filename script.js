@@ -45,6 +45,20 @@ const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
 
+/** 合法的德文音節開頭子音群（需要在 buildComboList 之前初始化，避免 TDZ 錯誤） */
+const _GERMAN_ONSETS = new Set([
+  "schr","schw","schl","schm","schn",
+  "sch","pfl","pfr",
+  "bl","br","ch","ck","cl","cr","dr","dw",
+  "fl","fr","gl","gn","gr",
+  "kl","kn","kr","kw",
+  "pf","ph","pl","pr",
+  "qu",
+  "th","tr","ts","tw","wr","zw",
+  "b","c","d","f","g","h","j","k","l","m","n",
+  "p","q","r","s","t","v","w","x","z","ß",
+]);
+
 const PICK_KEY = "word_tetris_pick_count_v1";
 const LENS_KEY = "word_tetris_allowed_lens_v1";
 groupData = loadGroupData();  // 載入群組資料（必須在 loadWordRows 之前）
@@ -149,23 +163,7 @@ function loadSplitMode() {
 //  德文音節拆分演算法（規則式，約 80~85 % 正確率）
 // ══════════════════════════════════════════════════════
 
-/** 合法的德文音節開頭子音群（inter-syllabic）。
- *  注意：post-1996 拼字改革後，st / sp 在音節之間可拆，
- *  因此不放入此 set（讓它們自然被拆成 s|t、s|p）。 */
-const _GERMAN_ONSETS = new Set([
-  // 多字母群
-  "schr","schw","schl","schm","schn",
-  "sch","pfl","pfr",
-  "bl","br","ch","ck","cl","cr","dr","dw",
-  "fl","fr","gl","gn","gr",
-  "kl","kn","kr","kw",
-  "pf","ph","pl","pr",
-  "qu",
-  "th","tr","ts","tw","wr","zw",
-  // 所有單子音（任何子音都可作為下一音節開頭）
-  "b","c","d","f","g","h","j","k","l","m","n",
-  "p","q","r","s","t","v","w","x","z","ß",
-]);
+// _GERMAN_ONSETS 已移至檔案前段（buildComboList 執行前），避免 const TDZ 錯誤
 
 function _isVowel(ch) {
   return "aeiouyäöüAEIOUYÄÖÜ".includes(ch);
