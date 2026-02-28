@@ -66,6 +66,7 @@ let running = true;
 let animating = false;  // 消除動畫播放中
 let particles = [];     // 爆散粒子
 let clearedCombos = new Set(); // 已消除的 combo 索引
+let _appearedCombos = new Set(); // 已記錄 appear 的 combo 索引（延遲到實際發牌才記）
 let wordQueue = [];     // 派發佇列：確保所有組合輪過一遍
 let nextWordQueue = []; // 下一輪派發佇列（預先建立，讓 AI 可以看到）
 let autoMode = false;       // 自動模式
@@ -574,8 +575,7 @@ function initComboPool() {
     comboList = all.slice(0, maxActive);
     comboReserve = all.slice(maxActive);
   }
-  // 統計：記錄初始上場的 combo
-  trackComboAppear(comboList);
+  // appear 統計改由 spawnBlock 延遲記錄（方塊實際發出時才算）
 }
 
 // 消除 combo 後，從候補區補入新 combo（每消一組補一組）
@@ -605,8 +605,7 @@ function replenishCombos(newlyClearedCount) {
 
     added++;
   }
-  // 統計：記錄新上場的 combo
-  if (newlyAdded.length > 0) trackComboAppear(newlyAdded);
+  // appear 統計改由 spawnBlock 延遲記錄
   return added;
 }
 
@@ -1748,6 +1747,17 @@ function spawnBlock() {
 
   blockCount++;
 
+  // 延遲記錄 appear：只有方塊實際被發出時，才記錄該 combo 的 appear
+  const toTrack = [];
+  for (let ci = 0; ci < comboList.length; ci++) {
+    if (_appearedCombos.has(ci)) continue;
+    if (comboList[ci].includes(word)) {
+      _appearedCombos.add(ci);
+      toTrack.push(comboList[ci]);
+    }
+  }
+  if (toTrack.length > 0) trackComboAppear(toTrack);
+
   if (board[0][activeBlock.col] !== null) {
     running = false;
     setMessage("遊戲結束：方塊堆到最上方", false);
@@ -2239,6 +2249,7 @@ function restartGame() {
   lastTick = 0;
   running = true;
   clearedCombos = new Set();
+  _appearedCombos = new Set();
   particles = [];
   wordQueue = [];
   nextWordQueue = [];
