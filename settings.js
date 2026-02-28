@@ -3951,17 +3951,23 @@ function saveRows() {
   if (typeof _loadedFailedWords !== "undefined" && _loadedFailedWords.length > 0) {
     let autoAdded = 0;
     for (const w of _loadedFailedWords) {
-      const parts = w.raw.split(",");
+      // 優先使用 origRow（原始 2 欄格式），沒有的話用 raw（拆開的格式）
       let wordRow;
-      if (parts.length >= 2) {
-        wordRow = normalizeRowString(w.raw);
+      if (w.origRow) {
+        wordRow = normalizeRowString(w.origRow);
       } else {
-        wordRow = normalizeRowString(w.comboKey);
+        const parts = w.raw.split(",");
+        if (parts.length >= 2) {
+          wordRow = normalizeRowString(w.raw);
+        } else {
+          wordRow = normalizeRowString(w.comboKey);
+        }
       }
       if (!isValidRowString(wordRow)) continue;
+      const normKey = wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
       const exists = displayRows.some(r => {
         const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
-        return norm === wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        return norm === normKey;
       });
       if (!exists) {
         displayRows.push({ text: wordRow, source: "custom" });
@@ -4103,7 +4109,7 @@ const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
 // ★★★ 請在這裡填入你的設定 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzkpHZm2sHTMddQqSXCWTUlxzliQ7n5kipiMnew06nPCQQ5e1VDw4FtDUxdyJ-xoEK6zA/exec";      // Google Apps Script 部署網址
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";      // Google Apps Script 部署網址
 const GOOGLE_CLIENT_ID = "280426045341-s5tias2et5fgfkm6v4pasodaimi9usot.apps.googleusercontent.com";     // Google Cloud Console 的 OAuth Client ID
 // ★★★ 以上兩個值必須填入才能正常運作 ★★★
 
@@ -4480,6 +4486,8 @@ tapBind(loadFailedBtn, async () => {
       failRate: w.failRate || 0,
       appear: w.appear || 0,
       cleared: w.cleared || 0,
+      // 單字模式：origRow 保留原始 2 欄格式（中文,德文），回填時優先使用
+      origRow: w.origRow || "",
     }));
     if (_loadedFailedWords.length === 0) {
       failedWordsArea.innerHTML = '<p style="color:#2e7d32;font-weight:bold;">🎉 太棒了！沒有失敗率超過 50% 的組合。</p>';
@@ -4536,20 +4544,24 @@ function renderFailedWords() {
   document.getElementById("_addFailedToList")?.addEventListener("click", () => {
     let added = 0;
     for (const w of _loadedFailedWords) {
-      // 用 comboKey 作為 word row（去掉中文提示，只留外文部分）
-      const parts = w.raw.split(",");
+      // 優先使用 origRow（原始 2 欄格式），沒有的話用 raw（拆開的格式）
       let wordRow;
-      if (parts.length >= 2) {
-        // 第一個是中文提示，其餘是外文
-        wordRow = normalizeRowString(w.raw);
+      if (w.origRow) {
+        wordRow = normalizeRowString(w.origRow);
       } else {
-        wordRow = normalizeRowString(w.comboKey);
+        const parts = w.raw.split(",");
+        if (parts.length >= 2) {
+          wordRow = normalizeRowString(w.raw);
+        } else {
+          wordRow = normalizeRowString(w.comboKey);
+        }
       }
       if (!isValidRowString(wordRow)) continue;
       // 避免重複
+      const normKey = wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
       const exists = displayRows.some(r => {
         const norm = r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
-        return norm === wordRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        return norm === normKey;
       });
       if (!exists) {
         displayRows.push({ text: wordRow, source: "custom" });

@@ -12,7 +12,7 @@ const STATS_KEY = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
 
 // ★★★ 與 settings.js 相同的 Apps Script 部署網址 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbzkpHZm2sHTMddQqSXCWTUlxzliQ7n5kipiMnew06nPCQQ5e1VDw4FtDUxdyJ-xoEK6zA/exec";
+const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";
 
 let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
@@ -136,32 +136,51 @@ function isSingleWordMode() {
 }
 
 /**
- * 單字模式拆字：將德文拆成方塊（含中文提示，最多 5 塊）
+ * 單字模式拆字：將德文拆成最多 maxBlocks 個方塊
  * 策略：
- *   1. 先依空白分割（例如 "Guten Tag" → ["Guten", "Tag"]）
- *   2. 若空白分割後只有 1 個 token（無空白），再依字母拆（最多 4 塊）
- *   3. 最終結果 = [中文提示, ...德文方塊]，限制 2~5 塊
+ *   1. 先依空白分割
+ *   2. 空白分割如果超過 maxBlocks，將多餘的合併回最後一個 word
+ *   3. 最後一個 word 繼續依字母拆，用掉剩餘的可用格數
+ *   4. 最終德文方塊數 ≤ maxBlocks
+ *
+ * 範例（maxBlocks=4）：
+ *   "Apfel"           → [A][p][f][el]           4塊
+ *   "Guten Tag"       → [Guten][T][a][g]        4塊
+ *   "Wie geht es"     → [Wie][geht][e][s]       4塊
+ *   "Ich mag das nicht"→ [Ich][mag][das][nicht]  4塊（已滿，不再拆）
  */
-function splitGermanToBlocks(germanStr, maxGermanBlocks = 4) {
+function splitGermanToBlocks(germanStr, maxBlocks = 4) {
   // 第 1 步：依空白分割
-  const spaceParts = germanStr.split(/\s+/).filter(Boolean);
-  if (spaceParts.length > 1) {
-    // 有空白 → 使用空白分割結果
-    if (spaceParts.length <= maxGermanBlocks) return spaceParts;
-    // 超過 maxGermanBlocks → 前 (max-1) 個各自一塊，其餘合併到最後一塊
-    const result = spaceParts.slice(0, maxGermanBlocks - 1);
-    result.push(spaceParts.slice(maxGermanBlocks - 1).join(" "));
-    return result;
+  let spaceParts = germanStr.split(/\s+/).filter(Boolean);
+  if (spaceParts.length === 0) return [germanStr];
+
+  // 如果空白分割後超過 maxBlocks，將多餘的合併到最後一個 word
+  if (spaceParts.length > maxBlocks) {
+    const merged = spaceParts.slice(maxBlocks - 1).join(" ");
+    spaceParts = [...spaceParts.slice(0, maxBlocks - 1), merged];
   }
-  // 第 2 步：無空白 → 依字母拆
-  const word = spaceParts[0] || germanStr;
-  const chars = [...word]; // 正確處理 multi-byte 字元
-  if (chars.length <= 1) return [word];
-  if (chars.length <= maxGermanBlocks) return chars;
-  // 前 (max-1) 個各取 1 字母，剩餘歸最後一塊
-  const result = chars.slice(0, maxGermanBlocks - 1);
-  result.push(chars.slice(maxGermanBlocks - 1).join(""));
-  return result;
+
+  // 第 2 步：取出前綴（前面的 word 不拆）和最後一個 word（繼續拆字母）
+  const prefix = spaceParts.slice(0, -1);
+  const lastWord = spaceParts[spaceParts.length - 1];
+  const availableForLast = maxBlocks - prefix.length; // 最後一個 word 可用的格數
+
+  // 第 3 步：將最後一個 word 依字母拆
+  const chars = [...lastWord]; // 正確處理 multi-byte 字元
+  let lastBlocks;
+  if (chars.length <= 1 || availableForLast <= 1) {
+    // 只剩 1 格或字太短 → 不拆
+    lastBlocks = [lastWord];
+  } else if (chars.length <= availableForLast) {
+    // 字母數 ≤ 可用格數 → 每字母一塊
+    lastBlocks = chars;
+  } else {
+    // 字母數 > 可用格數 → 前 (available-1) 個各取 1 字母，剩餘合併到最後一塊
+    lastBlocks = chars.slice(0, availableForLast - 1);
+    lastBlocks.push(chars.slice(availableForLast - 1).join(""));
+  }
+
+  return [...prefix, ...lastBlocks];
 }
 
 function buildComboList(rows) {
@@ -180,6 +199,8 @@ function buildComboList(rows) {
       const germanBlocks = splitGermanToBlocks(words[1], 4);
       const expanded = [hint, ...germanBlocks];
       if (expanded.length >= 2 && expanded.length <= 5) {
+        // 記住原始 row，供自動移除 & 統計還原使用
+        expanded._origRow = row;
         return expanded;
       }
     }
@@ -333,6 +354,10 @@ function trackComboAppear(combos) {
     stats[key].appear++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
     stats[key].display = combo.join(","); // 保持最新顯示格式
+    // 單字模式：保留原始 row 格式，供「立即載入」回填使用
+    if (combo._origRow) {
+      stats[key].origRow = combo._origRow;
+    }
   }
   saveComboStats(stats);
 }
@@ -350,6 +375,10 @@ function trackComboCleared(clearedIndices) {
     }
     stats[key].cleared++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
+    // 單字模式：保留原始 row 格式
+    if (combo._origRow) {
+      stats[key].origRow = combo._origRow;
+    }
   }
   saveComboStats(stats);
 }
@@ -391,7 +420,14 @@ function autoRemoveClearedRows(clearedComboIndices) {
   const keysToRemove = new Set();
   for (const ci of clearedComboIndices) {
     if (ci < comboList.length) {
-      keysToRemove.add(normalizeComboKey(comboList[ci]));
+      const combo = comboList[ci];
+      keysToRemove.add(normalizeComboKey(combo));
+      // 單字模式：combo 是拆開的，但 STORAGE_KEY 存的是原始 2 欄格式
+      // 需要同時加入原始 key 才能正確配對移除
+      if (combo._origRow) {
+        const origKey = combo._origRow.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+        keysToRemove.add(origKey);
+      }
     }
   }
   if (keysToRemove.size === 0) return;
@@ -456,9 +492,10 @@ function loadAllowedLens() {
 // 從全部 combo 中隨機抽 n 組（0 = 全部），並依允許長度篩選
 function pickFilteredCombos() {
   const allowedLens = loadAllowedLens();
-  // 先依長度篩選
+  const swMode = isSingleWordMode();
+  // 先依長度篩選（單字模式跳過：長度由拆字邏輯決定）
   let pool = allComboList;
-  if (allowedLens) {
+  if (allowedLens && !swMode) {
     pool = allComboList.filter(combo => allowedLens.has(combo.length));
     if (pool.length === 0) pool = allComboList; // 全被過濾掉時 fallback
   }
