@@ -9,6 +9,7 @@ const GROUP_DATA_KEY = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
 const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
+const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -3560,6 +3561,8 @@ const singleWordModeBtn = document.getElementById("singleWordModeBtn");
 const lenSection = document.getElementById("lenSection");
 const sourceSection = document.getElementById("sourceSection");
 const singleWordModeHint = document.getElementById("singleWordModeHint");
+const splitModeBar = document.getElementById("splitModeBar");
+const splitModeBtns = splitModeBar ? splitModeBar.querySelectorAll(".split-mode-btn") : [];
 
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
@@ -3569,6 +3572,7 @@ let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
+let splitMode = loadSplitMode();         // "syllable" | "random" | "mixed"
 
 // （單字模式關閉後保持 2格+自定義，不需要記憶先前設定）
 
@@ -3670,6 +3674,12 @@ function loadCustomActive() {
 
 function loadSingleWordMode() {
   return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1";
+}
+
+function loadSplitMode() {
+  const v = localStorage.getItem(SPLIT_MODE_KEY);
+  if (v === "random" || v === "mixed") return v;
+  return "syllable"; // 預設
 }
 
 /** 載入自定義 word 的完整快照（不受 save 截斷影響） */
@@ -3984,6 +3994,20 @@ function updateSourceUI() {
     sourceSection.style.pointerEvents = singleWordMode ? "none" : "";
   }
 
+  // ── 拆分模式按鈕 ──
+  if (splitModeBar) {
+    if (singleWordMode) {
+      splitModeBar.style.opacity = "";
+      splitModeBar.style.pointerEvents = "";
+    } else {
+      splitModeBar.style.opacity = "0.35";
+      splitModeBar.style.pointerEvents = "none";
+    }
+    splitModeBtns.forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.split === splitMode);
+    });
+  }
+
   // 自定義輸入區域顯示/隱藏（自定義 或 單字模式 開啟時都顯示）
   customInputArea.style.display = (customActive || singleWordMode) ? "" : "none";
 }
@@ -4090,6 +4114,7 @@ function saveRows() {
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
+  localStorage.setItem(SPLIT_MODE_KEY, splitMode);
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   // 若有手動移除的群組 word，儲存到 GROUP_REMOVED_KEY；否則清除
   if (Object.keys(manualRemoved).length > 0) {
@@ -4108,7 +4133,9 @@ function saveRows() {
   if (customActive) {
     const customCount = displayRows.filter(r => r.source === "custom").length;
     if (singleWordMode) {
-      parts.push(`單字模式（${customCount} 組，德文自動拆字）`);
+      const splitLabel = splitMode === "syllable" ? "音節拆分" :
+                         splitMode === "random" ? "隨機拆分" : "混合拆分";
+      parts.push(`單字模式（${customCount} 組，${splitLabel}）`);
     } else {
       parts.push(`自定義（${customCount} 組）`);
     }
@@ -4128,6 +4155,7 @@ function resetDefault() {
   activeGroups = new Set();
   customActive = false;
   singleWordMode = false;
+  splitMode = "syllable";
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
@@ -4155,6 +4183,7 @@ function resetDefault() {
   localStorage.setItem(GROUPS_KEY, JSON.stringify([]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, "0");
+  localStorage.setItem(SPLIT_MODE_KEY, "syllable");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   localStorage.removeItem(GROUP_REMOVED_KEY);                   // 清除手動移除紀錄
 
@@ -4723,6 +4752,17 @@ groupBtns.forEach(btn => {
 tapBind(customSourceBtn, toggleCustom);
 // 單字模式按鈕綁定
 tapBind(singleWordModeBtn, toggleSingleWordMode);
+// 拆分模式按鈕綁定
+splitModeBtns.forEach(btn => {
+  tapBind(btn, () => {
+    splitMode = btn.dataset.split;
+    updateSourceUI();
+    setMessage(`拆分模式已切換為「${
+      splitMode === "syllable" ? "音節拆分" :
+      splitMode === "random" ? "隨機拆分" : "混合"
+    }」，按「儲存」生效。`);
+  });
+});
 
 // ── 初始化 ──
 preventZoom();

@@ -333,6 +333,18 @@ button {
   filter: brightness(0.85);
 }
 
+/* 拆分模式按鈕 */
+.split-mode-btn:active {
+  transform: scale(0.96);
+  filter: brightness(0.85);
+}
+.split-mode-btn.active {
+  background: #ff9800 !important;
+  color: #000 !important;
+  border-color: #e6a800 !important;
+  box-shadow: 0 0 8px 2px rgba(255, 152, 0, 0.45);
+}
+
 /* 自訂單字區域被停用 */
 .custom-words-disabled {
   opacity: 0.35;

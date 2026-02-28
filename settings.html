@@ -36,6 +36,29 @@
           <p id="singleWordModeHint" style="margin:6px 0 0;font-size:0.78rem;color:#999;display:none;">
             一次只發一組單字，拼對消去後才發下一組。自定義來源自動啟用，組合長度由拆字決定。
           </p>
+          <div id="splitModeBar" style="display:flex;gap:6px;margin-top:10px;justify-content:center;">
+            <button type="button" class="split-mode-btn" data-split="syllable"
+              style="flex:1;padding:9px 0;font-size:0.85rem;font-weight:600;
+                     border:2px solid #666;border-radius:8px;
+                     background:#2a2a2a;color:#ccc;cursor:pointer;
+                     transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s;">
+              音節拆分
+            </button>
+            <button type="button" class="split-mode-btn" data-split="random"
+              style="flex:1;padding:9px 0;font-size:0.85rem;font-weight:600;
+                     border:2px solid #666;border-radius:8px;
+                     background:#2a2a2a;color:#ccc;cursor:pointer;
+                     transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s;">
+              隨機拆分
+            </button>
+            <button type="button" class="split-mode-btn" data-split="mixed"
+              style="flex:1;padding:9px 0;font-size:0.85rem;font-weight:600;
+                     border:2px solid #666;border-radius:8px;
+                     background:#2a2a2a;color:#ccc;cursor:pointer;
+                     transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s;">
+              混合
+            </button>
+          </div>
         </div>
 
         <div id="lenSection" class="pick-section">
