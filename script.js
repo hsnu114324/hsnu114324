@@ -348,14 +348,17 @@ function saveComboStats(stats) {
 function trackComboAppear(combos) {
   const stats = loadComboStats();
   for (const combo of combos) {
-    const key = normalizeComboKey(combo);
+    // 單字模式：用原始 2 欄格式作為 key 和 display，而非拆開的版本
+    const key = combo._origRow
+      ? combo._origRow.split(",").map(w => w.trim().toLowerCase()).filter(Boolean).join(",")
+      : normalizeComboKey(combo);
+    const display = combo._origRow || combo.join(",");
     if (!stats[key]) {
-      stats[key] = { appear: 0, cleared: 0, display: combo.join(","), lastSeen: "" };
+      stats[key] = { appear: 0, cleared: 0, display, lastSeen: "" };
     }
     stats[key].appear++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
-    stats[key].display = combo.join(","); // 保持最新顯示格式
-    // 單字模式：保留原始 row 格式，供「立即載入」回填使用
+    stats[key].display = display;
     if (combo._origRow) {
       stats[key].origRow = combo._origRow;
     }
@@ -370,13 +373,16 @@ function trackComboCleared(clearedIndices) {
   for (const ci of clearedIndices) {
     if (ci >= comboList.length) continue;
     const combo = comboList[ci];
-    const key = normalizeComboKey(combo);
+    // 單字模式：用原始 2 欄格式作為 key 和 display
+    const key = combo._origRow
+      ? combo._origRow.split(",").map(w => w.trim().toLowerCase()).filter(Boolean).join(",")
+      : normalizeComboKey(combo);
+    const display = combo._origRow || combo.join(",");
     if (!stats[key]) {
-      stats[key] = { appear: 0, cleared: 0, display: combo.join(","), lastSeen: "" };
+      stats[key] = { appear: 0, cleared: 0, display, lastSeen: "" };
     }
     stats[key].cleared++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
-    // 單字模式：保留原始 row 格式
     if (combo._origRow) {
       stats[key].origRow = combo._origRow;
     }
