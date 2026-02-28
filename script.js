@@ -2173,7 +2173,10 @@ async function clearMatches() {
       const nextComboIdx = comboList.findIndex((_, ci) => !clearedCombos.has(ci));
       if (nextComboIdx >= 0) {
         const nextCombo = comboList[nextComboIdx];
-        msg += `　▶ 下一組：${nextCombo.join(" ")}`;
+        const nextHint = debugMode
+          ? nextCombo.join(" ")          // 偵錯模式：中文提示＋德文方塊
+          : nextCombo[0];                // 一般模式：只顯示中文提示
+        msg += `　▶ 下一組：${nextHint}`;
       }
     } else if (added > 0) {
       const activeCount = comboList.length - clearedCombos.size;
@@ -2418,7 +2421,10 @@ function restartGame() {
   const swMode = isSingleWordMode();
   if (swMode && comboList.length > 0) {
     const firstCombo = comboList[0];
-    setMessage(`🔤 單字模式（共 ${totalComboCount} 組）▶ ${firstCombo.join(" ")}`, true);
+    const comboHint = debugMode
+      ? firstCombo.join(" ")          // 偵錯模式：中文提示＋德文方塊
+      : firstCombo[0];                // 一般模式：只顯示中文提示
+    setMessage(`🔤 單字模式（共 ${totalComboCount} 組）▶ ${comboHint}`, true);
   } else {
     const activeInfo = `在場 ${comboList.length} 組`;
     const reserveInfo = comboReserve.length > 0
