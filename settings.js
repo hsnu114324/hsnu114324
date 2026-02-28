@@ -3869,8 +3869,14 @@ function toggleGroup(idx) {
 }
 
 /** 將 displayRows 中目前的 custom 項目同步回 customRowsFull / customRows，
- *  確保手動移除的項目不會在模式切換時「復活」。 */
+ *  確保手動移除的項目不會在模式切換時「復活」。
+ *  ⚠ 防護：如果 displayRows 中根本沒有 custom 來源（例如 customActive 為 false），
+ *    則跳過同步，避免誤清空 customRowsFull。 */
 function syncCustomFullFromDisplay() {
+  // 防護：如果自定義未啟用且 displayRows 沒有 custom 項目，不做任何事
+  const hasCustomInDisplay = displayRows.some(r => r.source === "custom");
+  if (!hasCustomInDisplay && !customActive) return;
+
   const currentCustom = displayRows
     .filter(r => r.source === "custom")
     .map(r => r.text);
