@@ -3570,10 +3570,7 @@ let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
 
-// ── 單字模式開啟前的「備份」，關閉時用來還原 ──
-let _prevActiveGroups = null;   // Set<number> | null
-let _prevCustomActive = null;   // boolean | null
-let _prevLenChecks = null;      // {len2, len3, len4, len5} | null
+// （單字模式關閉後保持 2格+自定義，不需要記憶先前設定）
 
 // ── 工具 ──
 function preventZoom() {
@@ -3704,20 +3701,9 @@ function saveCustomRowsFull() {
 function buildDisplayRows() {
   displayRows = [];
 
-  // 單字模式：不載入群組，只載入自定義 2 欄項目
+  // 單字模式：強制 2格 + 自定義，只載入 2 欄項目
   if (singleWordMode) {
     customActive = true;
-    // 備份先前的群組 / 長度狀態（若尚未備份）
-    if (_prevActiveGroups === null) {
-      _prevActiveGroups = new Set(activeGroups);
-      _prevCustomActive = customActive;
-      _prevLenChecks = {
-        len2: len2Toggle.checked,
-        len3: len3Toggle.checked,
-        len4: len4Toggle.checked,
-        len5: len5Toggle.checked,
-      };
-    }
     activeGroups = new Set();
     len2Toggle.checked = true;
     len3Toggle.checked = false;
@@ -3902,89 +3888,35 @@ function toggleCustom() {
 
 /** 單字模式：一鍵套用「自定義 + 只顯示2欄項目 + 德文拆字」 */
 function toggleSingleWordMode() {
-  if (singleWordMode) {
-    // ────── 關閉 ──────
-    singleWordMode = false;
+  singleWordMode = !singleWordMode;
 
-    // 還原「組合長度」勾選狀態
-    if (_prevLenChecks) {
-      len2Toggle.checked = _prevLenChecks.len2;
-      len3Toggle.checked = _prevLenChecks.len3;
-      len4Toggle.checked = _prevLenChecks.len4;
-      len5Toggle.checked = _prevLenChecks.len5;
-      _prevLenChecks = null;
+  // 不管開啟或關閉，組合長度固定 2格、來源固定自定義
+  len2Toggle.checked = true;
+  len3Toggle.checked = false;
+  len4Toggle.checked = false;
+  len5Toggle.checked = false;
+  activeGroups = new Set();
+  customActive = true;
+
+  // 重建 displayRows：載入自定義詞組
+  displayRows = [];
+  for (const w of customRowsFull) {
+    if (singleWordMode) {
+      // 單字模式：只保留 2 欄項目（中文提示 + 德文單字）
+      const parts = w.split(",").map(s => s.trim()).filter(Boolean);
+      if (parts.length !== 2) continue;
     }
-
-    // 還原「單字來源」狀態
-    if (_prevActiveGroups !== null) {
-      activeGroups = _prevActiveGroups;
-      _prevActiveGroups = null;
-    }
-    if (_prevCustomActive !== null) {
-      customActive = _prevCustomActive;
-      _prevCustomActive = null;
-    }
-
-    // 重建 displayRows：先移除所有 custom，再依還原狀態加回
-    displayRows = displayRows.filter(r => r.source !== "custom");
-    // 移除所有群組 items 再依 activeGroups 重新加入
-    displayRows = displayRows.filter(r => !r.source || r.source === "custom");
-    for (const gi of activeGroups) {
-      const key = "group-" + gi;
-      for (const w of (GROUP_ALL[gi] || [])) {
-        displayRows.push({ text: w, source: key });
-      }
-    }
-    if (customActive) {
-      for (const w of customRowsFull) {
-        displayRows.push({ text: w, source: "custom" });
-      }
-    }
-  } else {
-    // ────── 開啟 ──────
-    // 先備份目前的狀態，關閉時用來還原
-    _prevActiveGroups = new Set(activeGroups);
-    _prevCustomActive = customActive;
-    _prevLenChecks = {
-      len2: len2Toggle.checked,
-      len3: len3Toggle.checked,
-      len4: len4Toggle.checked,
-      len5: len5Toggle.checked,
-    };
-
-    singleWordMode = true;
-
-    // 組合長度 → 只勾選「2 格」
-    len2Toggle.checked = true;
-    len3Toggle.checked = false;
-    len4Toggle.checked = false;
-    len5Toggle.checked = false;
-
-    // 單字來源 → 只啟用「自定義」，群組全關
-    activeGroups = new Set();
-    customActive = true;
-
-    // 移除所有群組 items，保留或載入 custom
-    displayRows = displayRows.filter(r => r.source === "custom");
-    if (displayRows.length === 0) {
-      // 若 custom 尚未載入，從完整快照載入
-      for (const w of customRowsFull) {
-        displayRows.push({ text: w, source: "custom" });
-      }
-    }
-
-    // 篩選：只保留「2 欄」的自定義項目（中文提示 + 德文單字）
-    displayRows = displayRows.filter(r => {
-      if (r.source !== "custom") return true;
-      const parts = r.text.split(",").map(s => s.trim()).filter(Boolean);
-      return parts.length === 2;
-    });
+    displayRows.push({ text: w, source: "custom" });
   }
+
   updateSourceUI();
   renderRows();
   if (singleWordMode) {
     const count = displayRows.filter(r => r.source === "custom").length;
     setMessage(`✅ 單字模式已開啟：找到 ${count} 組「中文＋德文單字」，德文將自動拆成字母方塊。按「儲存」生效。`, true);
+  } else {
+    const count = displayRows.length;
+    setMessage(`🔤 單字模式已關閉，保留自定義（${count} 組）+ 2格設定。`, true);
   }
 }
 
@@ -4203,15 +4135,12 @@ function saveRows() {
 
 // ── 還原預設 ──
 function resetDefault() {
+  // 1) 重置所有記憶體狀態
   customRows = [...DEFAULT_WORD_ROWS];
-  customRowsFull = [...DEFAULT_WORD_ROWS];  // 同步重置完整快照
-  saveCustomRowsFull();                     // 持久化完整快照
+  customRowsFull = [...DEFAULT_WORD_ROWS];
   activeGroups = new Set();
   customActive = false;
   singleWordMode = false;
-  _prevActiveGroups = null;
-  _prevCustomActive = null;
-  _prevLenChecks = null;
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
@@ -4219,10 +4148,30 @@ function resetDefault() {
   len3Toggle.checked = true;
   len4Toggle.checked = true;
   len5Toggle.checked = true;
+
+  // 2) 清除「立即載入」暫存
+  if (typeof _loadedFailedWords !== "undefined") _loadedFailedWords = [];
+  if (failedWordsArea) failedWordsArea.style.display = "none";
+
+  // 3) 重建顯示列表 & 更新 UI
   buildDisplayRows();
   updateSourceUI();
   renderRows();
-  setMessage("已還原預設，按「儲存」即可覆蓋。");
+
+  // 4) 直接寫入 localStorage（等同自動儲存，不需再按「儲存」）
+  saveCustomRowsFull();                                         // 完整快照
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(customRows));
+  localStorage.setItem(PICK_KEY, String(0));
+  localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
+  localStorage.setItem(LENS_KEY, JSON.stringify([2, 3, 4, 5]));
+  localStorage.setItem(AUTO_REMOVE_KEY, "0");
+  localStorage.setItem(GROUPS_KEY, JSON.stringify([]));
+  localStorage.setItem(CUSTOM_ACTIVE_KEY, "0");
+  localStorage.setItem(SINGLE_WORD_MODE_KEY, "0");
+  localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
+  localStorage.removeItem(GROUP_REMOVED_KEY);                   // 清除手動移除紀錄
+
+  setMessage("✅ 已還原預設並自動儲存，回遊戲頁即可套用。", true);
 }
 
 // ── 學習統計（Google Sheets 同步 + Google 登入） ──
