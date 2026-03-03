@@ -29,6 +29,7 @@ const DEFAULT_WORD_ROWS = ["1,2,3,4,5", "6,7,8,9,10"];
 // ══════════════════════════════════════
 
 function tapBind(el, callback) {
+  if (!el) return;                 // 防止 el 為 null 時報錯
   let touched = false;
   el.addEventListener("touchstart", (e) => { e.preventDefault(); touched = true; callback(); }, { passive: false });
   el.addEventListener("click", () => { if (touched) { touched = false; return; } callback(); });
@@ -955,78 +956,92 @@ function setDir(d) {
 }
 
 function restartGame() {
-  syncStatsToSheets();
+  try {
+    syncStatsToSheets();
 
-  debugMode = localStorage.getItem("word_tetris_debug_v1") === "1";
+    debugMode = localStorage.getItem("word_tetris_debug_v1") === "1";
 
-  groupData = loadGroupData();
-  const wordRows = loadWordRows();
-  const allCombos = buildComboList(wordRows);
+    groupData = loadGroupData();
+    const wordRows = loadWordRows();
+    console.log("[Snake] wordRows:", wordRows.length, "rows");
+    const allCombos = buildComboList(wordRows);
+    console.log("[Snake] allCombos:", allCombos.length, "combos");
 
-  let pool = [...allCombos];
-  shuffle(pool);
-  const pickCount = loadPickCount();
-  if (pickCount > 0 && pickCount < pool.length) {
-    pool = pool.slice(0, pickCount);
+    let pool = [...allCombos];
+    shuffle(pool);
+    const pickCount = loadPickCount();
+    if (pickCount > 0 && pickCount < pool.length) {
+      pool = pool.slice(0, pickCount);
+    }
+    console.log("[Snake] pool:", pool.length, "combos (pickCount:", pickCount, ")");
+
+    allCombosForDecoy = [...allCombos];
+    comboQueue = pool;
+    totalCombos = pool.length;
+    totalCleared = 0;
+    score = 0;
+    gameOver = false;
+    running = true;
+    paused = false;
+    particles = [];
+    if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
+
+    currentTickMs = BASE_TICK_MS;
+    scoreEl.textContent = "0";
+    updatePauseBtn();
+
+    const startRow = Math.floor(S_ROWS / 2);
+    const startCol = Math.floor(S_COLS / 2);
+    snake = [
+      { row: startRow,     col: startCol },
+      { row: startRow + 1, col: startCol },
+      { row: startRow + 2, col: startCol },
+    ];
+    dir = DIR_UP;
+    nextDir = DIR_UP;
+
+    foodBlocks = [];
+    decoyBlocks = [];
+    nextFoodIdx = 0;
+    currentCombo = null;
+
+    updateProgress();
+    updateSpeedInfo();
+    startNewCombo();
+
+    if (tickTimer) clearInterval(tickTimer);
+    tickTimer = setInterval(tick, currentTickMs);
+  } catch (err) {
+    console.error("Snake restartGame error:", err);
+    setMessage("❌ 啟動錯誤：" + err.message, false);
   }
-
-  allCombosForDecoy = [...allCombos]; // 保留完整列表供干擾方塊使用
-  comboQueue = pool;
-  totalCombos = pool.length;
-  totalCleared = 0;
-  score = 0;
-  gameOver = false;
-  running = true;
-  paused = false;
-  particles = [];
-  if (animFrameId) { cancelAnimationFrame(animFrameId); animFrameId = null; }
-
-  currentTickMs = BASE_TICK_MS;
-  scoreEl.textContent = "0";
-  updatePauseBtn();
-
-  const startRow = Math.floor(S_ROWS / 2);
-  const startCol = Math.floor(S_COLS / 2);
-  snake = [
-    { row: startRow,     col: startCol },
-    { row: startRow + 1, col: startCol },
-    { row: startRow + 2, col: startCol },
-  ];
-  dir = DIR_UP;
-  nextDir = DIR_UP;
-
-  foodBlocks = [];
-  decoyBlocks = [];
-  nextFoodIdx = 0;
-  currentCombo = null;
-
-  updateProgress();
-  updateSpeedInfo();
-  startNewCombo();
-
-  if (tickTimer) clearInterval(tickTimer);
-  tickTimer = setInterval(tick, currentTickMs);
 }
 
 function init() {
-  preventZoom();
-  resizeCanvas();
-  window.addEventListener("resize", resizeCanvas);
+  try {
+    preventZoom();
+    resizeCanvas();
+    window.addEventListener("resize", resizeCanvas);
 
-  tapBind(restartBtn, restartGame);
-  tapBind(pauseBtn, togglePause);
+    tapBind(restartBtn, restartGame);
+    tapBind(pauseBtn, togglePause);
 
-  setupSwipe();
+    setupSwipe();
 
-  window.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowUp")    { e.preventDefault(); setDir(DIR_UP); }
-    if (e.key === "ArrowDown")  { e.preventDefault(); setDir(DIR_DOWN); }
-    if (e.key === "ArrowLeft")  { e.preventDefault(); setDir(DIR_LEFT); }
-    if (e.key === "ArrowRight") { e.preventDefault(); setDir(DIR_RIGHT); }
-    if (e.key === " ") { e.preventDefault(); togglePause(); }
-  });
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowUp")    { e.preventDefault(); setDir(DIR_UP); }
+      if (e.key === "ArrowDown")  { e.preventDefault(); setDir(DIR_DOWN); }
+      if (e.key === "ArrowLeft")  { e.preventDefault(); setDir(DIR_LEFT); }
+      if (e.key === "ArrowRight") { e.preventDefault(); setDir(DIR_RIGHT); }
+      if (e.key === " ") { e.preventDefault(); togglePause(); }
+    });
 
-  restartGame();
+    restartGame();
+  } catch (err) {
+    console.error("Snake init error:", err);
+    const msg = document.getElementById("message");
+    if (msg) msg.textContent = "❌ 初始化錯誤：" + err.message;
+  }
 }
 
 init();
