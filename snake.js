@@ -921,20 +921,15 @@ function setupSwipe() {
       return;
     }
 
-    // 判斷滑動方向
+    // 判斷滑動方向（絕對方向）
     if (Math.abs(dx) > Math.abs(dy)) {
       // 水平滑動
-      if (dx < 0) turnLeft();
-      else turnRight();
+      if (dx < 0) setDir(DIR_LEFT);
+      else setDir(DIR_RIGHT);
     } else {
-      // 垂直滑動：上滑 = 跳過（不動），下滑 = 左轉（替代操作）
-      // 這裡統一轉成左/右
-      if (dy < 0) {
-        // 上滑 = 不動作（保留）
-      } else {
-        // 下滑 = 左轉
-        turnLeft();
-      }
+      // 垂直滑動
+      if (dy < 0) setDir(DIR_UP);
+      else setDir(DIR_DOWN);
     }
   }, { passive: true });
 }
@@ -950,6 +945,13 @@ function turnLeft()  {
 function turnRight() {
   if (paused || gameOver) return;
   nextDir = (dir + 1) % 4;
+}
+
+/* 絕對方向：防止 180° 回頭 */
+function setDir(d) {
+  if (paused || gameOver) return;
+  if ((d + 2) % 4 === dir) return;   // 不能反向
+  nextDir = d;
 }
 
 function restartGame() {
@@ -1017,8 +1019,10 @@ function init() {
   setupSwipe();
 
   window.addEventListener("keydown", (e) => {
-    if (e.key === "ArrowLeft")  { e.preventDefault(); turnLeft(); }
-    if (e.key === "ArrowRight") { e.preventDefault(); turnRight(); }
+    if (e.key === "ArrowUp")    { e.preventDefault(); setDir(DIR_UP); }
+    if (e.key === "ArrowDown")  { e.preventDefault(); setDir(DIR_DOWN); }
+    if (e.key === "ArrowLeft")  { e.preventDefault(); setDir(DIR_LEFT); }
+    if (e.key === "ArrowRight") { e.preventDefault(); setDir(DIR_RIGHT); }
     if (e.key === " ") { e.preventDefault(); togglePause(); }
   });
 
