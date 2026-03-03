@@ -365,8 +365,6 @@ const messageEl  = document.getElementById("message");
 const speedInfoEl = document.getElementById("speedInfo");
 const restartBtn = document.getElementById("restartBtn");
 const pauseBtn   = document.getElementById("pauseBtn");
-const leftBtn    = document.getElementById("leftBtn");
-const rightBtn   = document.getElementById("rightBtn");
 
 // ══════════════════════════════════════
 //  Canvas & 渲染
@@ -1013,8 +1011,6 @@ function init() {
   resizeCanvas();
   window.addEventListener("resize", resizeCanvas);
 
-  tapBind(leftBtn, turnLeft);
-  tapBind(rightBtn, turnRight);
   tapBind(restartBtn, restartGame);
   tapBind(pauseBtn, togglePause);
 
