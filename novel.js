@@ -414,8 +414,10 @@ function revealChars(n) {
   // 1 秒後新區塊從金色變回正常色
   setTimeout(() => { if (blockEl) blockEl.classList.remove("new"); }, 1000);
 
-  // 捲動到最底
-  novelScroll.scrollTop = novelScroll.scrollHeight;
+  // 等 DOM 更新後再捲動到最底（確保新區塊已渲染）
+  requestAnimationFrame(() => {
+    blockEl.scrollIntoView({ block: "end", behavior: "smooth" });
+  });
 
   // 更新進度
   updateProgress();
@@ -477,7 +479,10 @@ function restoreNovel() {
   novelPos = targetPos;
   updateProgress();
 
-  setTimeout(() => { novelScroll.scrollTop = novelScroll.scrollHeight; }, 50);
+  // 還原後捲到最底
+  requestAnimationFrame(() => {
+    novelScroll.scrollTop = novelScroll.scrollHeight;
+  });
 }
 
 // ══════════════════════════════════════
