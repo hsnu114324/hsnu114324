@@ -201,6 +201,29 @@ const gameFrame     = document.getElementById("gameFrame");
 const timerBar      = document.getElementById("timerBar");
 const rewardSecEl   = document.getElementById("rewardSeconds");
 const streakEl      = document.getElementById("streakEl");
+const gameContainer = document.getElementById("gameContainer");
+const gameInner     = document.getElementById("gameInner");
+
+// ══════════════════════════════════════
+//  自動縮放仙劍 iframe（320×200 → 填滿容器）
+// ══════════════════════════════════════
+
+const NATIVE_W = 320;
+const NATIVE_H = 200;
+
+function scaleGame() {
+  if (!gameContainer || !gameInner) return;
+  const containerW = gameContainer.clientWidth;
+  const scale = containerW / NATIVE_W;
+  gameInner.style.transform = "scale(" + scale + ")";
+  gameContainer.style.height = Math.round(NATIVE_H * scale) + "px";
+}
+
+// 頁面載入 + 視窗變化時重算
+window.addEventListener("load", scaleGame);
+window.addEventListener("resize", scaleGame);
+// 也立刻呼叫一次（DOMContentLoaded 時）
+scaleGame();
 
 // ══════════════════════════════════════
 //  出題邏輯

@@ -90,7 +90,7 @@
         margin-top: 6px;
       }
 
-      /* 仙劍遊戲區 */
+      /* 仙劍遊戲區 — 用 transform scale 自動放大 */
       .game-container {
         position: relative;
         width: 100%;
@@ -98,18 +98,28 @@
         border: 2px solid #3f4b89;
         border-radius: 8px;
         overflow: hidden;
+        /* 高度由 JS 動態設定 */
+      }
+      .game-inner {
+        /* 內層：固定 320×200，由 transform 放大 */
+        width: 320px;
+        height: 200px;
+        transform-origin: 0 0;
+        position: relative;
       }
       .game-container iframe {
         display: block;
-        width: 100%;
-        height: 420px;
+        width: 320px;
+        height: 200px;
         border: none;
         background: #000;
       }
       /* 遮罩：答對前阻擋互動 */
       .game-overlay {
         position: absolute;
-        top: 0; left: 0; right: 0; bottom: 0;
+        top: 0; left: 0;
+        width: 320px;
+        height: 200px;
         background: rgba(0, 0, 0, 0.6);
         display: flex;
         flex-direction: column;
@@ -251,12 +261,14 @@
 
       <!-- 仙劍遊戲 -->
       <section class="game-container" id="gameContainer">
-        <div class="timer-bar" id="timerBar" style="width:0%"></div>
-        <div class="game-overlay" id="gameOverlay">
-          <div class="lock-text">🔒 請先回答上方題目</div>
-          <div class="lock-sub">答對後可操作遊戲 5 秒</div>
+        <div class="game-inner" id="gameInner">
+          <div class="timer-bar" id="timerBar" style="width:0%"></div>
+          <div class="game-overlay" id="gameOverlay">
+            <div class="lock-text">🔒 請先回答上方題目</div>
+            <div class="lock-sub">答對後可操作遊戲 5 秒</div>
+          </div>
+          <iframe id="gameFrame" src="./xianjian-master/index.html" sandbox="allow-scripts allow-same-origin"></iframe>
         </div>
-        <iframe id="gameFrame" src="./xianjian-master/index.html" sandbox="allow-scripts allow-same-origin"></iframe>
       </section>
 
       <!-- 虛擬手把 -->
