@@ -1,9 +1,18 @@
 /* ═══════════════════════════════════════
-   RPG Bridge — 接收 parent postMessage，
-   轉為 keydown 事件給仙劍使用
+   RPG Bridge — 兩個功能：
+   1. 接收 parent postMessage → 轉為 keydown 事件
+   2. 強制 canvas zoom = 1（讓 parent 統一做縮放）
    ═══════════════════════════════════════ */
+
+// ── 1. 強制 zoom: 1 ──
+(function () {
+  var s = document.createElement("style");
+  s.textContent = "canvas { zoom: 1 !important; }";
+  document.head.appendChild(s);
+})();
+
+// ── 2. postMessage → keydown ──
 window.addEventListener("message", function (ev) {
-  // 只接受 rpg-key 類型
   if (!ev.data || ev.data.type !== "rpg-key") return;
   var keyCode = ev.data.keyCode;
   if (!keyCode) return;
@@ -14,4 +23,3 @@ window.addEventListener("message", function (ev) {
   event.which = keyCode;
   document.dispatchEvent(event);
 });
-
