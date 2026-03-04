@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Word Novel 德文單字小說</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .novel-page {
+        width: min(96vw, 460px);
+        margin: 0 auto;
+        padding: 8px 0 20px;
+        font-family: system-ui, sans-serif;
+      }
+
+      /* 導航 */
+      .novel-nav {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        padding: 6px 0 10px;
+        flex-wrap: wrap;
+      }
+
+      /* 出題區 */
+      .quiz-area {
+        background: #181d3a;
+        border: 1px solid #3f4b89;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+      .quiz-hint {
+        font-size: 1.1rem;
+        color: #aab;
+        margin-bottom: 4px;
+      }
+      .quiz-word {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #fff;
+        margin: 6px 0 4px;
+        min-height: 2rem;
+      }
+      .quiz-pair {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #ffcc02;
+        margin: 4px 0 10px;
+        min-height: 1.8rem;
+      }
+      .quiz-btns {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        margin: 10px 0 6px;
+      }
+      .quiz-btns button {
+        flex: 1;
+        max-width: 140px;
+        padding: 12px 0;
+        font-size: 1.2rem;
+        font-weight: 700;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: transform 0.1s;
+      }
+      .quiz-btns button:active { transform: scale(0.95); }
+      .btn-correct { background: #2a7a4a; color: #fff; }
+      .btn-wrong   { background: #8a2a2a; color: #fff; }
+      .quiz-feedback {
+        font-size: 1rem;
+        min-height: 1.4rem;
+        margin-top: 4px;
+        font-weight: 600;
+      }
+      .quiz-stats {
+        font-size: 0.85rem;
+        color: #889;
+        margin-top: 6px;
+      }
+
+      /* ── 小說顯示區 ── */
+      .novel-container {
+        background: #12162e;
+        border: 1px solid #3f4b89;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 10px;
+        position: relative;
+        overflow: hidden;
+      }
+      .novel-title {
+        text-align: center;
+        font-size: 1rem;
+        color: #889;
+        margin-bottom: 8px;
+      }
+      .novel-scroll {
+        height: 260px;
+        overflow-y: auto;
+        scroll-behavior: smooth;
+        padding-right: 4px;
+      }
+      /* 自訂 scrollbar */
+      .novel-scroll::-webkit-scrollbar { width: 4px; }
+      .novel-scroll::-webkit-scrollbar-track { background: transparent; }
+      .novel-scroll::-webkit-scrollbar-thumb { background: #3f4b89; border-radius: 2px; }
+
+      .novel-line {
+        font-size: 1.05rem;
+        line-height: 1.8;
+        color: #dde;
+        transition: opacity 0.5s;
+        min-height: 1.8em;
+      }
+      .novel-line.new {
+        color: #ffcc02;
+        animation: novelFadeIn 0.6s ease-out;
+      }
+      @keyframes novelFadeIn {
+        from { opacity: 0; transform: translateY(8px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+      .novel-line.fading {
+        opacity: 0;
+        transition: opacity 0.4s;
+      }
+
+      /* 進度條 */
+      .novel-progress {
+        margin-top: 8px;
+        text-align: center;
+        font-size: 0.8rem;
+        color: #667;
+      }
+      .novel-progress-bar {
+        height: 3px;
+        background: #1e2348;
+        border-radius: 2px;
+        margin-top: 4px;
+        overflow: hidden;
+      }
+      .novel-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #ffcc02, #ff8844);
+        border-radius: 2px;
+        transition: width 0.3s;
+      }
+
+      /* 資訊列 */
+      .novel-info {
+        text-align: center;
+        color: #aab;
+        font-size: 0.9rem;
+        margin-top: 6px;
+      }
+      .novel-info b { color: #ffcc02; }
+    </style>
+  </head>
+  <body style="background:#0f1222;color:#eee;">
+
+    <div class="novel-page">
+      <!-- 導航 -->
+      <nav class="novel-nav">
+        <a class="btn-link" href="./index.html">🧱 方塊</a>
+        <a class="btn-link" href="./snake.html">🐍 蛇</a>
+        <a class="btn-link" href="./rpg.html">🧙 RPG</a>
+        <a class="btn-link" href="./settings.html">⚙ 設定</a>
+        <button id="autoPlayBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🤖 自動</button>
+        <button id="restartBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
+      </nav>
+
+      <!-- 出題區 -->
+      <section class="quiz-area">
+        <div class="quiz-hint">這組配對正確嗎？</div>
+        <div class="quiz-word" id="quizWord">—</div>
+        <div class="quiz-pair" id="quizPair">—</div>
+        <div class="quiz-btns">
+          <button class="btn-correct" id="btnCorrect" type="button" onclick="answerQuiz(true)">✅ 對</button>
+          <button class="btn-wrong" id="btnWrong" type="button" onclick="answerQuiz(false)">❌ 錯</button>
+        </div>
+        <div class="quiz-feedback" id="quizFeedback">&nbsp;</div>
+        <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0</div>
+      </section>
+
+      <!-- 小說區 -->
+      <section class="novel-container">
+        <div class="novel-title">📖 第1章 這破宗門，誰愛呆誰呆</div>
+        <div class="novel-scroll" id="novelScroll">
+          <div class="novel-line" style="color:#667;text-align:center;">答對題目，小說就會一點一點揭曉……</div>
+        </div>
+        <div class="novel-progress">
+          <span id="novelProgressText">進度 0%</span>
+          <div class="novel-progress-bar">
+            <div class="novel-progress-fill" id="novelProgressFill" style="width:0%"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 資訊 -->
+      <div class="novel-info">
+        每次答對顯示 <b>5</b> 個字 ｜
+        答對：<b id="correctEl">0</b> ｜
+        連續：<b id="streakEl">0</b>
+      </div>
+    </div>
+
+    <script src="./novel.js"></script>
+  </body>
+</html>
+
