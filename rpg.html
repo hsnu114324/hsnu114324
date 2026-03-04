@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+    <title>Word RPG 德文單字冒險</title>
+    <link rel="stylesheet" href="./styles.css" />
+    <style>
+      .rpg-page {
+        width: min(96vw, 460px);
+        margin: 0 auto;
+        padding: 8px 0 20px;
+        font-family: system-ui, sans-serif;
+      }
+
+      /* 導航 */
+      .rpg-nav {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        padding: 6px 0 10px;
+      }
+
+      /* 出題區 */
+      .quiz-area {
+        background: #181d3a;
+        border: 1px solid #3f4b89;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 10px;
+        text-align: center;
+      }
+      .quiz-hint {
+        font-size: 1.1rem;
+        color: #aab;
+        margin-bottom: 4px;
+      }
+      .quiz-word {
+        font-size: 1.6rem;
+        font-weight: 700;
+        color: #fff;
+        margin: 6px 0 4px;
+        min-height: 2rem;
+      }
+      .quiz-pair {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #ffcc02;
+        margin: 4px 0 10px;
+        min-height: 1.8rem;
+      }
+      .quiz-btns {
+        display: flex;
+        gap: 16px;
+        justify-content: center;
+        margin: 10px 0 6px;
+      }
+      .quiz-btns button {
+        flex: 1;
+        max-width: 140px;
+        padding: 12px 0;
+        font-size: 1.2rem;
+        font-weight: 700;
+        border: none;
+        border-radius: 10px;
+        cursor: pointer;
+        transition: transform 0.1s;
+      }
+      .quiz-btns button:active { transform: scale(0.95); }
+      .btn-correct {
+        background: #2a7a4a;
+        color: #fff;
+      }
+      .btn-wrong {
+        background: #8a2a2a;
+        color: #fff;
+      }
+      .quiz-feedback {
+        font-size: 1rem;
+        min-height: 1.4rem;
+        margin-top: 4px;
+        font-weight: 600;
+      }
+      .quiz-stats {
+        font-size: 0.85rem;
+        color: #889;
+        margin-top: 6px;
+      }
+
+      /* 地圖區 */
+      .map-wrap {
+        display: flex;
+        justify-content: center;
+        margin-bottom: 8px;
+      }
+      #mapCanvas {
+        border: 2px solid #3f4b89;
+        border-radius: 8px;
+        display: block;
+      }
+
+      /* 方向控制 */
+      .dir-controls {
+        display: grid;
+        grid-template-areas:
+          ". up ."
+          "left . right"
+          ". down .";
+        grid-template-columns: 1fr 1fr 1fr;
+        grid-template-rows: 1fr 1fr 1fr;
+        gap: 4px;
+        max-width: 200px;
+        margin: 8px auto;
+      }
+      .dir-controls button {
+        padding: 12px 0;
+        font-size: 1.3rem;
+        font-weight: 700;
+        border: 1px solid #3f4b89;
+        border-radius: 8px;
+        background: #1a1f3d;
+        color: #ccd;
+        cursor: pointer;
+      }
+      .dir-controls button.active-dir {
+        background: #ff9800;
+        color: #000;
+        border-color: #ffcc02;
+      }
+      .dir-controls button:active { transform: scale(0.93); }
+      .dir-up    { grid-area: up; }
+      .dir-left  { grid-area: left; }
+      .dir-right { grid-area: right; }
+      .dir-down  { grid-area: down; }
+
+      /* 遊戲資訊 */
+      .game-info {
+        text-align: center;
+        color: #aab;
+        font-size: 0.9rem;
+        margin-top: 6px;
+      }
+      .game-info b { color: #ffcc02; }
+    </style>
+  </head>
+  <body style="background:#0f1222;color:#eee;">
+
+    <div class="rpg-page">
+      <!-- 導航 -->
+      <nav class="rpg-nav">
+        <a class="btn-link" href="./index.html">🧱 方塊</a>
+        <a class="btn-link" href="./snake.html">🐍 貪食蛇</a>
+        <a class="btn-link" href="./settings.html">⚙ 設定</a>
+      </nav>
+
+      <!-- 出題區 -->
+      <section class="quiz-area">
+        <div class="quiz-hint">這組配對正確嗎？</div>
+        <div class="quiz-word" id="quizWord">—</div>
+        <div class="quiz-pair" id="quizPair">—</div>
+        <div class="quiz-btns">
+          <button class="btn-correct" id="btnCorrect">✅ 對</button>
+          <button class="btn-wrong" id="btnWrong">❌ 錯</button>
+        </div>
+        <div class="quiz-feedback" id="quizFeedback">&nbsp;</div>
+        <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0 ｜ 步數 0</div>
+      </section>
+
+      <!-- 地圖 -->
+      <section class="map-wrap">
+        <canvas id="mapCanvas"></canvas>
+      </section>
+
+      <!-- 方向控制 -->
+      <div class="dir-controls">
+        <button class="dir-up" id="dirUp">⬆</button>
+        <button class="dir-left" id="dirLeft">⬅</button>
+        <button class="dir-right" id="dirRight">➡</button>
+        <button class="dir-down" id="dirDown">⬇</button>
+      </div>
+
+      <!-- 遊戲資訊 -->
+      <div class="game-info">
+        分數：<b id="scoreEl">0</b>｜
+        寶物：<b id="gemEl">0</b>/<b id="gemTotal">0</b>｜
+        關卡：<b id="levelEl">1</b>
+      </div>
+
+      <div style="text-align:center;margin-top:10px;">
+        <button id="restartBtn" style="padding:8px 24px;font-size:1rem;border-radius:8px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
+      </div>
+    </div>
+
+    <script src="./rpg.js"></script>
+  </body>
+</html>
+
