@@ -185,6 +185,14 @@ let unlockRemaining = 0; // 剩餘秒數
 let timerAnimFrame = null;
 let unlockEndTime = 0;
 
+// ── 自動遊玩 ──
+let autoPlayEnabled = false;
+let autoAnswerTimer = null;   // 自動答題計時器
+let autoWalkTimer = null;     // 自動走路計時器
+let autoWalkDir = 40;         // 目前自動走的方向 keyCode
+let autoWalkSteps = 0;        // 同方向剩餘步數
+let autoSpaceCounter = 0;     // 計步器，每 N 步按確認
+
 // ══════════════════════════════════════
 //  DOM
 // ══════════════════════════════════════
@@ -267,6 +275,9 @@ function nextQuiz() {
   quizFeedback.textContent = " ";
   quizFeedback.style.color = "";
   quizLocked = false;
+
+  // 自動遊玩：排程自動答題
+  if (autoPlayEnabled) scheduleAutoAnswer();
 }
 
 function answerQuiz(userSaidCorrect) {
@@ -310,6 +321,7 @@ function lockGame() {
   timerBar.style.width = "0%";
   if (unlockTimer) { clearTimeout(unlockTimer); unlockTimer = null; }
   if (timerAnimFrame) { cancelAnimationFrame(timerAnimFrame); timerAnimFrame = null; }
+  stopAutoWalk();   // 鎖住時停止自動走路
 }
 
 function unlockGame(seconds) {
@@ -342,6 +354,9 @@ function unlockGame(seconds) {
     lockGame();
     nextQuiz();
   }, seconds * 1000);
+
+  // 自動遊玩：解鎖後啟動自動走路
+  if (autoPlayEnabled) startAutoWalk();
 }
 
 // ══════════════════════════════════════
@@ -362,6 +377,10 @@ function updateUI() {
 function restartGame() {
   syncStatsToSheets();
 
+  // 停掉所有自動遊玩計時器（lockGame 也會停 autoWalk）
+  stopAutoAnswer();
+  stopAutoWalk();
+
   groupData = loadGroupData();
   const wordRows = loadWordRows();
   allPairs = buildPairsForQuiz(wordRows);
@@ -377,6 +396,94 @@ function restartGame() {
 
   // 重新載入仙劍
   gameFrame.src = gameFrame.src;
+}
+
+// ══════════════════════════════════════
+//  自動遊玩 (Auto-Play)
+// ══════════════════════════════════════
+
+const autoPlayBtn = document.getElementById("autoPlayBtn");
+
+const DIR_KEYS = [37, 38, 39, 40];  // ← ↑ → ↓
+
+function toggleAutoPlay() {
+  autoPlayEnabled = !autoPlayEnabled;
+  autoPlayBtn.textContent = autoPlayEnabled ? "🤖 自動 ON" : "🤖 自動";
+  autoPlayBtn.style.background = autoPlayEnabled ? "#2a7a4a" : "#1a1f3d";
+  autoPlayBtn.style.color = autoPlayEnabled ? "#fff" : "#ccd";
+
+  if (autoPlayEnabled) {
+    // 如果目前是待答題狀態（quizLocked=false），馬上啟動自動答題
+    if (!quizLocked && currentQuiz) {
+      scheduleAutoAnswer();
+    }
+    // 如果目前是解鎖狀態，馬上啟動自動走路
+    if (isGameUnlocked()) {
+      startAutoWalk();
+    }
+  } else {
+    stopAutoAnswer();
+    stopAutoWalk();
+  }
+}
+
+/** 排程自動答題（延遲 0.8~1.5 秒後答對） */
+function scheduleAutoAnswer() {
+  stopAutoAnswer();
+  if (!autoPlayEnabled || !currentQuiz) return;
+
+  const delay = 800 + Math.random() * 700;
+  autoAnswerTimer = setTimeout(() => {
+    if (!autoPlayEnabled || !currentQuiz || quizLocked) return;
+    // 答對：如果 isCorrect=true 就按「對」，否則按「錯」
+    answerQuiz(currentQuiz.isCorrect);
+  }, delay);
+}
+
+function stopAutoAnswer() {
+  if (autoAnswerTimer) { clearTimeout(autoAnswerTimer); autoAnswerTimer = null; }
+}
+
+/** 啟動自動走路（解鎖期間每 250ms 送一個方向鍵） */
+function startAutoWalk() {
+  stopAutoWalk();
+  if (!autoPlayEnabled) return;
+
+  autoWalkSteps = 0;
+  autoSpaceCounter = 0;
+  pickNewDirection();
+
+  autoWalkTimer = setInterval(() => {
+    if (!autoPlayEnabled || !isGameUnlocked()) {
+      stopAutoWalk();
+      return;
+    }
+
+    autoSpaceCounter++;
+
+    // 每 6~10 步按一次確認（與 NPC 互動 / 推進劇情）
+    if (autoSpaceCounter % (6 + Math.floor(Math.random() * 5)) === 0) {
+      sendKeyToGame(32);  // Space
+      return;
+    }
+
+    // 走完該方向的步數 → 換方向
+    if (autoWalkSteps <= 0) {
+      pickNewDirection();
+    }
+
+    sendKeyToGame(autoWalkDir);
+    autoWalkSteps--;
+  }, 250);
+}
+
+function stopAutoWalk() {
+  if (autoWalkTimer) { clearInterval(autoWalkTimer); autoWalkTimer = null; }
+}
+
+function pickNewDirection() {
+  autoWalkDir = DIR_KEYS[Math.floor(Math.random() * DIR_KEYS.length)];
+  autoWalkSteps = 3 + Math.floor(Math.random() * 6);  // 3~8 步
 }
 
 // ══════════════════════════════════════
@@ -463,6 +570,7 @@ function init() {
     btnCorrect.addEventListener("click", () => { console.log("[RPG] btnCorrect clicked"); answerQuiz(true); });
     btnWrong.addEventListener("click", () => { console.log("[RPG] btnWrong clicked"); answerQuiz(false); });
     restartBtn.addEventListener("click", restartGame);
+    autoPlayBtn.addEventListener("click", toggleAutoPlay);
 
     // 點擊遮罩時提示
     gameOverlay.addEventListener("click", () => {
