@@ -207,9 +207,12 @@ const streakEl      = document.getElementById("streakEl");
 // ══════════════════════════════════════
 
 function nextQuiz() {
+  console.log("[RPG] nextQuiz called, allPairs:", allPairs.length);
   if (allPairs.length < 2) {
-    quizWordEl.textContent = "單字不足";
+    quizWordEl.textContent = "⚠ 單字不足（" + allPairs.length + " 組）";
     quizPairEl.textContent = "請到設定頁面新增至少 2 組單字";
+    quizFeedback.textContent = "需要 ≥ 2 組單字才能出題";
+    quizFeedback.style.color = "#f7b955";
     return;
   }
 
@@ -244,6 +247,7 @@ function nextQuiz() {
 }
 
 function answerQuiz(userSaidCorrect) {
+  console.log("[RPG] answerQuiz called:", userSaidCorrect, "currentQuiz:", !!currentQuiz, "quizLocked:", quizLocked);
   if (!currentQuiz || quizLocked) return;
   quizLocked = true;
 
@@ -352,13 +356,90 @@ function restartGame() {
   gameFrame.src = gameFrame.src;
 }
 
+// ══════════════════════════════════════
+//  虛擬手把 → 送鍵盤事件到 iframe
+// ══════════════════════════════════════
+
+/** 遊戲是否已解鎖（overlay 隱藏時） */
+function isGameUnlocked() {
+  return gameOverlay.classList.contains("unlocked");
+}
+
+/** 把 keyCode 送進仙劍 iframe（僅解鎖時可用） */
+function sendKeyToGame(keyCode) {
+  if (!isGameUnlocked()) return;     // 鎖住時忽略手把
+
+  // 方法 1：直接 dispatch（同源時可用）
+  try {
+    const doc = gameFrame.contentDocument || (gameFrame.contentWindow && gameFrame.contentWindow.document);
+    if (doc) {
+      const ev = doc.createEvent("Events");
+      ev.initEvent("keydown", true, true);
+      ev.keyCode = keyCode;
+      ev.which = keyCode;
+      doc.dispatchEvent(ev);
+      return;
+    }
+  } catch (_) { /* 跨域，改用 postMessage */ }
+
+  // 方法 2：postMessage（需 rpg-bridge.js）
+  try {
+    gameFrame.contentWindow.postMessage({ type: "rpg-key", keyCode }, "*");
+  } catch (e2) {
+    console.warn("[RPG] sendKeyToGame failed:", e2);
+  }
+}
+
+function setupVpad() {
+  const vpad = document.getElementById("vpad");
+  if (!vpad) return;
+
+  const allBtns = vpad.querySelectorAll("button[data-key]");
+
+  allBtns.forEach((btn) => {
+    const keyCode = parseInt(btn.getAttribute("data-key"), 10);
+    if (isNaN(keyCode)) return;
+
+    let repeatTimer = null;
+
+    function startPress(e) {
+      e.preventDefault();
+      sendKeyToGame(keyCode);
+      // 長按連發（方向鍵用，200ms 後每 120ms 重複）
+      if ([37, 38, 39, 40].includes(keyCode)) {
+        clearInterval(repeatTimer);
+        repeatTimer = setInterval(() => sendKeyToGame(keyCode), 120);
+      }
+    }
+    function endPress(e) {
+      e.preventDefault();
+      clearInterval(repeatTimer);
+      repeatTimer = null;
+    }
+
+    // 觸控
+    btn.addEventListener("touchstart", startPress, { passive: false });
+    btn.addEventListener("touchend", endPress, { passive: false });
+    btn.addEventListener("touchcancel", endPress, { passive: false });
+    // 滑鼠（桌面測試用）
+    btn.addEventListener("mousedown", startPress);
+    btn.addEventListener("mouseup", endPress);
+    btn.addEventListener("mouseleave", endPress);
+  });
+}
+
+// ══════════════════════════════════════
+//  初始化
+// ══════════════════════════════════════
+
 function init() {
   try {
     preventZoom();
 
-    tapBind(btnCorrect, () => answerQuiz(true));
-    tapBind(btnWrong, () => answerQuiz(false));
-    tapBind(restartBtn, restartGame);
+    // 出題按鈕
+    btnCorrect.addEventListener("click", () => { console.log("[RPG] btnCorrect clicked"); answerQuiz(true); });
+    btnWrong.addEventListener("click", () => { console.log("[RPG] btnWrong clicked"); answerQuiz(false); });
+    restartBtn.addEventListener("click", restartGame);
 
     // 點擊遮罩時提示
     gameOverlay.addEventListener("click", () => {
@@ -366,19 +447,26 @@ function init() {
       quizFeedback.style.color = "#f7b955";
     });
 
+    // 虛擬手把
+    setupVpad();
+
     // 載入單字並開始
     groupData = loadGroupData();
     const wordRows = loadWordRows();
     allPairs = buildPairsForQuiz(wordRows);
     console.log("[RPG] loaded", allPairs.length, "pairs");
+    if (allPairs.length > 0) {
+      console.log("[RPG] sample pair:", allPairs[0].hint, "→", allPairs[0].answer);
+    }
 
     updateUI();
     nextQuiz();
+    console.log("[RPG] init done, currentQuiz:", currentQuiz ? "set" : "null");
 
   } catch (err) {
     console.error("RPG init error:", err);
-    quizWordEl.textContent = "❌ 初始化錯誤";
-    quizPairEl.textContent = err.message;
+    if (quizWordEl) quizWordEl.textContent = "❌ 初始化錯誤";
+    if (quizPairEl) quizPairEl.textContent = err.message;
   }
 }
 

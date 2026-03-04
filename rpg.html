@@ -154,6 +154,75 @@
         margin-top: 6px;
       }
       .game-info b { color: #ffcc02; }
+
+      /* ── 虛擬手把 ── */
+      .vpad {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 10px 8px;
+        user-select: none;
+        -webkit-user-select: none;
+        touch-action: none;
+      }
+      /* D-pad 容器 */
+      .dpad {
+        display: grid;
+        grid-template-columns: 52px 52px 52px;
+        grid-template-rows: 52px 52px 52px;
+        gap: 2px;
+      }
+      .dpad button {
+        width: 52px;
+        height: 52px;
+        border: none;
+        border-radius: 10px;
+        font-size: 1.3rem;
+        font-weight: 700;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #2a2f55;
+        color: #ccd;
+        transition: background 0.1s, transform 0.08s;
+      }
+      .dpad button:active {
+        background: #3f4b89;
+        transform: scale(0.92);
+      }
+      .dpad .blank {
+        visibility: hidden;
+      }
+      /* 動作鍵 */
+      .action-btns {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .action-btns button {
+        width: 72px;
+        height: 52px;
+        border: none;
+        border-radius: 12px;
+        font-size: 0.9rem;
+        font-weight: 700;
+        cursor: pointer;
+        transition: background 0.1s, transform 0.08s;
+      }
+      .action-btns button:active {
+        transform: scale(0.92);
+      }
+      .btn-action-confirm {
+        background: #2a7a4a;
+        color: #fff;
+      }
+      .btn-action-confirm:active { background: #35a05f; }
+      .btn-action-menu {
+        background: #5a4020;
+        color: #ffcc02;
+      }
+      .btn-action-menu:active { background: #7a5830; }
     </style>
   </head>
   <body style="background:#0f1222;color:#eee;">
@@ -173,8 +242,8 @@
         <div class="quiz-word" id="quizWord">—</div>
         <div class="quiz-pair" id="quizPair">—</div>
         <div class="quiz-btns">
-          <button class="btn-correct" id="btnCorrect">✅ 對</button>
-          <button class="btn-wrong" id="btnWrong">❌ 錯</button>
+          <button class="btn-correct" id="btnCorrect" type="button" onclick="answerQuiz(true)">✅ 對</button>
+          <button class="btn-wrong" id="btnWrong" type="button" onclick="answerQuiz(false)">❌ 錯</button>
         </div>
         <div class="quiz-feedback" id="quizFeedback">&nbsp;</div>
         <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0</div>
@@ -189,6 +258,25 @@
         </div>
         <iframe id="gameFrame" src="./xianjian-master/index.html" sandbox="allow-scripts allow-same-origin"></iframe>
       </section>
+
+      <!-- 虛擬手把 -->
+      <div class="vpad" id="vpad">
+        <div class="dpad">
+          <button class="blank"></button>
+          <button data-key="38">▲</button>
+          <button class="blank"></button>
+          <button data-key="37">◀</button>
+          <button data-key="32" style="font-size:0.7rem;color:#ffcc02;">確認</button>
+          <button data-key="39">▶</button>
+          <button class="blank"></button>
+          <button data-key="40">▼</button>
+          <button class="blank"></button>
+        </div>
+        <div class="action-btns">
+          <button class="btn-action-confirm" data-key="32">⭕ 確認</button>
+          <button class="btn-action-menu" data-key="27">☰ 選單</button>
+        </div>
+      </div>
 
       <!-- 遊戲資訊 -->
       <div class="game-info">

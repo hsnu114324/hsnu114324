@@ -7,8 +7,8 @@
 	<meta name="apple-mobile-web-app-status-bar-style" content="black" />
 	<link rel="apple-touch-startup-image" href="pal.ico" />
 	<link rel="apple-touch-icon" href="pal.ico"/>
-	<title>ÏÉ½£ÆæÏÀ´«</title>
-	<meta name="description" content="ÏÉ½£ÆæÏÀ´«html5ÒÆÖ²°æ">
+	<title>ï¿½É½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½</title>
+	<meta name="description" content="ï¿½É½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½html5ï¿½ï¿½Ö²ï¿½ï¿½">
 
 	<style>
 
@@ -68,7 +68,7 @@ canvas {zoom: 2}
 		<input type="button" value="stop" onchange="javascript:for(n in Npcs){Npcs[n].stop();}update();"><br/>
 	</div>
 </div>
-<!--ËäÈ»¿í¸ßÎª640.400, µ«Êµ¼Ê 320x200µÄ·Å´ó°æ-->
+<!--ï¿½ï¿½È»ï¿½ï¿½ï¿½ï¿½Îª640.400, ï¿½ï¿½Êµï¿½ï¿½ 320x200ï¿½Ä·Å´ï¿½ï¿½-->
 
 <canvas id="map" width="2048" height="2048"></canvas>
 <canvas id="back" width="320" height="200"></canvas>
@@ -84,7 +84,7 @@ canvas {zoom: 2}
 
 
 
-<!-- Lang, Hex, ByteArray, ByteView, Canvas ÕâÐ©Í¨ÓÃµÄ·½·¨-->
+<!-- Lang, Hex, ByteArray, ByteView, Canvas ï¿½ï¿½Ð©Í¨ï¿½ÃµÄ·ï¿½ï¿½ï¿½-->
 <script src="util-lang.js"></script>
 <script src="util-hex.js"></script>
 <script src="util-view.js"></script>
@@ -108,7 +108,7 @@ canvas {zoom: 2}
 
 <script>
 
-	//Ð´ÈëÈ«¾ÖÖÐ, ·½±ãµ÷ÊÔ
+	//Ð´ï¿½ï¿½È«ï¿½ï¿½ï¿½ï¿½, ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½
 	window.hex = Hex.toHex2;
 	window.toHex = Hex.toHex2;
 	window.toHex4 = Hex.toHex4;
@@ -118,14 +118,14 @@ canvas {zoom: 2}
 		D.get('#console').innerHTML += str + '<br/>';
 	}
 
-	//ÓÃÔÚdraw.jsÖÐ
+	//ï¿½ï¿½ï¿½ï¿½draw.jsï¿½ï¿½
 	var context = document.getElementById('canvas').getContext('2d');
 	var backContext = document.getElementById('back').getContext('2d');
 	var mapContext = document.getElementById('map').getContext('2d');
 	var frontContext = document.getElementById('front').getContext('2d');
 	var tempContext = document.getElementById('temp').getContext('2d');
 
-	//ÓÃÔÚtalk.jsÖÐ
+	//ï¿½ï¿½ï¿½ï¿½talk.jsï¿½ï¿½
 	var talkContext = document.getElementById('talk').getContext('2d');
 	var startupContext = document.getElementById('startup').getContext('2d');
 	//context.translate(-300, -200);
@@ -156,7 +156,7 @@ canvas {zoom: 2}
 <script src="esc-item.js"></script>
 
 <script>
-	/////////  Æô¶¯  ///////////
+	/////////  ï¿½ï¿½ï¿½ï¿½  ///////////
 
 	ready(function() {
 
@@ -185,7 +185,7 @@ canvas {zoom: 2}
 			//nextSceneId = 3;
 
 			nextSceneId = 4;
-			setRolePos(36, 58, 0);			//3.	46.	ÉèÖÃpos: 41, 18
+			setRolePos(36, 58, 0);			//3.	46.	ï¿½ï¿½ï¿½ï¿½pos: 41, 18
 
 
 			toggleScene();
@@ -194,23 +194,23 @@ canvas {zoom: 2}
 
 
 
-		//setInterval(drawCanvas, 1000 / frameCount);		//30Ö¡/Ãë
-		//setInterval(drawLoop, 1000 / 3);					//30Ö¡/Ãë
+		//setInterval(drawCanvas, 1000 / frameCount);		//30Ö¡/ï¿½ï¿½
+		//setInterval(drawLoop, 1000 / 3);					//30Ö¡/ï¿½ï¿½
 
 	});
 
 	
-	//******  ½Å±¾ÒýÇæ  ******/
+	//******  ï¿½Å±ï¿½ï¿½ï¿½ï¿½ï¿½  ******/
 	function commonEnter() {
 
-		setRolePos(0x31, 0x5E, 0);			//3.	46.	ÉèÖÃpos: 41, 18
-		setRoleTile(0, 0x2, 0);				//4.	65. ÉèÖÃÐÎÏó00, C1
-		setRoleIndex(0, 0, 0);				//5.	15. ÉèÖÃ·½Ïò0
-		setRoleGroup(1);					//6.	75  ·Ö×é
+		setRolePos(0x31, 0x5E, 0);			//3.	46.	ï¿½ï¿½ï¿½ï¿½pos: 41, 18
+		setRoleTile(0, 0x2, 0);				//4.	65. ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½00, C1
+		setRoleIndex(0, 0, 0);				//5.	15. ï¿½ï¿½ï¿½Ã·ï¿½ï¿½ï¿½0
+		setRoleGroup(1);					//6.	75  ï¿½ï¿½ï¿½ï¿½
 	}
 
 
-//¾Æ½£ÏÉ, Ê¹ÓÃ¾Æ
+//ï¿½Æ½ï¿½ï¿½ï¿½, Ê¹ï¿½Ã¾ï¿½
 //Npc.startScript({trigScr:0x9aec},true)
 
 //to scene 4
@@ -228,6 +228,7 @@ canvas {zoom: 2}
 
 
 <script src="tool-debug.js"></script>
+<script src="rpg-bridge.js"></script>
 
 <!--
 <canvas id="PerformanceCanvas" width="1024" height="400"></canvas>
