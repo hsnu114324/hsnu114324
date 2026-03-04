@@ -244,7 +244,7 @@ function resizeCanvas() {
 }
 
 function drawMap() {
-  if (!ctx) return;
+  if (!ctx || map.length === 0) return;
   const W = canvas.width, H = canvas.height;
 
   // 背景
