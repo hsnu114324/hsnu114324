@@ -90,51 +90,61 @@
         margin-top: 6px;
       }
 
-      /* 地圖區 */
-      .map-wrap {
-        display: flex;
-        justify-content: center;
+      /* 仙劍遊戲區 */
+      .game-container {
+        position: relative;
+        width: 100%;
         margin-bottom: 8px;
-      }
-      #mapCanvas {
         border: 2px solid #3f4b89;
         border-radius: 8px;
+        overflow: hidden;
+      }
+      .game-container iframe {
         display: block;
+        width: 100%;
+        height: 420px;
+        border: none;
+        background: #000;
       }
-
-      /* 方向控制 */
-      .dir-controls {
-        display: grid;
-        grid-template-areas:
-          ". up ."
-          "left . right"
-          ". down .";
-        grid-template-columns: 1fr 1fr 1fr;
-        grid-template-rows: 1fr 1fr 1fr;
-        gap: 4px;
-        max-width: 200px;
-        margin: 8px auto;
+      /* 遮罩：答對前阻擋互動 */
+      .game-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        z-index: 10;
+        transition: opacity 0.3s;
+        pointer-events: auto;
       }
-      .dir-controls button {
-        padding: 12px 0;
-        font-size: 1.3rem;
+      .game-overlay.unlocked {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .game-overlay .lock-text {
+        color: #ffcc02;
+        font-size: 1.2rem;
         font-weight: 700;
-        border: 1px solid #3f4b89;
-        border-radius: 8px;
-        background: #1a1f3d;
-        color: #ccd;
-        cursor: pointer;
+        text-shadow: 0 2px 8px rgba(0,0,0,0.8);
       }
-      .dir-controls button.active-dir {
-        background: #ff9800;
-        color: #000;
-        border-color: #ffcc02;
+      .game-overlay .lock-sub {
+        color: #aab;
+        font-size: 0.9rem;
+        margin-top: 6px;
       }
-      .dir-controls button:active { transform: scale(0.93); }
-      .dir-up    { grid-area: up; }
-      .dir-left  { grid-area: left; }
-      .dir-right { grid-area: right; }
-      .dir-down  { grid-area: down; }
+      .timer-bar {
+        height: 4px;
+        background: #ffcc02;
+        width: 100%;
+        position: absolute;
+        top: 0;
+        left: 0;
+        z-index: 11;
+        transition: width linear;
+        border-radius: 2px;
+      }
 
       /* 遊戲資訊 */
       .game-info {
@@ -152,8 +162,9 @@
       <!-- 導航 -->
       <nav class="rpg-nav">
         <a class="btn-link" href="./index.html">🧱 方塊</a>
-        <a class="btn-link" href="./snake.html">🐍 貪食蛇</a>
+        <a class="btn-link" href="./snake.html">🐍 蛇</a>
         <a class="btn-link" href="./settings.html">⚙ 設定</a>
+        <button id="restartBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
       </nav>
 
       <!-- 出題區 -->
@@ -166,35 +177,26 @@
           <button class="btn-wrong" id="btnWrong">❌ 錯</button>
         </div>
         <div class="quiz-feedback" id="quizFeedback">&nbsp;</div>
-        <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0 ｜ 步數 0</div>
+        <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0</div>
       </section>
 
-      <!-- 地圖 -->
-      <section class="map-wrap">
-        <canvas id="mapCanvas"></canvas>
+      <!-- 仙劍遊戲 -->
+      <section class="game-container" id="gameContainer">
+        <div class="timer-bar" id="timerBar" style="width:0%"></div>
+        <div class="game-overlay" id="gameOverlay">
+          <div class="lock-text">🔒 請先回答上方題目</div>
+          <div class="lock-sub">答對後可操作遊戲 5 秒</div>
+        </div>
+        <iframe id="gameFrame" src="./xianjian-master/index.html" sandbox="allow-scripts allow-same-origin"></iframe>
       </section>
-
-      <!-- 方向控制 -->
-      <div class="dir-controls">
-        <button class="dir-up" id="dirUp">⬆</button>
-        <button class="dir-left" id="dirLeft">⬅</button>
-        <button class="dir-right" id="dirRight">➡</button>
-        <button class="dir-down" id="dirDown">⬇</button>
-      </div>
 
       <!-- 遊戲資訊 -->
       <div class="game-info">
-        分數：<b id="scoreEl">0</b>｜
-        寶物：<b id="gemEl">0</b>/<b id="gemTotal">0</b>｜
-        關卡：<b id="levelEl">1</b>
-      </div>
-
-      <div style="text-align:center;margin-top:10px;">
-        <button id="restartBtn" style="padding:8px 24px;font-size:1rem;border-radius:8px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
+        答對可操作 <b id="rewardSeconds">5</b> 秒 ｜
+        連續答對：<b id="streakEl">0</b>
       </div>
     </div>
 
     <script src="./rpg.js"></script>
   </body>
 </html>
-
