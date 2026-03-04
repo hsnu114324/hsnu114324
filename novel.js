@@ -352,9 +352,8 @@ let quizLocked = false;
 let correctCount = 0;
 let wrongCount = 0;
 let streak = 0;
-let novelPos = 0;             // 小說已顯示到第幾個字
-let displayedLines = [];      // 目前畫面上的行 DOM 元素
-let currentLineText = "";     // 目前行累積的文字
+let novelPos = 0;             // 小說已顯示到第幾個字（含換行）
+let displayedBlocks = [];     // 目前畫面上的區塊 DOM 元素
 
 // ── 自動遊玩 ──
 let autoPlayEnabled = false;
@@ -382,29 +381,38 @@ const streakEl         = document.getElementById("streakEl");
 //  小說顯示邏輯
 // ══════════════════════════════════════
 
-/** 將接下來 n 個字加入小說區 */
-function revealChars(n) {
-  if (novelPos >= NOVEL_TEXT.length) return;  // 已讀完
+/**
+ * 從 novelPos 位置取出下 n 個「可見字」（跳過換行符）。
+ * 回傳 { text: 取出的可見字, newPos: 新的 novelPos }
+ */
+function takeVisibleChars(startPos, n) {
+  let collected = "";
+  let pos = startPos;
+  while (collected.length < n && pos < NOVEL_TEXT.length) {
+    const ch = NOVEL_TEXT[pos];
+    pos++;
+    if (ch === "\n") continue;   // 跳過換行，不計入 5 字
+    collected += ch;
+  }
+  return { text: collected, newPos: pos };
+}
 
-  const end = Math.min(novelPos + n, NOVEL_TEXT.length);
-  const chunk = NOVEL_TEXT.slice(novelPos, end);
-  novelPos = end;
+/** 答對一次 → 取 5 個可見字，建立一個新區塊 */
+function revealChars(n) {
+  if (novelPos >= NOVEL_TEXT.length) return;
+
+  const result = takeVisibleChars(novelPos, n);
+  if (result.text.length === 0) return;
+  novelPos = result.newPos;
 
   // 存進度
   localStorage.setItem(NOVEL_SAVE_KEY, String(novelPos));
 
-  // 逐字加到目前的行
-  for (const ch of chunk) {
-    if (ch === "\n") {
-      // 換行 → 結束目前行，開新行
-      finishCurrentLine();
-      continue;
-    }
-    currentLineText += ch;
-  }
+  // 建立新區塊
+  const blockEl = appendBlock(result.text, true);
 
-  // 更新目前行的顯示（如果有累積文字）
-  updateCurrentLine();
+  // 1 秒後新區塊從金色變回正常色
+  setTimeout(() => { if (blockEl) blockEl.classList.remove("new"); }, 1000);
 
   // 捲動到最底
   novelScroll.scrollTop = novelScroll.scrollHeight;
@@ -413,42 +421,21 @@ function revealChars(n) {
   updateProgress();
 }
 
-/** 結束目前行，新起一行 */
-function finishCurrentLine() {
-  if (currentLineText.length > 0) {
-    // 已有文字的行不再標記為 new
-    const el = getCurrentLineEl();
-    if (el) {
-      el.classList.remove("new");
-    }
+/** 在小說區底部新增一個區塊，回傳該元素 */
+function appendBlock(text, isNew) {
+  const el = document.createElement("span");
+  el.className = isNew ? "novel-chunk new" : "novel-chunk";
+  el.textContent = text;
+  novelScroll.appendChild(el);
+  displayedBlocks.push(el);
+
+  // 超過上限 → 移除最早的區塊
+  while (displayedBlocks.length > MAX_VISIBLE_LINES) {
+    const oldest = displayedBlocks.shift();
+    oldest.classList.add("fading");
+    setTimeout(() => oldest.remove(), 400);
   }
-  currentLineText = "";
-  _currentLineEl = null;
-}
-
-let _currentLineEl = null;
-
-function getCurrentLineEl() {
-  if (!_currentLineEl) {
-    _currentLineEl = document.createElement("div");
-    _currentLineEl.className = "novel-line new";
-    novelScroll.appendChild(_currentLineEl);
-    displayedLines.push(_currentLineEl);
-
-    // 超過上限 → 移除最早的行
-    while (displayedLines.length > MAX_VISIBLE_LINES) {
-      const oldest = displayedLines.shift();
-      oldest.classList.add("fading");
-      setTimeout(() => oldest.remove(), 400);
-    }
-  }
-  return _currentLineEl;
-}
-
-function updateCurrentLine() {
-  if (currentLineText.length === 0) return;
-  const el = getCurrentLineEl();
-  el.textContent = currentLineText;
+  return el;
 }
 
 function updateProgress() {
@@ -459,13 +446,9 @@ function updateProgress() {
 
 /** 從存檔還原已顯示的小說 */
 function restoreNovel() {
-  // 清空顯示
   novelScroll.innerHTML = "";
-  displayedLines = [];
-  _currentLineEl = null;
-  currentLineText = "";
+  displayedBlocks = [];
 
-  // 載入存檔位置
   const saved = parseInt(localStorage.getItem(NOVEL_SAVE_KEY), 10);
   const targetPos = (!isNaN(saved) && saved > 0) ? Math.min(saved, NOVEL_TEXT.length) : 0;
 
@@ -475,41 +458,25 @@ function restoreNovel() {
     return;
   }
 
-  // 快速重建：直接按換行分段
-  const text = NOVEL_TEXT.slice(0, targetPos);
-  const paragraphs = text.split("\n");
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const p = paragraphs[i];
-    if (p.length > 0) {
-      const el = document.createElement("div");
-      el.className = "novel-line";
-      el.textContent = p;
-      novelScroll.appendChild(el);
-      displayedLines.push(el);
-    }
-
-    // 如果不是最後一段，結束這行
-    if (i < paragraphs.length - 1) {
-      _currentLineEl = null;
-      currentLineText = "";
-    } else {
-      // 最後一段可能尚未換行（正在進行的行）
-      currentLineText = p;
-      _currentLineEl = displayedLines[displayedLines.length - 1] || null;
-    }
+  // 快速重建：從頭到 targetPos，每 5 個可見字一塊
+  let pos = 0;
+  const blocks = [];
+  while (pos < targetPos) {
+    const result = takeVisibleChars(pos, CHARS_PER_ANSWER);
+    if (result.text.length === 0) break;
+    blocks.push(result.text);
+    pos = result.newPos;
   }
 
-  // 限制行數
-  while (displayedLines.length > MAX_VISIBLE_LINES) {
-    const oldest = displayedLines.shift();
-    oldest.remove();
+  // 只顯示最後 MAX_VISIBLE_LINES 個區塊（避免頁面太長）
+  const startIdx = Math.max(0, blocks.length - MAX_VISIBLE_LINES);
+  for (let i = startIdx; i < blocks.length; i++) {
+    appendBlock(blocks[i], false);
   }
 
   novelPos = targetPos;
   updateProgress();
 
-  // 捲動到最底
   setTimeout(() => { novelScroll.scrollTop = novelScroll.scrollHeight; }, 50);
 }
 
@@ -667,9 +634,7 @@ function resetNovelProgress() {
   localStorage.removeItem(NOVEL_SAVE_KEY);
   novelPos = 0;
   novelScroll.innerHTML = "";
-  displayedLines = [];
-  _currentLineEl = null;
-  currentLineText = "";
+  displayedBlocks = [];
   updateProgress();
 }
 
