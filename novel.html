@@ -66,84 +66,94 @@
         margin-bottom: 10px;
       }
 
-      /* 卡槽列（中文提示 + 答案放置區） */
+      /* combo 群組 */
       .match-slots {
         display: flex;
-        gap: 8px;
+        gap: 10px;
         justify-content: center;
         margin-bottom: 12px;
         flex-wrap: wrap;
       }
-      .match-slot {
-        flex: 1;
-        min-width: 80px;
-        max-width: 130px;
+      .combo-group {
         background: #12162e;
-        border: 2px dashed #3f4b89;
+        border: 2px solid #2a2f55;
         border-radius: 10px;
-        padding: 8px 4px;
-        cursor: pointer;
-        transition: border-color 0.2s, background 0.2s, transform 0.15s;
-        position: relative;
+        padding: 8px 6px 6px;
+        min-width: 90px;
+        transition: border-color 0.3s, background 0.3s;
       }
-      .match-slot:active { transform: scale(0.97); }
-      .match-slot.highlight {
-        border-color: #5bc0de;
-        background: #1a2548;
-      }
-      .match-slot.correct {
+      .combo-group.correct {
         border-color: #5fd18d;
-        border-style: solid;
         background: #1a3a2a;
       }
-      .match-slot.wrong-flash {
-        animation: slotWrong 0.4s ease;
-      }
-      @keyframes slotWrong {
-        0%, 100% { border-color: #3f4b89; }
-        50% { border-color: #ff5555; background: #3a1a1a; }
-      }
-      .slot-hint {
-        font-size: 1.1rem;
+      .combo-hint {
+        font-size: 1rem;
         font-weight: 700;
         color: #fff;
         margin-bottom: 6px;
         line-height: 1.3;
         word-break: break-all;
       }
-      .slot-answer {
+
+      /* 每個 block 的獨立小卡槽 */
+      .block-slot-row {
+        display: flex;
+        gap: 4px;
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+      .block-slot {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: #1a1f3d;
+        border: 2px dashed #3f4b89;
+        border-radius: 6px;
+        padding: 4px 8px;
+        min-width: 32px;
         min-height: 32px;
-        line-height: 32px;
         font-size: 0.85rem;
         font-weight: 600;
-        color: #667;
-        border-top: 1px solid #2a2f55;
-        padding-top: 4px;
-      }
-      .slot-answer.filled {
-        color: #5fd18d;
-        font-size: 0.95rem;
-      }
-      /* 多格佔位符 */
-      .block-placeholder {
-        display: inline-block;
-        background: #1a1f3d;
-        border: 1px dashed #3f4b89;
-        border-radius: 4px;
-        padding: 2px 6px;
-        margin: 2px 1px;
-        font-size: 0.8rem;
         color: #556;
-        min-width: 24px;
-        text-align: center;
-        transition: all 0.3s;
+        cursor: pointer;
+        transition: all 0.2s;
+        user-select: none;
       }
-      .block-placeholder.filled {
+      .block-slot:active { transform: scale(0.95); }
+      .block-slot.highlight {
+        border-color: #5bc0de;
+        background: #1a2548;
+        box-shadow: 0 0 6px rgba(91,192,222,0.3);
+      }
+      .block-slot.drop-target {
+        border-color: #ffcc02 !important;
+        background: #2a2820 !important;
+        transform: scale(1.08);
+        box-shadow: 0 0 10px rgba(255,204,2,0.4);
+      }
+      .block-slot.prefilled {
+        background: #1e2a45;
+        border-color: #5bc0de;
+        border-style: solid;
+        color: #8bc6e0;
+        font-weight: 700;
+        cursor: default;
+        opacity: 0.85;
+      }
+      .block-slot.filled {
         background: #1a3a2a;
         border-color: #5fd18d;
         border-style: solid;
         color: #5fd18d;
         font-weight: 700;
+        cursor: default;
+      }
+      .block-slot.wrong-flash {
+        animation: slotWrong 0.4s ease;
+      }
+      @keyframes slotWrong {
+        0%, 100% { border-color: #3f4b89; }
+        50% { border-color: #ff5555; background: #3a1a1a; }
       }
 
       /* 回饋訊息 */
@@ -217,11 +227,7 @@
         transform: translate(-50%, -50%);
         white-space: nowrap;
       }
-      .match-slot.drop-target {
-        border-color: #ffcc02 !important;
-        background: #2a2820 !important;
-        transform: scale(1.05);
-      }
+      /* (drop-target 已移至 .block-slot.drop-target) */
 
       /* 統計 */
       .match-stats {
@@ -396,7 +402,7 @@
 
       <!-- 配對遊戲區 -->
       <section class="match-area">
-        <div class="match-title">將德文卡片配對到正確的中文提示</div>
+        <div class="match-title">將德文卡片拖入正確的小卡槽（💡 藍色格為提示）</div>
         <div class="match-slots" id="matchSlots"></div>
         <div class="match-feedback" id="matchFeedback">&nbsp;</div>
         <div class="match-cards" id="matchCards"></div>
