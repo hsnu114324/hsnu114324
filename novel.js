@@ -655,12 +655,15 @@ function onCardTouchStart(cardIdx, cardEl, e) {
 function onCardTouchMove(e) {
   if (!dragState) return;
 
+  // 只要手指按住卡片就阻止頁面捲動
+  e.preventDefault();
+
   const touch = e.touches[0];
   const dx = touch.clientX - dragState.startX;
   const dy = touch.clientY - dragState.startY;
 
-  // 距離超過 10px 才開始拖曳（避免誤觸）
-  if (!dragState.dragging && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+  // 距離超過 8px 才開始拖曳（避免誤觸）
+  if (!dragState.dragging && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
     dragState.dragging = true;
     dragState.cardEl.classList.add("dragging");
 
@@ -679,7 +682,6 @@ function onCardTouchMove(e) {
   }
 
   if (dragState.dragging && dragState.ghostEl) {
-    e.preventDefault(); // 防止頁面捲動
     dragState.ghostEl.style.left = touch.clientX + "px";
     dragState.ghostEl.style.top = touch.clientY + "px";
 
