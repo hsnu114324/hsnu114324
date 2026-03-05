@@ -124,6 +124,27 @@
         color: #5fd18d;
         font-size: 0.95rem;
       }
+      /* 多格佔位符 */
+      .block-placeholder {
+        display: inline-block;
+        background: #1a1f3d;
+        border: 1px dashed #3f4b89;
+        border-radius: 4px;
+        padding: 2px 6px;
+        margin: 2px 1px;
+        font-size: 0.8rem;
+        color: #556;
+        min-width: 24px;
+        text-align: center;
+        transition: all 0.3s;
+      }
+      .block-placeholder.filled {
+        background: #1a3a2a;
+        border-color: #5fd18d;
+        border-style: solid;
+        color: #5fd18d;
+        font-weight: 700;
+      }
 
       /* 回饋訊息 */
       .match-feedback {

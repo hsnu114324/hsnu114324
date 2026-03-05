@@ -109,10 +109,10 @@ function buildPairsForQuiz(rows) {
   for (const row of rows) {
     const parts = row.split(",").map(w => w.trim()).filter(Boolean);
     if (parts.length >= 2) {
-      // 第 1 格 = 中文提示，第 2 格之後全部合併為德文答案
+      // 第 1 格 = 中文提示，第 2 格之後 = 德文方塊（每格一張小卡）
       const hint = parts[0];
-      const answer = parts.slice(1).join(" ");
-      pairs.push({ hint, answer, raw: row });
+      const blocks = parts.slice(1);  // e.g. ["Biege","links","ab"]
+      pairs.push({ hint, blocks, raw: row });
     }
   }
   return pairs;
@@ -291,8 +291,8 @@ let totalCombos = 0;      // 本局總組數
 let clearedCombos = 0;    // 本局已消除組數
 
 // 配對遊戲狀態
-let roundSlots = [];       // [{hint, answer, raw, matched}]
-let roundCards = [];        // [{text, pairIdx, el}]  pairIdx: 在 roundSlots 中的 index，-1 為干擾
+let roundSlots = [];       // [{hint, blocks, raw, matched[]}]
+let roundCards = [];        // [{text, slotIdx, blockIdx, el}]  slotIdx: 所屬卡槽 index，-1 為干擾
 let selectedCardEl = null;  // 目前選中的卡片 DOM
 let roundLocked = false;    // 動畫中鎖定
 
@@ -435,24 +435,37 @@ function generateRound() {
   // 延遲記錄 appear（發牌時才算，與方塊遊戲 spawnBlock 延遲記錄對齊）
   trackComboAppearByRaw(chosen.map(p => p.raw));
 
-  // 建立卡槽
+  // 建立卡槽（每個 slot 有多個 block 要配對）
   roundSlots = chosen.map(p => ({
     hint: p.hint,
-    answer: p.answer,
+    blocks: [...p.blocks],          // e.g. ["Biege","links","ab"]
     raw: p.raw,
-    matched: false,
+    matched: new Array(p.blocks.length).fill(false),  // 每個 block 是否已配對
   }));
 
-  // 建立答案卡片：正確的 + 干擾的
-  const cards = chosen.map((p, i) => ({ text: p.answer, pairIdx: i }));
+  // 建立答案卡片：每個 block 一張小卡，附帶 slotIdx + blockIdx
+  const cards = [];
+  chosen.forEach((p, slotIdx) => {
+    p.blocks.forEach((block, blockIdx) => {
+      cards.push({ text: block, slotIdx, blockIdx });
+    });
+  });
 
-  // 干擾卡從 allPairs 全池中挑選（不限佇列），且不與正確答案重複
-  const correctAnswerSet = new Set(chosen.map(p => p.answer.trim().toLowerCase()));
-  const distractorPool = allPairs.filter(p => !correctAnswerSet.has(p.answer.trim().toLowerCase()));
-  shuffle(distractorPool);
-  const distractorCount = Math.min(DISTRACTORS, distractorPool.length);
+  // 干擾卡：從 allPairs 全池中挑選不重複文字的 block
+  const usedTexts = new Set(cards.map(c => c.text.trim().toLowerCase()));
+  const distractorBlocks = [];
+  for (const p of allPairs) {
+    for (const b of p.blocks) {
+      if (!usedTexts.has(b.trim().toLowerCase())) {
+        distractorBlocks.push(b);
+        usedTexts.add(b.trim().toLowerCase()); // 避免重複干擾卡
+      }
+    }
+  }
+  shuffle(distractorBlocks);
+  const distractorCount = Math.min(DISTRACTORS, distractorBlocks.length);
   for (let i = 0; i < distractorCount; i++) {
-    cards.push({ text: distractorPool[i].answer, pairIdx: -1 });
+    cards.push({ text: distractorBlocks[i], slotIdx: -1, blockIdx: -1 });
   }
 
   roundCards = shuffle(cards);
@@ -464,7 +477,7 @@ function generateRound() {
 }
 
 function renderRound() {
-  // 渲染卡槽
+  // 渲染卡槽（每個 slot 顯示多個 block 佔位符）
   matchSlotsEl.innerHTML = "";
   roundSlots.forEach((slot, idx) => {
     const el = document.createElement("div");
@@ -476,7 +489,13 @@ function renderRound() {
     const ansDiv = document.createElement("div");
     ansDiv.className = "slot-answer";
     ansDiv.id = "slotAnswer" + idx;
-    ansDiv.textContent = "?";
+    // 每個 block 一個佔位符
+    for (let i = 0; i < slot.blocks.length; i++) {
+      const span = document.createElement("span");
+      span.className = "block-placeholder";
+      span.textContent = "?";
+      ansDiv.appendChild(span);
+    }
     el.appendChild(hintDiv);
     el.appendChild(ansDiv);
     el.addEventListener("click", () => onSlotClick(idx));
@@ -548,10 +567,10 @@ function onCardTouchMove(e) {
     document.body.appendChild(ghost);
     dragState.ghostEl = ghost;
 
-    // 高亮所有未配對的卡槽
+    // 高亮所有尚未全部配對的卡槽
     matchSlotsEl.querySelectorAll(".match-slot").forEach(s => {
       const idx = parseInt(s.dataset.idx);
-      s.classList.toggle("highlight", !roundSlots[idx].matched);
+      s.classList.toggle("highlight", !roundSlots[idx].matched.every(Boolean));
     });
   }
 
@@ -566,7 +585,7 @@ function onCardTouchMove(e) {
       const over = touch.clientX >= rect.left && touch.clientX <= rect.right &&
                    touch.clientY >= rect.top && touch.clientY <= rect.bottom;
       const idx = parseInt(s.dataset.idx);
-      s.classList.toggle("drop-target", over && !roundSlots[idx].matched);
+      s.classList.toggle("drop-target", over && !roundSlots[idx].matched.every(Boolean));
     });
   }
 }
@@ -602,7 +621,7 @@ function onCardTouchEnd(e) {
       }
     });
 
-    if (targetSlotIdx >= 0 && !roundSlots[targetSlotIdx].matched) {
+    if (targetSlotIdx >= 0 && !roundSlots[targetSlotIdx].matched.every(Boolean)) {
       // 模擬選中卡片 → 放到卡槽
       selectedCardEl = cardEl;
       onSlotClick(targetSlotIdx);
@@ -633,30 +652,34 @@ function onCardClick(cardIdx, cardEl) {
   cardEl.classList.add("selected");
   selectedCardEl = cardEl;
 
-  // 高亮所有未配對的卡槽
+  // 高亮所有尚未全部配對的卡槽
   matchSlotsEl.querySelectorAll(".match-slot").forEach(s => {
     const idx = parseInt(s.dataset.idx);
-    s.classList.toggle("highlight", !roundSlots[idx].matched);
+    const slot = roundSlots[idx];
+    const fullyMatched = slot.matched.every(Boolean);
+    s.classList.toggle("highlight", !fullyMatched);
   });
 }
 
 function onSlotClick(slotIdx) {
   if (roundLocked || playerDead) return;
   if (!selectedCardEl) return;
-  if (roundSlots[slotIdx].matched) return;
+
+  const slot = roundSlots[slotIdx];
+  // 已全部配對的 slot 不接受新卡片
+  if (slot.matched.every(Boolean)) return;
 
   const cardIdx = parseInt(selectedCardEl.dataset.idx);
   const card = roundCards[cardIdx];
-  const slot = roundSlots[slotIdx];
 
   // 取消所有高亮
   matchSlotsEl.querySelectorAll(".match-slot").forEach(s => s.classList.remove("highlight"));
 
-  if (card.pairIdx === slotIdx) {
-    // ✅ 配對正確！
+  if (card.slotIdx === slotIdx) {
+    // ✅ 卡片屬於這個 slot
     handleCorrectMatch(slotIdx, cardIdx);
   } else {
-    // ❌ 配對錯誤
+    // ❌ 配對錯誤（包含干擾卡 slotIdx=-1）
     handleWrongMatch(slotIdx, cardIdx);
   }
 }
@@ -668,30 +691,44 @@ function handleCorrectMatch(slotIdx, cardIdx) {
   const cardEl = card.el;
   const slotEl = matchSlotsEl.children[slotIdx];
 
-  // 標記已配對
-  slot.matched = true;
+  // 標記卡片已配對
   cardEl.classList.remove("selected");
   cardEl.classList.add("matched");
-  slotEl.classList.add("correct");
   selectedCardEl = null;
 
-  // 顯示答案
-  const answerEl = document.getElementById("slotAnswer" + slotIdx);
-  answerEl.textContent = card.text;
-  answerEl.classList.add("filled");
+  // 標記此 block 已配對
+  slot.matched[card.blockIdx] = true;
 
-  // 統計（使用 raw 字串計算 key，與方塊遊戲一致）
+  // 更新 slot 答案顯示（填入已配對的 block）
+  const answerEl = document.getElementById("slotAnswer" + slotIdx);
+  const placeholders = answerEl.querySelectorAll(".block-placeholder");
+  if (placeholders[card.blockIdx]) {
+    placeholders[card.blockIdx].textContent = card.text;
+    placeholders[card.blockIdx].classList.add("filled");
+  }
+
+  // 統計（每張正確卡片 +1）
   correctCount++;
   streak++;
-  clearedCombos++;
-  trackComboClearedByRaw([slot.raw]);
-  autoRemoveRow(slot.raw);
 
-  // ATB 填充
-  playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_MATCH);
+  // ATB 按比例填充（整組 combo 的 ATB 平均分配到每張卡片）
+  const atbGain = Math.round(PLAYER_ATB_PER_MATCH / slot.blocks.length);
+  playerAtb = Math.min(100, playerAtb + atbGain);
   updateBattleUI();
 
-  matchFeedback.textContent = `✅ ${slot.hint} = ${slot.answer}  ATB+${PLAYER_ATB_PER_MATCH}%`;
+  // 檢查此 combo 是否全部 block 都已配對
+  const comboComplete = slot.matched.every(Boolean);
+  if (comboComplete) {
+    // ✅ 整組 combo 完成 → 記錄消除 + 自動移除
+    slotEl.classList.add("correct");
+    clearedCombos++;
+    trackComboClearedByRaw([slot.raw]);
+    autoRemoveRow(slot.raw);
+    matchFeedback.textContent = `✅ ${slot.hint} = ${slot.blocks.join(" ")}  完成！`;
+  } else {
+    const done = slot.matched.filter(Boolean).length;
+    matchFeedback.textContent = `✅ ${card.text} → ${slot.hint}（${done}/${slot.blocks.length}）`;
+  }
   matchFeedback.style.color = "#5fd18d";
 
   // 玩家 ATB 滿 → 攻擊
@@ -746,7 +783,8 @@ function handleWrongMatch(slotIdx, cardIdx) {
 }
 
 function checkRoundComplete() {
-  const allMatched = roundSlots.every(s => s.matched);
+  // 所有 slot 的所有 block 都已配對
+  const allMatched = roundSlots.every(s => s.matched.every(Boolean));
   if (!allMatched) {
     if (autoPlayEnabled) scheduleAutoMatch();
     return;
@@ -1017,15 +1055,14 @@ function stopAutoMatch() {
 }
 
 function doAutoMatch() {
-  // 找到第一個未配對的卡槽
-  const unmatchedSlotIdx = roundSlots.findIndex(s => !s.matched);
-  if (unmatchedSlotIdx === -1) return;
-
-  // 找到對應的正確卡片
-  const correctCardIdx = roundCards.findIndex(c => c.pairIdx === unmatchedSlotIdx && !c.el.classList.contains("matched"));
+  // 找到第一張尚未配對且屬於某個 slot 的正確卡片
+  const correctCardIdx = roundCards.findIndex(c =>
+    c.slotIdx >= 0 && !c.el.classList.contains("matched")
+  );
   if (correctCardIdx === -1) return;
 
-  const cardEl = roundCards[correctCardIdx].el;
+  const card = roundCards[correctCardIdx];
+  const cardEl = card.el;
 
   // 模擬選取卡片
   if (selectedCardEl) selectedCardEl.classList.remove("selected");
@@ -1035,7 +1072,7 @@ function doAutoMatch() {
   // 延遲後模擬點擊卡槽
   setTimeout(() => {
     if (!autoPlayEnabled || playerDead) return;
-    onSlotClick(unmatchedSlotIdx);
+    onSlotClick(card.slotIdx);
   }, 200 + Math.random() * 200);
 }
 
