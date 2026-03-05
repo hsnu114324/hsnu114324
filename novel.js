@@ -574,8 +574,9 @@ function generateRound() {
   // 建立答案卡片：正確的 + 干擾的
   const cards = chosen.map((p, i) => ({ text: p.answer, pairIdx: i }));
 
-  // 加入干擾卡（從未被選中的配對中隨機取）
-  const remaining = shuffled.slice(n);
+  // 加入干擾卡（從未被選中的配對中隨機取，且不與正確答案重複）
+  const correctAnswerSet = new Set(chosen.map(p => p.answer.trim().toLowerCase()));
+  const remaining = shuffled.slice(n).filter(p => !correctAnswerSet.has(p.answer.trim().toLowerCase()));
   const distractorCount = Math.min(DISTRACTORS, remaining.length);
   for (let i = 0; i < distractorCount; i++) {
     cards.push({ text: remaining[i].answer, pairIdx: -1 });
@@ -595,10 +596,15 @@ function renderRound() {
     const el = document.createElement("div");
     el.className = "match-slot";
     el.dataset.idx = idx;
-    el.innerHTML = `
-      <div class="slot-hint">${slot.hint}</div>
-      <div class="slot-answer" id="slotAnswer${idx}">?</div>
-    `;
+    const hintDiv = document.createElement("div");
+    hintDiv.className = "slot-hint";
+    hintDiv.textContent = slot.hint;
+    const ansDiv = document.createElement("div");
+    ansDiv.className = "slot-answer";
+    ansDiv.id = "slotAnswer" + idx;
+    ansDiv.textContent = "?";
+    el.appendChild(hintDiv);
+    el.appendChild(ansDiv);
     el.addEventListener("click", () => onSlotClick(idx));
     matchSlotsEl.appendChild(el);
   });
@@ -748,6 +754,7 @@ function handleWrongMatch(slotIdx, cardIdx) {
     cardEl.classList.remove("wrong-flash");
     slotEl.classList.remove("wrong-flash");
     roundLocked = false;
+    if (autoPlayEnabled) scheduleAutoMatch();
   }, 450);
 }
 
