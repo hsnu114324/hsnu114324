@@ -309,6 +309,7 @@
       <nav class="novel-nav">
         <a class="btn-link" href="./index.html">🧱 方塊</a>
         <a class="btn-link" href="./settings.html">⚙ 設定</a>
+        <button id="toggleNovelBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">📖 小說 ON</button>
         <button id="autoPlayBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🤖 自動</button>
         <button id="restartBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
       </nav>
@@ -361,25 +362,27 @@
       </div>
       <div class="battle-log" id="battleLog">&nbsp;</div>
 
-      <!-- 小說區 -->
-      <section class="novel-container">
-        <div class="novel-title">📖 第1章 這破宗門，誰愛呆誰呆</div>
-        <div class="novel-scroll" id="novelScroll">
-          <div class="novel-line" style="color:#667;text-align:center;">答對題目，小說就會一點一點揭曉……</div>
-        </div>
-        <div class="novel-progress">
-          <span id="novelProgressText">進度 0%</span>
-          <div class="novel-progress-bar">
-            <div class="novel-progress-fill" id="novelProgressFill" style="width:0%"></div>
+      <!-- 小說區（可收合） -->
+      <div id="novelPanel">
+        <section class="novel-container">
+          <div class="novel-title">📖 第1章 這破宗門，誰愛呆誰呆</div>
+          <div class="novel-scroll" id="novelScroll">
+            <div class="novel-line" style="color:#667;text-align:center;">答對題目，小說就會一點一點揭曉……</div>
           </div>
-        </div>
-      </section>
+          <div class="novel-progress">
+            <span id="novelProgressText">進度 0%</span>
+            <div class="novel-progress-bar">
+              <div class="novel-progress-fill" id="novelProgressFill" style="width:0%"></div>
+            </div>
+          </div>
+        </section>
 
-      <!-- 資訊 -->
-      <div class="novel-info">
-        每次答對顯示 <b>5</b> 個字 ｜
-        答對：<b id="correctEl">0</b> ｜
-        連續：<b id="streakEl">0</b>
+        <!-- 資訊 -->
+        <div class="novel-info">
+          每次答對顯示 <b>5</b> 個字 ｜
+          答對：<b id="correctEl">0</b> ｜
+          連續：<b id="streakEl">0</b>
+        </div>
       </div>
     </div>
 

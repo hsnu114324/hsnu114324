@@ -397,6 +397,9 @@ let atbTimer = null;
 let playerDead = false;
 let reviveTimer = null;
 
+// 小說面板開關
+let novelPanelVisible = true;
+
 // 自動遊玩
 let autoPlayEnabled = false;
 let autoAnswerTimer = null;
@@ -418,6 +421,8 @@ const novelProgressText = document.getElementById("novelProgressText");
 const novelProgressFill = document.getElementById("novelProgressFill");
 const correctEl         = document.getElementById("correctEl");
 const streakEl          = document.getElementById("streakEl");
+const toggleNovelBtn    = document.getElementById("toggleNovelBtn");
+const novelPanel        = document.getElementById("novelPanel");
 
 // ATB DOM
 const battleArea     = document.getElementById("battleArea");
@@ -884,6 +889,18 @@ function answerQuiz(userSaidCorrect) {
 }
 
 // ══════════════════════════════════════
+//  小說面板開關
+// ══════════════════════════════════════
+
+function toggleNovelPanel() {
+  novelPanelVisible = !novelPanelVisible;
+  novelPanel.style.display = novelPanelVisible ? "" : "none";
+  toggleNovelBtn.textContent = novelPanelVisible ? "📖 小說 ON" : "📖 小說 OFF";
+  toggleNovelBtn.style.background = novelPanelVisible ? "#1a1f3d" : "#8a2a2a";
+  toggleNovelBtn.style.color = novelPanelVisible ? "#ccd" : "#fff";
+}
+
+// ══════════════════════════════════════
 //  自動遊玩
 // ══════════════════════════════════════
 
@@ -968,6 +985,7 @@ function init() {
     btnWrong.addEventListener("click", () => answerQuiz(false));
     restartBtn.addEventListener("click", restartGame);
     autoPlayBtn.addEventListener("click", toggleAutoPlay);
+    toggleNovelBtn.addEventListener("click", toggleNovelPanel);
 
     groupData = loadGroupData();
     const wordRows = loadWordRows();
