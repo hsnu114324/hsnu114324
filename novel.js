@@ -1,210 +1,10 @@
 /* ═══════════════════════════════════════════════════════
-   德文單字小說 ＋ 配對遊戲 ＋ ATB 戰鬥
-   配對成功 → 填充行動條 + 揭露小說
+   德文單字配對遊戲 ＋ ATB 戰鬥
+   配對成功 → 填充行動條
    與俄羅斯方塊共用 localStorage 學習統計
    ═══════════════════════════════════════════════════════ */
 
-// ══════════════════════════════════════
-//  小說文本
-// ══════════════════════════════════════
-
-const NOVEL_TEXT = `第1章 這破宗門，誰愛呆誰呆
-天衍宗，問劍峰上。
-
-秦蓁滿身是血倒在自己的洞府之外，卻無一人關心，宗門所有人都只是惡狠狠地瞪著她，好似恨不得生飲其血、生啖其肉。
-
-「你為什麼不去死！？」
-
-「你居然敢重傷小師妹！」
-
-「別忘了，你那條命，是小師妹剖了自己的金丹才救下來的，現在也該還給小師妹了。」
-
-秦蓁不明白為什麼事情會變成現在這樣。
-
-明明她昏迷前還是天衍宗人人敬仰的大師姐，可是自從那次魔族來犯，她燃燒丹元死守宗門重傷醒來后，一切都變了。
-
-她多了一個不認識的小師妹，據說是師尊從魔族手裡救回來的，剛救回來時奄奄一息。
-
-師尊用盡天材地寶才養好了她的身體，也助她結了金丹，但小師妹的那顆金丹卻被師尊換給了她，因為只有這樣才能救回她一命。
-
-人人都說，小師妹為了救她如何如何，因此十分憐惜小師妹。
-
-可是從沒有一個人問過她：「你要不要別人的金丹？」
-
-她只是一覺醒來，就被千夫所指，怪她忘恩負義，可她直到剛剛才知道自己體內的金丹是別人的，多麼可笑！
-
-她醒來后，從未與小師妹爭鋒，只閉關修鍊。
-
-可誰想小師妹強闖她修鍊的洞府，被洞府內陣法所傷。
-
-可沒人相信溫柔貼心的小師妹會做出這種事，所有人只覺得是她見不得小師妹好，才將人重傷至此。
-
-她的師尊清和劍尊聞訊趕來，問也不問，一道劍雨便將她籠罩其中，不過片刻，千萬道劍氣便割開了她的血肉，將她重傷在地。
-
-「不僅不知恩圖報，還傷害同門，秦蓁，你太讓本尊失望了。」
-
-「是小師妹擅闖弟子洞府，被禁制所傷……」
-
-「還敢狡辯！」
-
-「師尊，就當是弟子擅闖師姐洞府吧，別因為弟子傷了你們這麼多年的師徒之情，師姐還傷著呢。」
-
-這時，伏在清和劍尊身前的小師妹蘇蕊忽然柔聲求情道。
-
-「小師妹，現在重傷的可是你，你幹嘛還要幫這個惡毒的女人說話？」
-
-「小師妹你就是太善良了，可惜有些人就是不知道感恩。」
-
-同門也都對著秦蓁指指點點，完全忘記了眼前這個人曾在危難之際，以一人之軀阻擋了魔族的千軍萬馬，護得他們周全。
-
-而蘇蕊聞言更是在眾人看不見的角度，對著秦蓁輕蔑一笑。
-
-秦蓁哪裡還看不出來，她是故意的。
-
-「噌。」就在這時，秦蓁的本命劍驀地出鞘。
-
-「秦蓁，你要做什麼？」清和劍尊以為秦蓁想要反抗，想也沒想，揮袖將人扇了出去。
-
-秦蓁的後背撞到一邊的石壁，驀地嘔出一口鮮血，可即使如此，她也沒有鬆開手中長劍的意思，只是高高揚起手中的長劍，驀地向自己的腹部捅去。
-
-「！！！」
-
-秦蓁一寸一寸地將自己腹部剖開，猩紅的鮮血不斷地滴落著，不過片刻，便在她身前匯聚成了一片血泊。
-
-蒼白的面上沒有一絲血色，因為劇痛，額頭上滲出了不少的汗，將她的頭髮打濕黏成了幾縷，她的身影微微顫抖著，好似下一秒就會因為劇痛昏死過去，。
-
-但她卻挺直了自己的脊樑，將那顆被她靈力蘊養出瑩潤光澤的金丹取了出來。
-
-狼狽。
-
-十足的狼狽。
-
-可是秦蓁那挺直的脊樑，卻是讓所有人忽視了她的狼狽，有的只是一種無法言說的驚恐和震撼。
-
-剛剛還喧鬧不已的眾人，在這個瞬間忽然安靜了下來，安靜到幾乎所有人都能聽清秦蓁因為疼痛而劇烈喘息的聲音。
-
-「小師妹。」
-
-蘇蕊顯然也沒有想到事情會發生到這一步，整個人直接呆住了，只能愣愣地望向秦蓁。
-
-「你的金丹還你。」秦蓁將金丹遞過，那隻原本素白的手上，此時沾滿了她的鮮血。
-
-蘇蕊見狀，下意識地打了個寒顫，完全不敢去接那金丹。
-
-她被清和劍尊取丹時，用的是最溫和的辦法，完全感覺不到一絲痛苦，而且因為她生於魔淵，那金丹在她體內不斷吸取她的靈力，只會讓她時時性命垂危，所以，被取走金丹對她反而是好事。
-
-現在接回這金丹，無異於讓她去送死。
-
-「我……」蘇蕊張了張嘴想要說些什麼，卻不知道說什麼是好。
-
-秦蓁卻不管她的想法，只是將那枚染血的金丹放到了她手裡：「還你，我們兩清了。」
-
-清和劍尊望著自己狼狽不堪、渾身是血的大弟子，第一次產生了一種失控感。
-
-他沒想逼迫她至此，他只是希望她聽話一些，不要總是針對蘇蕊，畢竟蘇蕊那般可憐。
-
-「你好好養傷……」
-
-清和劍尊的話還沒有說完，秦蓁卻是忽然跪下，對著他深深一拜：「弟子秦蓁多謝師尊多年教導之恩，現在弟子金丹已失，恐無法再繼續修鍊，還請師尊……舍了弟子吧，放弟子出宗。」
-
-「出……宗？」
-
-「是，弟子既然不能在守宗時坦坦蕩蕩地死去，至少以後想要清清白白地活著。」
-
-清和劍尊看著眼前的秦蓁，彷彿透過她看到了很多年前那個小小的、伏在自己面前的女孩，那時秦蓁拜入宗門的時候，眼裡全是對著他的崇拜和欣喜。
-
-可現在的她，望向他時冷漠又失望。
-
-清和劍尊神情一時間有些恍惚。
-
-可就在這時，蘇蕊忽然怯怯地拉了拉他一片衣角，不解地問道：「我們只是想要救大師姐，我們做錯了嗎，師尊？」
-
-是啊。
-
-他們做這麼多還不是為了救她！秦蓁不領情就算了，現在居然還要叛出師門，該失望的分明是他才對！
-
-想到這裡，清和劍尊的語氣瞬間冷淡了許多：「你可想好了，一旦踏出宗門，以後你是死是活都與我天衍宗無關。」
-
-「是，想好了。」
-
-「哼，冥頑不靈。」清和劍尊怒斥一聲，一甩衣袖便帶著蘇蕊離開了。
-
-秦蓁認真地磕完了拜別的頭，便起身往總門外走去。
-
-猩紅的鮮血不斷從她身上滴落，染紅了下山的路。
-
-洞府外那麼多人，卻沒一人再敢上去攔她，即使現在秦蓁失去金丹，修為全無。
-
-「嗤——」
-
-可就在秦蓁踏出天衍宗山門時，一把長劍豁然貫穿了她的胸口。
-
-秦蓁反手攻去，卻因為靈力全失，只能抓下眼前黑衣人的面具，而那張面具下赫然是一張熟悉的臉。
-
-屬於她未婚夫、也是他大師兄明哲的臉。
-
-「為什麼？」
-
-「怪只怪你不該招惹小師妹，還有……」
-
-明哲手中的長劍猛地一轉，竟是將秦蓁體內的一根瑩白的骨頭剃了出來。
-
-「誰讓天生劍骨長在了你身上。」
-
-秦蓁眼前驟然一黑，意識消散前的最後一秒，她猛地拔下頭上銀簪狠狠刺入了明哲左眼。
-
-「啊！」
-
-秦蓁感覺自己的靈魂似乎被拉扯著，在生死的邊緣，秦蓁忽然想起許多事，比如——她是穿越來的，還穿成了萬人迷女主文里的一個炮灰。
-
-這個萬人迷女主角不是別人，正是她的小師妹蘇蕊，而她的師尊、未婚夫都是女主的舔狗之一。
-
-她的一生，不過是別人的墊腳石。
-
-憑什麼？
-
-她不甘心！
-
-……
-
-「秦蓁，秦蓁，醒醒！」
-
-秦蓁感覺到一陣劇烈搖晃，她驀地睜開了眼睛。
-
-「你在發什麼呆啊？該你去測靈根了。」
-
-「測靈根？」
-
-秦蓁還有些恍惚，她下意識地摸了摸自己的心口，卻並沒有摸到什麼傷口，身上也沒有什麼血跡。
-
-她這是做了個噩夢？
-
-「對啊，你不是來拜天衍宗的嗎？輪到你測靈根了，快去吧。」
-
-天衍宗……
-
-天衍宗！
-
-秦蓁的恍惚的神情瞬間變得極為嚴肅，她想起這是哪一天了。
-
-這一天，在問仙台上舉行了十年一次的仙門大選，所有大小宗門都在這裡招選弟子，而她也是這一天拜入了天衍宗。
-
-她這是重生了？
-
-「秦蓁，你怎麼又走神？」
-
-秦蓁還未反應過來，和她一起來的女孩子便拉著她的手，將她的手按在了測試靈根的玉牌之上。
-
-「雙靈根？」天衍宗長老正要將秦蓁收入門內，下一秒卻眉頭一皺，「怎麼是水火雙靈根？」
-
-秦蓁此時也回過了神來。
-
-等等，她不是天靈根嗎？`;
-
-const NOVEL_SAVE_KEY = "word_novel_progress_v1";
 const BATTLE_SAVE_KEY = "word_novel_battle_v1";
-const CHARS_PER_MATCH = 5;
-const MAX_VISIBLE_LINES = 50;
 const SLOTS_PER_ROUND = 3;    // 每回合卡槽數
 const DISTRACTORS = 2;         // 干擾卡數量
 
@@ -457,7 +257,6 @@ const PLAYER_BASE_HP = 100;
 const PLAYER_ATK = [15, 25];
 const PLAYER_ATB_PER_MATCH = 34;       // 每次配對 ATB +34% (3 次配對 = 102%)
 const ENEMY_ATB_BOOST_ON_WRONG = 15;   // 配對錯誤時敵人 ATB +15%
-const BONUS_CHARS_ON_KILL = 5;
 const ATB_TICK_MS = 100;
 
 // ══════════════════════════════════════
@@ -468,8 +267,6 @@ let allPairs = [];
 let correctCount = 0;
 let wrongCount = 0;
 let streak = 0;
-let novelPos = 0;
-let displayedBlocks = [];
 
 // 配對遊戲狀態
 let roundSlots = [];       // [{hint, answer, raw, matched}]
@@ -494,9 +291,6 @@ let atbTimer = null;
 let playerDead = false;
 let reviveTimer = null;
 
-// 小說面板開關
-let novelPanelVisible = true;
-
 // 自動遊玩
 let autoPlayEnabled = false;
 let autoMatchTimer = null;
@@ -511,11 +305,6 @@ const matchFeedback  = document.getElementById("matchFeedback");
 const matchStatsEl   = document.getElementById("matchStats");
 const restartBtn     = document.getElementById("restartBtn");
 const autoPlayBtn    = document.getElementById("autoPlayBtn");
-const toggleNovelBtn = document.getElementById("toggleNovelBtn");
-const novelPanel     = document.getElementById("novelPanel");
-const novelScroll    = document.getElementById("novelScroll");
-const novelProgressText = document.getElementById("novelProgressText");
-const novelProgressFill = document.getElementById("novelProgressFill");
 const correctEl      = document.getElementById("correctEl");
 const streakEl       = document.getElementById("streakEl");
 
@@ -552,13 +341,6 @@ function generateRound() {
     return;
   }
 
-  if (novelPos >= NOVEL_TEXT.length) {
-    matchSlotsEl.innerHTML = '<div style="color:#ffcc02;padding:12px;">🎉 小說已全部揭曉！第1章完結</div>';
-    matchCardsEl.innerHTML = "";
-    stopAtbTimer();
-    battleLog("🏁 小說讀完了！戰鬥結束！", "#ffcc02");
-    return;
-  }
 
   // 從所有配對中抽取 N 個不重複的
   const n = Math.min(SLOTS_PER_ROUND, allPairs.length);
@@ -821,9 +603,6 @@ function handleCorrectMatch(slotIdx, cardIdx) {
   playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_MATCH);
   updateBattleUI();
 
-  // 揭露小說
-  revealChars(CHARS_PER_MATCH);
-
   matchFeedback.textContent = `✅ ${slot.hint} = ${slot.answer}  ATB+${PLAYER_ATB_PER_MATCH}%`;
   matchFeedback.style.color = "#5fd18d";
 
@@ -985,9 +764,7 @@ function onEnemyDefeated() {
   enemySide.classList.add("ko-flash");
   setTimeout(() => enemySide.classList.remove("ko-flash"), 700);
 
-  battleLog(`🏆 ${enemyName} 被擊敗！ 額外獲得 ${BONUS_CHARS_ON_KILL} 字！`, "#ffcc02");
-
-  revealChars(BONUS_CHARS_ON_KILL);
+  battleLog(`🏆 ${enemyName} 被擊敗！`, "#ffcc02");
 
   const healAmt = Math.min(15 + wave * 2, playerMaxHp - playerHp);
   if (healAmt > 0) {
@@ -1120,110 +897,6 @@ function loadBattleState() {
 }
 
 // ══════════════════════════════════════
-//  小說顯示邏輯
-// ══════════════════════════════════════
-
-function takeVisibleChars(startPos, n) {
-  let collected = "";
-  let pos = startPos;
-  while (collected.length < n && pos < NOVEL_TEXT.length) {
-    const ch = NOVEL_TEXT[pos];
-    pos++;
-    if (ch === "\n") continue;
-    collected += ch;
-  }
-  return { text: collected, newPos: pos };
-}
-
-function revealChars(n) {
-  if (novelPos >= NOVEL_TEXT.length) return;
-
-  const result = takeVisibleChars(novelPos, n);
-  if (result.text.length === 0) return;
-  novelPos = result.newPos;
-
-  localStorage.setItem(NOVEL_SAVE_KEY, String(novelPos));
-
-  const blockEl = appendBlock(result.text, true);
-
-  setTimeout(() => { if (blockEl) blockEl.classList.remove("new"); }, 1000);
-
-  requestAnimationFrame(() => {
-    blockEl.scrollIntoView({ block: "end", behavior: "smooth" });
-  });
-
-  updateProgress();
-}
-
-function appendBlock(text, isNew) {
-  const el = document.createElement("span");
-  el.className = isNew ? "novel-chunk new" : "novel-chunk";
-  el.textContent = text;
-  novelScroll.appendChild(el);
-  displayedBlocks.push(el);
-
-  while (displayedBlocks.length > MAX_VISIBLE_LINES) {
-    const oldest = displayedBlocks.shift();
-    oldest.classList.add("fading");
-    setTimeout(() => oldest.remove(), 400);
-  }
-  return el;
-}
-
-function updateProgress() {
-  const pct = Math.min(100, (novelPos / NOVEL_TEXT.length * 100)).toFixed(1);
-  novelProgressText.textContent = `進度 ${pct}%（${novelPos} / ${NOVEL_TEXT.length}）`;
-  novelProgressFill.style.width = pct + "%";
-}
-
-function restoreNovel() {
-  novelScroll.innerHTML = "";
-  displayedBlocks = [];
-
-  const saved = parseInt(localStorage.getItem(NOVEL_SAVE_KEY), 10);
-  const targetPos = (!isNaN(saved) && saved > 0) ? Math.min(saved, NOVEL_TEXT.length) : 0;
-
-  if (targetPos === 0) {
-    novelPos = 0;
-    updateProgress();
-    return;
-  }
-
-  let pos = 0;
-  const blocks = [];
-  while (pos < targetPos) {
-    const result = takeVisibleChars(pos, CHARS_PER_MATCH);
-    if (result.text.length === 0) break;
-    blocks.push(result.text);
-    pos = result.newPos;
-  }
-
-  const startIdx = Math.max(0, blocks.length - MAX_VISIBLE_LINES);
-  for (let i = startIdx; i < blocks.length; i++) {
-    appendBlock(blocks[i], false);
-  }
-
-  novelPos = targetPos;
-  updateProgress();
-
-  requestAnimationFrame(() => {
-    novelScroll.scrollTop = novelScroll.scrollHeight;
-  });
-}
-
-// ══════════════════════════════════════
-//  小說面板開關
-// ══════════════════════════════════════
-
-function toggleNovelPanel() {
-  novelPanelVisible = !novelPanelVisible;
-  novelPanel.style.display = novelPanelVisible ? "" : "none";
-  toggleNovelBtn.textContent = novelPanelVisible ? "📖 小說 ON" : "📖 小說 OFF";
-  toggleNovelBtn.style.background = novelPanelVisible ? "#1a1f3d" : "#8a2a2a";
-  toggleNovelBtn.style.color = novelPanelVisible ? "#ccd" : "#fff";
-}
-
-// ══════════════════════════════════════
 //  自動遊玩（自動配對）
 // ══════════════════════════════════════
 
@@ -1330,14 +1003,11 @@ function init() {
 
     restartBtn.addEventListener("click", restartGame);
     autoPlayBtn.addEventListener("click", toggleAutoPlay);
-    toggleNovelBtn.addEventListener("click", toggleNovelPanel);
 
     groupData = loadGroupData();
     const wordRows = loadWordRows();
     allPairs = buildPairsForQuiz(wordRows);
     console.log("[Novel] loaded", allPairs.length, "pairs");
-
-    restoreNovel();
 
     const savedBattle = loadBattleState();
     if (savedBattle) {
