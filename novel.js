@@ -343,6 +343,100 @@ async function syncStatsToSheets() {
   } catch (e) { console.warn("同步 Google Sheets 失敗:", e); }
 }
 
+// ── 自動移除 ──
+
+function isAutoRemoveMode() { return localStorage.getItem(AUTO_REMOVE_KEY) === "1"; }
+
+/**
+ * 答對時呼叫：如果開啟自動移除模式，從 localStorage 移除該 combo。
+ * @param {string} raw — 原始 row 字串，例如 "蘋果,Apfel"
+ */
+function autoRemoveRow(raw) {
+  if (!isAutoRemoveMode()) return;
+  if (!raw) return;
+
+  const keyToRemove = raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+  let totalRemoved = 0;
+
+  const filterRows = (arr) => arr.filter(row => {
+    const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+    return key !== keyToRemove;
+  });
+
+  // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
+  const ag = loadActiveGroups();
+  if (ag.length > 0) {
+    try {
+      const removed = loadGroupRemoved();
+      let groupRemoved = 0;
+      for (const gi of ag) {
+        if (!removed[gi]) removed[gi] = [];
+        const existingSet = new Set(
+          removed[gi].map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
+        );
+        for (const row of (groupData[gi] || [])) {
+          const key = row.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+          if (key === keyToRemove && !existingSet.has(key)) {
+            removed[gi].push(row);
+            groupRemoved++;
+          }
+        }
+      }
+      if (groupRemoved > 0) {
+        localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
+        totalRemoved += groupRemoved;
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 自訂模式：從 STORAGE_KEY 和 CUSTOM_FULL_KEY 同步移除
+  if (isCustomActive()) {
+    try {
+      const raw2 = localStorage.getItem(STORAGE_KEY);
+      if (raw2) {
+        let storedRows = JSON.parse(raw2);
+        if (Array.isArray(storedRows)) {
+          const before = storedRows.length;
+          storedRows = filterRows(storedRows);
+          if (storedRows.length < before) {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(storedRows));
+            totalRemoved += (before - storedRows.length);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+    try {
+      const rawFull = localStorage.getItem(CUSTOM_FULL_KEY);
+      if (rawFull) {
+        let fullRows = JSON.parse(rawFull);
+        if (Array.isArray(fullRows)) {
+          fullRows = filterRows(fullRows);
+          localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(fullRows));
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 同步遞減「隨機抽取組數」
+  if (totalRemoved > 0) {
+    try {
+      const currentPick = parseInt(localStorage.getItem(PICK_KEY), 10);
+      if (!isNaN(currentPick) && currentPick > 0) {
+        localStorage.setItem(PICK_KEY, String(Math.max(0, currentPick - totalRemoved)));
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  // 從當前 allPairs 中也移除，避免同一局再出
+  if (totalRemoved > 0) {
+    allPairs = allPairs.filter(p => {
+      const key = p.raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
+      return key !== keyToRemove;
+    });
+    console.log("[Novel] 自動移除:", raw, "→ 剩餘", allPairs.length, "組");
+  }
+}
+
 // ══════════════════════════════════════
 //  ATB 戰鬥系統 — 敵人資料
 // ══════════════════════════════════════
@@ -850,6 +944,9 @@ function answerQuiz(userSaidCorrect) {
     correctCount++;
     streak++;
     trackComboCleared([currentQuiz.combo]);
+
+    // 自動移除（如果設定中開啟了自動移除模式）
+    autoRemoveRow(currentQuiz.combo.join(","));
 
     // ATB 填充
     playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_CORRECT);
