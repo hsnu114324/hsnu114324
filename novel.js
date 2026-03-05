@@ -19,6 +19,7 @@ const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
 const GROUP_DATA_KEY    = "word_tetris_group_data_v1";
 const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
 const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
+const SPLIT_MODE_KEY    = "word_tetris_split_mode_v1";
 const CUSTOM_FULL_KEY   = "word_tetris_custom_full_v1";
 const STATS_KEY         = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY   = "word_tetris_google_user_v1";
@@ -40,6 +41,118 @@ function preventZoom() {
 
 function isSingleWordMode() { return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1"; }
 function isCustomActive()   { return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1"; }
+function loadSplitMode() {
+  const v = localStorage.getItem(SPLIT_MODE_KEY);
+  if (v === "random" || v === "mixed") return v;
+  return "syllable";
+}
+
+// ── 德文音節拆分（與方塊遊戲 script.js 相同的演算法） ──
+
+const _GERMAN_ONSETS = new Set([
+  "schr","schw","schl","schm","schn",
+  "sch","pfl","pfr",
+  "bl","br","ch","ck","cl","cr","dr","dw",
+  "fl","fr","gl","gn","gr",
+  "kl","kn","kr","kw",
+  "pf","ph","pl","pr",
+  "qu",
+  "th","tr","ts","tw","wr","zw",
+  "b","c","d","f","g","h","j","k","l","m","n",
+  "p","q","r","s","t","v","w","x","z","ß",
+]);
+
+function _isVowel(ch) {
+  return "aeiouyäöüAEIOUYÄÖÜ".includes(ch);
+}
+
+function germanSyllables(word) {
+  if (!word || word.length <= 1) return [word];
+  const nuclei = [];
+  let i = 0;
+  while (i < word.length) {
+    if (_isVowel(word[i])) {
+      let j = i + 1;
+      while (j < word.length && _isVowel(word[j])) j++;
+      nuclei.push({ start: i, end: j });
+      i = j;
+    } else { i++; }
+  }
+  if (nuclei.length <= 1) return [word];
+  const breakPoints = [];
+  for (let n = 0; n < nuclei.length - 1; n++) {
+    const cStart = nuclei[n].end;
+    const cEnd   = nuclei[n + 1].start;
+    if (cStart >= cEnd) { breakPoints.push(cStart); continue; }
+    const cluster = word.slice(cStart, cEnd).toLowerCase();
+    if (cluster.length === 1) { breakPoints.push(cStart); continue; }
+    let splitAt = cEnd - 1;
+    for (let k = 0; k < cluster.length; k++) {
+      if (_GERMAN_ONSETS.has(cluster.slice(k))) { splitAt = cStart + k; break; }
+    }
+    breakPoints.push(splitAt);
+  }
+  const syllables = [];
+  let prev = 0;
+  for (const bp of breakPoints) {
+    if (bp > prev) syllables.push(word.slice(prev, bp));
+    prev = bp;
+  }
+  if (prev < word.length) syllables.push(word.slice(prev));
+  return syllables.filter(s => s.length > 0);
+}
+
+function _mergeSyllables(syllables, maxBlocks) {
+  const result = [...syllables];
+  while (result.length > maxBlocks && result.length >= 2) {
+    const last = result.pop();
+    result[result.length - 1] += last;
+  }
+  return result;
+}
+
+function splitGermanRandom(word, maxBlocks) {
+  const chars = [...word];
+  if (chars.length <= 1) return [word];
+  if (chars.length <= maxBlocks) return chars;
+  const possible = [];
+  for (let i = 1; i < chars.length; i++) possible.push(i);
+  for (let i = possible.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [possible[i], possible[j]] = [possible[j], possible[i]];
+  }
+  const splits = possible.slice(0, maxBlocks - 1).sort((a, b) => a - b);
+  const blocks = [];
+  let prev2 = 0;
+  for (const s of splits) {
+    blocks.push(chars.slice(prev2, s).join(""));
+    prev2 = s;
+  }
+  blocks.push(chars.slice(prev2).join(""));
+  return blocks;
+}
+
+function splitGermanToBlocks(germanStr, maxBlocks = 4) {
+  let spaceParts = germanStr.split(/\s+/).filter(Boolean);
+  if (spaceParts.length === 0) return [germanStr];
+  if (spaceParts.length > maxBlocks) {
+    const merged = spaceParts.slice(maxBlocks - 1).join(" ");
+    spaceParts = [...spaceParts.slice(0, maxBlocks - 1), merged];
+  }
+  const prefix = spaceParts.slice(0, -1);
+  const lastWord = spaceParts[spaceParts.length - 1];
+  const availableForLast = maxBlocks - prefix.length;
+  if (availableForLast <= 1 || lastWord.length <= 1) return [...prefix, lastWord];
+  const mode = loadSplitMode();
+  const useMode = (mode === "mixed") ? (Math.random() < 0.5 ? "syllable" : "random") : mode;
+  let lastBlocks;
+  if (useMode === "syllable") {
+    lastBlocks = _mergeSyllables(germanSyllables(lastWord), availableForLast);
+  } else {
+    lastBlocks = splitGermanRandom(lastWord, availableForLast);
+  }
+  return [...prefix, ...lastBlocks];
+}
 
 let groupData = [];
 
@@ -105,15 +218,27 @@ function loadWordRows() {
 }
 
 function buildPairsForQuiz(rows) {
+  const swMode = isSingleWordMode();
   const pairs = [];
   for (const row of rows) {
     const parts = row.split(",").map(w => w.trim()).filter(Boolean);
-    if (parts.length >= 2) {
-      // 第 1 格 = 中文提示，第 2 格之後 = 德文方塊（每格一張小卡）
-      const hint = parts[0];
-      const blocks = parts.slice(1);  // e.g. ["Biege","links","ab"]
-      pairs.push({ hint, blocks, raw: row });
+    if (parts.length < 2) continue;
+
+    const hint = parts[0];
+
+    // 單字模式 + 2 欄：德文拆字（與方塊遊戲 buildComboList 相同邏輯）
+    if (swMode && parts.length === 2) {
+      const germanBlocks = splitGermanToBlocks(parts[1], 4);
+      if (germanBlocks.length >= 1) {
+        // raw 保持原始未拆字的格式（_origRow 等效），確保統計 key 一致
+        pairs.push({ hint, blocks: germanBlocks, raw: row });
+        continue;
+      }
     }
+
+    // 一般模式或多欄：直接使用 CSV 欄位
+    const blocks = parts.slice(1);
+    pairs.push({ hint, blocks, raw: row });
   }
   return pairs;
 }
