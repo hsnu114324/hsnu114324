@@ -292,7 +292,12 @@ function buildPairsForQuiz(rows) {
   const pairs = [];
   for (const row of rows) {
     const parts = row.split(",").map(w => w.trim()).filter(Boolean);
-    if (parts.length >= 2) pairs.push({ hint: parts[0], answer: parts[1], raw: row });
+    if (parts.length >= 2) {
+      // 第 1 格 = 中文提示，第 2 格之後全部合併為德文答案
+      const hint = parts[0];
+      const answer = parts.slice(1).join(" ");
+      pairs.push({ hint, answer, raw: row });
+    }
   }
   return pairs;
 }
