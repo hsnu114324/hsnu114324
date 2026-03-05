@@ -617,12 +617,124 @@ function renderRound() {
     el.textContent = card.text;
     el.dataset.idx = idx;
     el.addEventListener("click", () => onCardClick(idx, el));
+    el.addEventListener("touchstart", (e) => onCardTouchStart(idx, el, e), { passive: true });
     card.el = el;
     matchCardsEl.appendChild(el);
   });
 
+  // 全域觸控事件（拖曳 move / end）
+  document.removeEventListener("touchmove", onCardTouchMove);
+  document.removeEventListener("touchend", onCardTouchEnd);
+  document.addEventListener("touchmove", onCardTouchMove, { passive: false });
+  document.addEventListener("touchend", onCardTouchEnd, { passive: true });
+
   matchFeedback.textContent = " ";
   matchFeedback.style.color = "";
+}
+
+// ── 觸控拖曳 ──
+
+let dragState = null; // { cardIdx, cardEl, ghostEl }
+
+function onCardTouchStart(cardIdx, cardEl, e) {
+  if (roundLocked || playerDead) return;
+  if (cardEl.classList.contains("matched")) return;
+
+  const touch = e.touches[0];
+  // 記錄起始位置，用來判斷是點擊還是拖曳
+  dragState = {
+    cardIdx,
+    cardEl,
+    ghostEl: null,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    dragging: false,
+  };
+}
+
+function onCardTouchMove(e) {
+  if (!dragState) return;
+
+  const touch = e.touches[0];
+  const dx = touch.clientX - dragState.startX;
+  const dy = touch.clientY - dragState.startY;
+
+  // 距離超過 10px 才開始拖曳（避免誤觸）
+  if (!dragState.dragging && (Math.abs(dx) > 10 || Math.abs(dy) > 10)) {
+    dragState.dragging = true;
+    dragState.cardEl.classList.add("dragging");
+
+    // 建立幽靈卡片
+    const ghost = document.createElement("div");
+    ghost.className = "match-ghost";
+    ghost.textContent = dragState.cardEl.textContent;
+    document.body.appendChild(ghost);
+    dragState.ghostEl = ghost;
+
+    // 高亮所有未配對的卡槽
+    matchSlotsEl.querySelectorAll(".match-slot").forEach(s => {
+      const idx = parseInt(s.dataset.idx);
+      s.classList.toggle("highlight", !roundSlots[idx].matched);
+    });
+  }
+
+  if (dragState.dragging && dragState.ghostEl) {
+    e.preventDefault(); // 防止頁面捲動
+    dragState.ghostEl.style.left = touch.clientX + "px";
+    dragState.ghostEl.style.top = touch.clientY + "px";
+
+    // 偵測手指下方的卡槽
+    const slotEls = matchSlotsEl.querySelectorAll(".match-slot");
+    slotEls.forEach(s => {
+      const rect = s.getBoundingClientRect();
+      const over = touch.clientX >= rect.left && touch.clientX <= rect.right &&
+                   touch.clientY >= rect.top && touch.clientY <= rect.bottom;
+      const idx = parseInt(s.dataset.idx);
+      s.classList.toggle("drop-target", over && !roundSlots[idx].matched);
+    });
+  }
+}
+
+function onCardTouchEnd(e) {
+  if (!dragState) return;
+
+  const wasDragging = dragState.dragging;
+  const cardIdx = dragState.cardIdx;
+  const cardEl = dragState.cardEl;
+
+  // 清除幽靈 & 視覺狀態
+  if (dragState.ghostEl) {
+    dragState.ghostEl.remove();
+  }
+  cardEl.classList.remove("dragging");
+  matchSlotsEl.querySelectorAll(".match-slot").forEach(s => {
+    s.classList.remove("highlight");
+    s.classList.remove("drop-target");
+  });
+
+  if (wasDragging) {
+    // 拖曳結束 → 偵測放置的卡槽
+    const touch = e.changedTouches[0];
+    const slotEls = matchSlotsEl.querySelectorAll(".match-slot");
+    let targetSlotIdx = -1;
+
+    slotEls.forEach(s => {
+      const rect = s.getBoundingClientRect();
+      if (touch.clientX >= rect.left && touch.clientX <= rect.right &&
+          touch.clientY >= rect.top && touch.clientY <= rect.bottom) {
+        targetSlotIdx = parseInt(s.dataset.idx);
+      }
+    });
+
+    if (targetSlotIdx >= 0 && !roundSlots[targetSlotIdx].matched) {
+      // 模擬選中卡片 → 放到卡槽
+      selectedCardEl = cardEl;
+      onSlotClick(targetSlotIdx);
+    }
+  }
+  // 如果不是拖曳（只是點擊），交給 click 事件處理
+
+  dragState = null;
 }
 
 function onCardClick(cardIdx, cardEl) {

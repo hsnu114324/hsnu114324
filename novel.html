@@ -130,6 +130,9 @@
         -webkit-user-select: none;
       }
       .match-card:active { transform: scale(0.95); }
+      .match-card.dragging {
+        opacity: 0.3;
+      }
       .match-card.selected {
         border-color: #ffcc02;
         background: #3a3520;
@@ -149,6 +152,28 @@
         0%, 100% { transform: translateX(0); }
         25% { transform: translateX(-5px); }
         75% { transform: translateX(5px); }
+      }
+
+      /* 拖曳中的幽靈卡片 */
+      .match-ghost {
+        position: fixed;
+        z-index: 9999;
+        pointer-events: none;
+        background: #3a3520;
+        border: 2px solid #ffcc02;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #ffcc02;
+        box-shadow: 0 4px 16px rgba(255,204,2,0.3);
+        transform: translate(-50%, -50%);
+        white-space: nowrap;
+      }
+      .match-slot.drop-target {
+        border-color: #ffcc02 !important;
+        background: #2a2820 !important;
+        transform: scale(1.05);
       }
 
       /* 統計 */
