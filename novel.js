@@ -58,9 +58,17 @@ function isValidRowString(row) {
   return parts.length >= 2 && parts.length <= 5;
 }
 
+function loadPickCount() {
+  try {
+    const val = parseInt(localStorage.getItem(PICK_KEY), 10);
+    return isNaN(val) || val < 0 ? 0 : val;
+  } catch { return 0; }
+}
+
 function loadWordRows() {
   const ag = loadActiveGroups();
   const ca = isCustomActive();
+  const swMode = isSingleWordMode();
   const rows = [];
   if (ag.length > 0) {
     const removed = loadGroupRemoved();
@@ -78,7 +86,15 @@ function loadWordRows() {
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) {
-          for (const r of parsed) { if (isValidRowString(r)) rows.push(r); }
+          for (const r of parsed) {
+            if (!isValidRowString(r)) continue;
+            // 單字模式：只載入 2 欄項目（中文提示 + 德文單字）
+            if (swMode) {
+              const parts = r.split(",").map(s => s.trim()).filter(Boolean);
+              if (parts.length !== 2) continue;
+            }
+            rows.push(r);
+          }
         }
       }
     } catch { /* ignore */ }
@@ -104,30 +120,30 @@ function buildPairsForQuiz(rows) {
 
 // ── 學習統計 ──
 
-function normalizeComboKey(combo) { return combo.map(w => w.trim().toLowerCase()).join(","); }
 function loadComboStats() {
   try { const r = localStorage.getItem(STATS_KEY); if (!r) return {}; const p = JSON.parse(r); return (typeof p === "object" && p !== null) ? p : {}; } catch { return {}; }
 }
 function saveComboStats(stats) { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); }
 
-function trackComboAppear(combos) {
+/** 記錄 combo 出現（使用原始 raw 字串計算 key，與方塊遊戲一致） */
+function trackComboAppearByRaw(rawStrings) {
   const stats = loadComboStats();
-  for (const combo of combos) {
-    const key = normalizeComboKey(combo);
-    const display = combo.join(",");
-    if (!stats[key]) stats[key] = { appear: 0, cleared: 0, display, lastSeen: "" };
+  for (const raw of rawStrings) {
+    const key = raw.split(",").map(w => w.trim().toLowerCase()).filter(Boolean).join(",");
+    if (!stats[key]) stats[key] = { appear: 0, cleared: 0, display: raw, lastSeen: "" };
     stats[key].appear++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
-    stats[key].display = display;
+    stats[key].display = raw;
   }
   saveComboStats(stats);
 }
-function trackComboCleared(combos) {
+
+/** 記錄 combo 被成功消除 */
+function trackComboClearedByRaw(rawStrings) {
   const stats = loadComboStats();
-  for (const combo of combos) {
-    const key = normalizeComboKey(combo);
-    const display = combo.join(",");
-    if (!stats[key]) stats[key] = { appear: 0, cleared: 0, display, lastSeen: "" };
+  for (const raw of rawStrings) {
+    const key = raw.split(",").map(w => w.trim().toLowerCase()).filter(Boolean).join(",");
+    if (!stats[key]) stats[key] = { appear: 0, cleared: 0, display: raw, lastSeen: "" };
     stats[key].cleared++;
     stats[key].lastSeen = new Date().toISOString().slice(0, 10);
   }
@@ -268,6 +284,12 @@ let correctCount = 0;
 let wrongCount = 0;
 let streak = 0;
 
+// 發牌Q（與方塊遊戲對齊的 combo 佇列系統）
+let comboQueue = [];      // 本局所有要配對的 pair（已 shuffle）
+let queueIdx = 0;         // 目前發到第幾組
+let totalCombos = 0;      // 本局總組數
+let clearedCombos = 0;    // 本局已消除組數
+
 // 配對遊戲狀態
 let roundSlots = [];       // [{hint, answer, raw, matched}]
 let roundCards = [];        // [{text, pairIdx, el}]  pairIdx: 在 roundSlots 中的 index，-1 為干擾
@@ -299,14 +321,15 @@ let autoMatchTimer = null;
 //  DOM
 // ══════════════════════════════════════
 
-const matchSlotsEl   = document.getElementById("matchSlots");
-const matchCardsEl   = document.getElementById("matchCards");
-const matchFeedback  = document.getElementById("matchFeedback");
-const matchStatsEl   = document.getElementById("matchStats");
-const restartBtn     = document.getElementById("restartBtn");
-const autoPlayBtn    = document.getElementById("autoPlayBtn");
-const correctEl      = document.getElementById("correctEl");
-const streakEl       = document.getElementById("streakEl");
+const matchSlotsEl     = document.getElementById("matchSlots");
+const matchCardsEl     = document.getElementById("matchCards");
+const matchFeedback    = document.getElementById("matchFeedback");
+const matchStatsEl     = document.getElementById("matchStats");
+const restartBtn       = document.getElementById("restartBtn");
+const autoPlayBtn      = document.getElementById("autoPlayBtn");
+const correctEl        = document.getElementById("correctEl");
+const streakEl         = document.getElementById("streakEl");
+const queueProgressEl  = document.getElementById("queueProgress");
 
 // ATB DOM
 const battleArea     = document.getElementById("battleArea");
@@ -323,7 +346,7 @@ const killCountEl    = document.getElementById("killCount");
 const battleLogEl    = document.getElementById("battleLog");
 
 // ══════════════════════════════════════
-//  配對遊戲邏輯
+//  發牌Q 佇列系統
 // ══════════════════════════════════════
 
 function shuffle(arr) {
@@ -334,18 +357,83 @@ function shuffle(arr) {
   return arr;
 }
 
+/**
+ * 初始化發牌Q：載入 → 隨機抽取 → shuffle → 建立佇列
+ * 與方塊遊戲的 initComboPool() 對齊
+ */
+function initComboQueue() {
+  groupData = loadGroupData();
+  const wordRows = loadWordRows();
+  allPairs = buildPairsForQuiz(wordRows);
+
+  // 套用「每局隨機抽取數」
+  let pool = [...allPairs];
+  const pickCount = loadPickCount();
+  if (pickCount > 0 && pickCount < pool.length) {
+    shuffle(pool);
+    pool = pool.slice(0, pickCount);
+  }
+
+  // 打亂佇列順序
+  shuffle(pool);
+
+  comboQueue = pool;
+  queueIdx = 0;
+  totalCombos = pool.length;
+  clearedCombos = 0;
+
+  console.log(`[Match] 發牌Q 初始化: ${totalCombos} 組 (allPairs=${allPairs.length}, pick=${pickCount || '全部'})`);
+}
+
+/** 更新發牌Q 進度 UI */
+function updateQueueUI() {
+  if (!queueProgressEl) return;
+  const dealt = Math.min(queueIdx, totalCombos);
+  const remaining = totalCombos - dealt + (roundSlots.filter(s => !s.matched).length);
+  const pct = totalCombos > 0 ? ((clearedCombos / totalCombos) * 100).toFixed(0) : 0;
+  queueProgressEl.innerHTML =
+    `發牌Q：已發 <b>${dealt}</b>/<b>${totalCombos}</b> 組 ｜ ` +
+    `已配對 <b>${clearedCombos}</b> ｜ 進度 <b>${pct}%</b>` +
+    `<div class="queue-bar"><div class="queue-bar-fill" style="width:${pct}%"></div></div>`;
+}
+
+/** 全部配對完成 */
+function onQueueComplete() {
+  syncStatsToSheets();
+  stopAtbTimer();
+  matchSlotsEl.innerHTML = '<div style="color:#5fd18d;padding:16px;font-size:1.1rem;">🎉 本局全部完成！</div>';
+  matchCardsEl.innerHTML = "";
+  matchFeedback.textContent = `完成 ${clearedCombos}/${totalCombos} 組配對 — 按「重新開始」再來一局`;
+  matchFeedback.style.color = "#ffcc02";
+  updateQueueUI();
+  stopAutoMatch();
+}
+
+// ══════════════════════════════════════
+//  配對遊戲邏輯
+// ══════════════════════════════════════
+
 function generateRound() {
+  // 佇列用完 → 完成
+  const remaining = comboQueue.length - queueIdx;
+  if (remaining <= 0) {
+    onQueueComplete();
+    return;
+  }
+
   if (allPairs.length < 2) {
     matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 2 組</div>';
     matchCardsEl.innerHTML = "";
     return;
   }
 
+  // 從佇列取下一批（最多 SLOTS_PER_ROUND 組）
+  const n = Math.min(SLOTS_PER_ROUND, remaining);
+  const chosen = comboQueue.slice(queueIdx, queueIdx + n);
+  queueIdx += n;
 
-  // 從所有配對中抽取 N 個不重複的
-  const n = Math.min(SLOTS_PER_ROUND, allPairs.length);
-  const shuffled = shuffle([...allPairs]);
-  const chosen = shuffled.slice(0, n);
+  // 延遲記錄 appear（發牌時才算，與方塊遊戲 spawnBlock 延遲記錄對齊）
+  trackComboAppearByRaw(chosen.map(p => p.raw));
 
   // 建立卡槽
   roundSlots = chosen.map(p => ({
@@ -355,24 +443,23 @@ function generateRound() {
     matched: false,
   }));
 
-  // 統計：這些 combo 出現了
-  trackComboAppear(chosen.map(p => [p.hint, p.answer]));
-
   // 建立答案卡片：正確的 + 干擾的
   const cards = chosen.map((p, i) => ({ text: p.answer, pairIdx: i }));
 
-  // 加入干擾卡（從未被選中的配對中隨機取，且不與正確答案重複）
+  // 干擾卡從 allPairs 全池中挑選（不限佇列），且不與正確答案重複
   const correctAnswerSet = new Set(chosen.map(p => p.answer.trim().toLowerCase()));
-  const remaining = shuffled.slice(n).filter(p => !correctAnswerSet.has(p.answer.trim().toLowerCase()));
-  const distractorCount = Math.min(DISTRACTORS, remaining.length);
+  const distractorPool = allPairs.filter(p => !correctAnswerSet.has(p.answer.trim().toLowerCase()));
+  shuffle(distractorPool);
+  const distractorCount = Math.min(DISTRACTORS, distractorPool.length);
   for (let i = 0; i < distractorCount; i++) {
-    cards.push({ text: remaining[i].answer, pairIdx: -1 });
+    cards.push({ text: distractorPool[i].answer, pairIdx: -1 });
   }
 
   roundCards = shuffle(cards);
   selectedCardEl = null;
   roundLocked = false;
 
+  updateQueueUI();
   renderRound();
 }
 
@@ -593,10 +680,11 @@ function handleCorrectMatch(slotIdx, cardIdx) {
   answerEl.textContent = card.text;
   answerEl.classList.add("filled");
 
-  // 統計
+  // 統計（使用 raw 字串計算 key，與方塊遊戲一致）
   correctCount++;
   streak++;
-  trackComboCleared([[slot.hint, slot.answer]]);
+  clearedCombos++;
+  trackComboClearedByRaw([slot.raw]);
   autoRemoveRow(slot.raw);
 
   // ATB 填充
@@ -612,6 +700,7 @@ function handleCorrectMatch(slotIdx, cardIdx) {
   }
 
   updateUI();
+  updateQueueUI();
   saveBattleState();
 
   // 檢查是否全部配對完成
@@ -970,9 +1059,8 @@ function restartGame() {
   stopAtbTimer();
   if (reviveTimer) { clearTimeout(reviveTimer); reviveTimer = null; }
 
-  groupData = loadGroupData();
-  const wordRows = loadWordRows();
-  allPairs = buildPairsForQuiz(wordRows);
+  // 重新初始化發牌Q（載入最新單字庫 + 隨機抽取 + shuffle）
+  initComboQueue();
 
   correctCount = 0;
   wrongCount = 0;
@@ -989,6 +1077,7 @@ function restartGame() {
   spawnEnemy();
   updateBattleUI();
   updateUI();
+  updateQueueUI();
   saveBattleState();
 
   generateRound();
@@ -1004,10 +1093,8 @@ function init() {
     restartBtn.addEventListener("click", restartGame);
     autoPlayBtn.addEventListener("click", toggleAutoPlay);
 
-    groupData = loadGroupData();
-    const wordRows = loadWordRows();
-    allPairs = buildPairsForQuiz(wordRows);
-    console.log("[Novel] loaded", allPairs.length, "pairs");
+    // 初始化發牌Q
+    initComboQueue();
 
     const savedBattle = loadBattleState();
     if (savedBattle) {
@@ -1024,6 +1111,7 @@ function init() {
     spawnEnemy();
     updateBattleUI();
     updateUI();
+    updateQueueUI();
 
     generateRound();
     startAtbTimer();

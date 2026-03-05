@@ -25,6 +25,32 @@
         flex-wrap: wrap;
       }
 
+      /* 發牌Q 進度列 */
+      .queue-progress {
+        text-align: center;
+        font-size: 0.85rem;
+        color: #889;
+        margin-bottom: 8px;
+        padding: 6px 0;
+        background: #12162e;
+        border: 1px solid #3f4b89;
+        border-radius: 8px;
+      }
+      .queue-progress b { color: #ffcc02; }
+      .queue-bar {
+        height: 3px;
+        background: #1e2348;
+        border-radius: 2px;
+        margin: 4px 12px 0;
+        overflow: hidden;
+      }
+      .queue-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #5bc0de, #5fd18d);
+        border-radius: 2px;
+        transition: width 0.4s;
+      }
+
       /* ═══ 配對遊戲區 ═══ */
       .match-area {
         background: #181d3a;
@@ -341,6 +367,11 @@
         <button id="autoPlayBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🤖 自動</button>
         <button id="restartBtn" style="padding:4px 12px;font-size:0.85rem;border-radius:6px;border:1px solid #3f4b89;background:#1a1f3d;color:#ccd;cursor:pointer;">🔄 重新開始</button>
       </nav>
+
+      <!-- 發牌Q 進度 -->
+      <div class="queue-progress" id="queueProgress">
+        發牌Q：第 0/0 組 ｜ 已配對 0
+      </div>
 
       <!-- 配對遊戲區 -->
       <section class="match-area">
