@@ -435,39 +435,40 @@ function generateRound() {
   // 延遲記錄 appear
   trackComboAppearByRaw(chosen.map(p => p.raw));
 
-  // 建立 combo 資料，每個 combo 隨機預填一格作為提示
+  // 建立 combo 資料：hint 也做成小卡槽，每個 combo 隨機預填一格作為提示
   roundCombos = chosen.map(p => {
-    const blocks = [...p.blocks];
-    // 只有 2+ 格的 combo 才預填（1 格的不預填，否則沒有卡片可配）
-    const prefilled = blocks.length >= 2
-      ? Math.floor(Math.random() * blocks.length)
-      : -1;
-    const matched = new Array(blocks.length).fill(false);
-    if (prefilled >= 0) matched[prefilled] = true; // 預填格標記為已配對
-    return { hint: p.hint, blocks, raw: p.raw, prefilled, matched };
+    // 把中文提示也合併進 blocks（第 0 格 = 中文，後面 = 德文）
+    const allBlocks = [p.hint, ...p.blocks];
+    // 隨機選一格預填
+    const prefilled = Math.floor(Math.random() * allBlocks.length);
+    const matched = new Array(allBlocks.length).fill(false);
+    matched[prefilled] = true;
+    return { blocks: allBlocks, raw: p.raw, prefilled, matched };
   });
 
   // 建立答案卡片：每個非預填 block 一張小卡
   const cards = [];
   roundCombos.forEach((combo, comboIdx) => {
     combo.blocks.forEach((block, blockIdx) => {
-      if (blockIdx === combo.prefilled) return; // 預填格不產生卡片
+      if (blockIdx === combo.prefilled) return;
       cards.push({ text: block, comboIdx, blockIdx });
     });
   });
 
-  // 干擾卡：從 allPairs 全池中挑選不重複的 block
-  const usedTexts = new Set(cards.map(c => c.text.trim().toLowerCase()));
-  // 預填的文字也要排除
+  // 干擾卡：從 allPairs 全池中挑選不與任何卡槽文字重複的 block
+  // 收集所有卡槽的文字（包含預填格），用於排除
+  const allSlotTexts = new Set();
   roundCombos.forEach(combo => {
-    if (combo.prefilled >= 0) usedTexts.add(combo.blocks[combo.prefilled].trim().toLowerCase());
+    combo.blocks.forEach(b => allSlotTexts.add(b.trim().toLowerCase()));
   });
   const distractorBlocks = [];
   for (const p of allPairs) {
-    for (const b of p.blocks) {
-      if (!usedTexts.has(b.trim().toLowerCase())) {
+    // hint 也可能是干擾源
+    const candidates = [p.hint, ...p.blocks];
+    for (const b of candidates) {
+      if (!allSlotTexts.has(b.trim().toLowerCase())) {
         distractorBlocks.push(b);
-        usedTexts.add(b.trim().toLowerCase());
+        allSlotTexts.add(b.trim().toLowerCase()); // 避免重複干擾卡
       }
     }
   }
@@ -486,19 +487,13 @@ function generateRound() {
 }
 
 function renderRound() {
-  // ── 渲染卡槽：每個 combo 一個群組，每個 block 一個獨立小卡槽 ──
+  // ── 渲染卡槽：每個 combo 一個群組，所有 block（含中文）都是獨立小卡槽 ──
   matchSlotsEl.innerHTML = "";
   roundCombos.forEach((combo, ci) => {
     const group = document.createElement("div");
     group.className = "combo-group";
 
-    // 中文提示
-    const hintDiv = document.createElement("div");
-    hintDiv.className = "combo-hint";
-    hintDiv.textContent = combo.hint;
-    group.appendChild(hintDiv);
-
-    // block 小卡槽列
+    // 所有 block 小卡槽列（第 0 格 = 中文，其餘 = 德文）
     const row = document.createElement("div");
     row.className = "block-slot-row";
     combo.blocks.forEach((block, bi) => {
@@ -507,7 +502,6 @@ function renderRound() {
       cell.dataset.comboIdx = ci;
       cell.dataset.blockIdx = bi;
       if (bi === combo.prefilled) {
-        // 預填格：直接顯示文字，標記已填
         cell.textContent = block;
         cell.classList.add("prefilled");
       } else {
@@ -674,11 +668,13 @@ function onSlotClick(comboIdx, blockIdx) {
   // 取消所有高亮
   matchSlotsEl.querySelectorAll(".block-slot").forEach(s => s.classList.remove("highlight"));
 
-  if (card.comboIdx === comboIdx && card.blockIdx === blockIdx) {
-    // ✅ comboIdx + blockIdx 完全匹配
+  // ── 以「文字內容」比對：相同文字可互換 ──
+  const expected = combo.blocks[blockIdx].trim().toLowerCase();
+  const actual = card.text.trim().toLowerCase();
+
+  if (actual === expected) {
     handleCorrectMatch(comboIdx, blockIdx, cardIdx);
   } else {
-    // ❌ 配對錯誤
     handleWrongMatch(comboIdx, blockIdx, cardIdx);
   }
 }
@@ -725,10 +721,10 @@ function handleCorrectMatch(comboIdx, blockIdx, cardIdx) {
     clearedCombos++;
     trackComboClearedByRaw([combo.raw]);
     autoRemoveRow(combo.raw);
-    matchFeedback.textContent = `✅ ${combo.hint} = ${combo.blocks.join(" ")}  完成！`;
+    matchFeedback.textContent = `✅ ${combo.blocks.join(" ")}  完成！`;
   } else {
     const done = combo.matched.filter(Boolean).length;
-    matchFeedback.textContent = `✅ ${card.text} → ${combo.hint}（${done}/${combo.blocks.length}）`;
+    matchFeedback.textContent = `✅ ${card.text}（${done}/${combo.blocks.length}）`;
   }
   matchFeedback.style.color = "#5fd18d";
 
@@ -1052,7 +1048,7 @@ function stopAutoMatch() {
 }
 
 function doAutoMatch() {
-  // 找到第一張尚未配對且屬於某個 combo 的正確卡片
+  // 找到第一張尚未配對且不是干擾卡的卡片
   const correctCardIdx = roundCards.findIndex(c =>
     c.comboIdx >= 0 && !c.el.classList.contains("matched")
   );
@@ -1060,6 +1056,22 @@ function doAutoMatch() {
 
   const card = roundCards[correctCardIdx];
   const cardEl = card.el;
+  const cardText = card.text.trim().toLowerCase();
+
+  // 找到任一尚未填入且文字匹配的小卡槽
+  let targetComboIdx = -1, targetBlockIdx = -1;
+  for (let ci = 0; ci < roundCombos.length; ci++) {
+    const combo = roundCombos[ci];
+    for (let bi = 0; bi < combo.blocks.length; bi++) {
+      if (!combo.matched[bi] && combo.blocks[bi].trim().toLowerCase() === cardText) {
+        targetComboIdx = ci;
+        targetBlockIdx = bi;
+        break;
+      }
+    }
+    if (targetComboIdx >= 0) break;
+  }
+  if (targetComboIdx < 0) return;
 
   // 模擬選取卡片
   if (selectedCardEl) selectedCardEl.classList.remove("selected");
@@ -1069,7 +1081,7 @@ function doAutoMatch() {
   // 延遲後模擬點擊正確的小卡槽
   setTimeout(() => {
     if (!autoPlayEnabled || playerDead) return;
-    onSlotClick(card.comboIdx, card.blockIdx);
+    onSlotClick(targetComboIdx, targetBlockIdx);
   }, 200 + Math.random() * 200);
 }
 
