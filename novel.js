@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════
-   德文單字小說 ＋ ATB 戰鬥系統 (Word Novel + Battle)
-   答對題目 → 填充行動條 + 揭露小說
+   德文單字小說 ＋ 配對遊戲 ＋ ATB 戰鬥
+   配對成功 → 填充行動條 + 揭露小說
    與俄羅斯方塊共用 localStorage 學習統計
    ═══════════════════════════════════════════════════════ */
 
@@ -203,8 +203,10 @@ const NOVEL_TEXT = `第1章 這破宗門，誰愛呆誰呆
 
 const NOVEL_SAVE_KEY = "word_novel_progress_v1";
 const BATTLE_SAVE_KEY = "word_novel_battle_v1";
-const CHARS_PER_ANSWER = 5;
+const CHARS_PER_MATCH = 5;
 const MAX_VISIBLE_LINES = 50;
+const SLOTS_PER_ROUND = 3;    // 每回合卡槽數
+const DISTRACTORS = 2;         // 干擾卡數量
 
 // ══════════════════════════════════════
 //  共用常數（與其他遊戲共用）
@@ -347,10 +349,6 @@ async function syncStatsToSheets() {
 
 function isAutoRemoveMode() { return localStorage.getItem(AUTO_REMOVE_KEY) === "1"; }
 
-/**
- * 答對時呼叫：如果開啟自動移除模式，從 localStorage 移除該 combo。
- * @param {string} raw — 原始 row 字串，例如 "蘋果,Apfel"
- */
 function autoRemoveRow(raw) {
   if (!isAutoRemoveMode()) return;
   if (!raw) return;
@@ -363,7 +361,6 @@ function autoRemoveRow(raw) {
     return key !== keyToRemove;
   });
 
-  // 群組模式：記錄已移除的 word 到 GROUP_REMOVED_KEY
   const ag = loadActiveGroups();
   if (ag.length > 0) {
     try {
@@ -389,7 +386,6 @@ function autoRemoveRow(raw) {
     } catch (e) { /* ignore */ }
   }
 
-  // 自訂模式：從 STORAGE_KEY 和 CUSTOM_FULL_KEY 同步移除
   if (isCustomActive()) {
     try {
       const raw2 = localStorage.getItem(STORAGE_KEY);
@@ -417,7 +413,6 @@ function autoRemoveRow(raw) {
     } catch (e) { /* ignore */ }
   }
 
-  // 同步遞減「隨機抽取組數」
   if (totalRemoved > 0) {
     try {
       const currentPick = parseInt(localStorage.getItem(PICK_KEY), 10);
@@ -427,7 +422,6 @@ function autoRemoveRow(raw) {
     } catch (e) { /* ignore */ }
   }
 
-  // 從當前 allPairs 中也移除，避免同一局再出
   if (totalRemoved > 0) {
     allPairs = allPairs.filter(p => {
       const key = p.raw.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
@@ -442,51 +436,55 @@ function autoRemoveRow(raw) {
 // ══════════════════════════════════════
 
 const ENEMY_WAVES = [
-  { name: "👹 魔族士兵",    emoji: "👹", baseHp: 40,  atk: [6, 10],  atbSpeed: 2.5  },
-  { name: "🐺 妖狼",       emoji: "🐺", baseHp: 55,  atk: [8, 13],  atbSpeed: 3.0  },
-  { name: "👿 魔族精英",    emoji: "👿", baseHp: 70,  atk: [10, 16], atbSpeed: 3.5  },
-  { name: "🗡️ 魔族刺客",   emoji: "🗡️", baseHp: 60,  atk: [14, 20], atbSpeed: 4.5  },
-  { name: "🛡️ 魔族隊長",   emoji: "🛡️", baseHp: 90,  atk: [10, 18], atbSpeed: 3.0  },
-  { name: "🔥 炎魔",       emoji: "🔥", baseHp: 100, atk: [12, 20], atbSpeed: 3.5  },
-  { name: "❄️ 冰魄將軍",   emoji: "❄️", baseHp: 120, atk: [14, 22], atbSpeed: 4.0  },
-  { name: "💀 亡骨魔將",    emoji: "💀", baseHp: 140, atk: [16, 25], atbSpeed: 4.5  },
-  { name: "🐉 妖龍",       emoji: "🐉", baseHp: 180, atk: [18, 28], atbSpeed: 5.0  },
-  { name: "😈 魔族大君",    emoji: "😈", baseHp: 220, atk: [20, 32], atbSpeed: 5.5  },
+  { name: "👹 魔族士兵",    baseHp: 40,  atk: [6, 10],  atbSpeed: 2.5  },
+  { name: "🐺 妖狼",       baseHp: 55,  atk: [8, 13],  atbSpeed: 3.0  },
+  { name: "👿 魔族精英",    baseHp: 70,  atk: [10, 16], atbSpeed: 3.5  },
+  { name: "🗡️ 魔族刺客",   baseHp: 60,  atk: [14, 20], atbSpeed: 4.5  },
+  { name: "🛡️ 魔族隊長",   baseHp: 90,  atk: [10, 18], atbSpeed: 3.0  },
+  { name: "🔥 炎魔",       baseHp: 100, atk: [12, 20], atbSpeed: 3.5  },
+  { name: "❄️ 冰魄將軍",   baseHp: 120, atk: [14, 22], atbSpeed: 4.0  },
+  { name: "💀 亡骨魔將",    baseHp: 140, atk: [16, 25], atbSpeed: 4.5  },
+  { name: "🐉 妖龍",       baseHp: 180, atk: [18, 28], atbSpeed: 5.0  },
+  { name: "😈 魔族大君",    baseHp: 220, atk: [20, 32], atbSpeed: 5.5  },
 ];
 
 const PLAYER_BASE_HP = 100;
-const PLAYER_ATK = [15, 25];           // 玩家每次攻擊傷害範圍
-const PLAYER_ATB_PER_CORRECT = 50;     // 答對一題 ATB +50%
-const ENEMY_ATB_BOOST_ON_WRONG = 25;   // 答錯時敵人 ATB +25%
-const BONUS_CHARS_ON_KILL = 5;         // 擊殺敵人額外揭露字數
-const ATB_TICK_MS = 100;               // ATB tick 間隔 (ms)
+const PLAYER_ATK = [15, 25];
+const PLAYER_ATB_PER_MATCH = 34;       // 每次配對 ATB +34% (3 次配對 = 102%)
+const ENEMY_ATB_BOOST_ON_WRONG = 15;   // 配對錯誤時敵人 ATB +15%
+const BONUS_CHARS_ON_KILL = 5;
+const ATB_TICK_MS = 100;
 
 // ══════════════════════════════════════
 //  遊戲狀態
 // ══════════════════════════════════════
 
 let allPairs = [];
-let currentQuiz = null;
-let quizLocked = false;
 let correctCount = 0;
 let wrongCount = 0;
 let streak = 0;
 let novelPos = 0;
 let displayedBlocks = [];
 
+// 配對遊戲狀態
+let roundSlots = [];       // [{hint, answer, raw, matched}]
+let roundCards = [];        // [{text, pairIdx, el}]  pairIdx: 在 roundSlots 中的 index，-1 為干擾
+let selectedCardEl = null;  // 目前選中的卡片 DOM
+let roundLocked = false;    // 動畫中鎖定
+
 // ATB 戰鬥狀態
 let playerHp = PLAYER_BASE_HP;
 let playerMaxHp = PLAYER_BASE_HP;
-let playerAtb = 0;           // 0 ~ 100
+let playerAtb = 0;
 let enemyHp = 0;
 let enemyMaxHp = 0;
-let enemyAtb = 0;            // 0 ~ 100
-let enemyAtbSpeed = 0;       // %/秒
+let enemyAtb = 0;
+let enemyAtbSpeed = 0;
 let enemyAtk = [0, 0];
 let enemyName = "";
 let wave = 1;
 let killCount = 0;
-let battlePaused = false;     // 暫停 ATB（例如攻擊動畫中）
+let battlePaused = false;
 let atbTimer = null;
 let playerDead = false;
 let reviveTimer = null;
@@ -496,27 +494,25 @@ let novelPanelVisible = true;
 
 // 自動遊玩
 let autoPlayEnabled = false;
-let autoAnswerTimer = null;
+let autoMatchTimer = null;
 
 // ══════════════════════════════════════
 //  DOM
 // ══════════════════════════════════════
 
-const quizWordEl        = document.getElementById("quizWord");
-const quizPairEl        = document.getElementById("quizPair");
-const quizFeedback      = document.getElementById("quizFeedback");
-const quizStatsEl       = document.getElementById("quizStats");
-const btnCorrect        = document.getElementById("btnCorrect");
-const btnWrong          = document.getElementById("btnWrong");
-const restartBtn        = document.getElementById("restartBtn");
-const autoPlayBtn       = document.getElementById("autoPlayBtn");
-const novelScroll       = document.getElementById("novelScroll");
+const matchSlotsEl   = document.getElementById("matchSlots");
+const matchCardsEl   = document.getElementById("matchCards");
+const matchFeedback  = document.getElementById("matchFeedback");
+const matchStatsEl   = document.getElementById("matchStats");
+const restartBtn     = document.getElementById("restartBtn");
+const autoPlayBtn    = document.getElementById("autoPlayBtn");
+const toggleNovelBtn = document.getElementById("toggleNovelBtn");
+const novelPanel     = document.getElementById("novelPanel");
+const novelScroll    = document.getElementById("novelScroll");
 const novelProgressText = document.getElementById("novelProgressText");
 const novelProgressFill = document.getElementById("novelProgressFill");
-const correctEl         = document.getElementById("correctEl");
-const streakEl          = document.getElementById("streakEl");
-const toggleNovelBtn    = document.getElementById("toggleNovelBtn");
-const novelPanel        = document.getElementById("novelPanel");
+const correctEl      = document.getElementById("correctEl");
+const streakEl       = document.getElementById("streakEl");
 
 // ATB DOM
 const battleArea     = document.getElementById("battleArea");
@@ -533,6 +529,246 @@ const killCountEl    = document.getElementById("killCount");
 const battleLogEl    = document.getElementById("battleLog");
 
 // ══════════════════════════════════════
+//  配對遊戲邏輯
+// ══════════════════════════════════════
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+function generateRound() {
+  if (allPairs.length < 2) {
+    matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 2 組</div>';
+    matchCardsEl.innerHTML = "";
+    return;
+  }
+
+  if (novelPos >= NOVEL_TEXT.length) {
+    matchSlotsEl.innerHTML = '<div style="color:#ffcc02;padding:12px;">🎉 小說已全部揭曉！第1章完結</div>';
+    matchCardsEl.innerHTML = "";
+    stopAtbTimer();
+    battleLog("🏁 小說讀完了！戰鬥結束！", "#ffcc02");
+    return;
+  }
+
+  // 從所有配對中抽取 N 個不重複的
+  const n = Math.min(SLOTS_PER_ROUND, allPairs.length);
+  const shuffled = shuffle([...allPairs]);
+  const chosen = shuffled.slice(0, n);
+
+  // 建立卡槽
+  roundSlots = chosen.map(p => ({
+    hint: p.hint,
+    answer: p.answer,
+    raw: p.raw,
+    matched: false,
+  }));
+
+  // 統計：這些 combo 出現了
+  trackComboAppear(chosen.map(p => [p.hint, p.answer]));
+
+  // 建立答案卡片：正確的 + 干擾的
+  const cards = chosen.map((p, i) => ({ text: p.answer, pairIdx: i }));
+
+  // 加入干擾卡（從未被選中的配對中隨機取）
+  const remaining = shuffled.slice(n);
+  const distractorCount = Math.min(DISTRACTORS, remaining.length);
+  for (let i = 0; i < distractorCount; i++) {
+    cards.push({ text: remaining[i].answer, pairIdx: -1 });
+  }
+
+  roundCards = shuffle(cards);
+  selectedCardEl = null;
+  roundLocked = false;
+
+  renderRound();
+}
+
+function renderRound() {
+  // 渲染卡槽
+  matchSlotsEl.innerHTML = "";
+  roundSlots.forEach((slot, idx) => {
+    const el = document.createElement("div");
+    el.className = "match-slot";
+    el.dataset.idx = idx;
+    el.innerHTML = `
+      <div class="slot-hint">${slot.hint}</div>
+      <div class="slot-answer" id="slotAnswer${idx}">?</div>
+    `;
+    el.addEventListener("click", () => onSlotClick(idx));
+    matchSlotsEl.appendChild(el);
+  });
+
+  // 渲染答案卡片
+  matchCardsEl.innerHTML = "";
+  roundCards.forEach((card, idx) => {
+    const el = document.createElement("div");
+    el.className = "match-card";
+    el.textContent = card.text;
+    el.dataset.idx = idx;
+    el.addEventListener("click", () => onCardClick(idx, el));
+    card.el = el;
+    matchCardsEl.appendChild(el);
+  });
+
+  matchFeedback.textContent = " ";
+  matchFeedback.style.color = "";
+}
+
+function onCardClick(cardIdx, cardEl) {
+  if (roundLocked || playerDead) return;
+
+  // 如果已配對，忽略
+  if (cardEl.classList.contains("matched")) return;
+
+  // 如果已選中同一張，取消選取
+  if (selectedCardEl === cardEl) {
+    cardEl.classList.remove("selected");
+    selectedCardEl = null;
+    // 取消卡槽高亮
+    matchSlotsEl.querySelectorAll(".match-slot").forEach(s => s.classList.remove("highlight"));
+    return;
+  }
+
+  // 選中新卡片
+  if (selectedCardEl) selectedCardEl.classList.remove("selected");
+  cardEl.classList.add("selected");
+  selectedCardEl = cardEl;
+
+  // 高亮所有未配對的卡槽
+  matchSlotsEl.querySelectorAll(".match-slot").forEach(s => {
+    const idx = parseInt(s.dataset.idx);
+    s.classList.toggle("highlight", !roundSlots[idx].matched);
+  });
+}
+
+function onSlotClick(slotIdx) {
+  if (roundLocked || playerDead) return;
+  if (!selectedCardEl) return;
+  if (roundSlots[slotIdx].matched) return;
+
+  const cardIdx = parseInt(selectedCardEl.dataset.idx);
+  const card = roundCards[cardIdx];
+  const slot = roundSlots[slotIdx];
+
+  // 取消所有高亮
+  matchSlotsEl.querySelectorAll(".match-slot").forEach(s => s.classList.remove("highlight"));
+
+  if (card.pairIdx === slotIdx) {
+    // ✅ 配對正確！
+    handleCorrectMatch(slotIdx, cardIdx);
+  } else {
+    // ❌ 配對錯誤
+    handleWrongMatch(slotIdx, cardIdx);
+  }
+}
+
+function handleCorrectMatch(slotIdx, cardIdx) {
+  roundLocked = true;
+  const slot = roundSlots[slotIdx];
+  const card = roundCards[cardIdx];
+  const cardEl = card.el;
+  const slotEl = matchSlotsEl.children[slotIdx];
+
+  // 標記已配對
+  slot.matched = true;
+  cardEl.classList.remove("selected");
+  cardEl.classList.add("matched");
+  slotEl.classList.add("correct");
+  selectedCardEl = null;
+
+  // 顯示答案
+  const answerEl = document.getElementById("slotAnswer" + slotIdx);
+  answerEl.textContent = card.text;
+  answerEl.classList.add("filled");
+
+  // 統計
+  correctCount++;
+  streak++;
+  trackComboCleared([[slot.hint, slot.answer]]);
+  autoRemoveRow(slot.raw);
+
+  // ATB 填充
+  playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_MATCH);
+  updateBattleUI();
+
+  // 揭露小說
+  revealChars(CHARS_PER_MATCH);
+
+  matchFeedback.textContent = `✅ ${slot.hint} = ${slot.answer}  ATB+${PLAYER_ATB_PER_MATCH}%`;
+  matchFeedback.style.color = "#5fd18d";
+
+  // 玩家 ATB 滿 → 攻擊
+  if (playerAtb >= 100) {
+    setTimeout(() => playerAttack(), 200);
+  }
+
+  updateUI();
+  saveBattleState();
+
+  // 檢查是否全部配對完成
+  setTimeout(() => {
+    roundLocked = false;
+    checkRoundComplete();
+  }, 300);
+}
+
+function handleWrongMatch(slotIdx, cardIdx) {
+  roundLocked = true;
+  const card = roundCards[cardIdx];
+  const cardEl = card.el;
+  const slotEl = matchSlotsEl.children[slotIdx];
+
+  // 錯誤動畫
+  cardEl.classList.remove("selected");
+  cardEl.classList.add("wrong-flash");
+  slotEl.classList.add("wrong-flash");
+  selectedCardEl = null;
+
+  // 統計
+  wrongCount++;
+  streak = 0;
+
+  // 敵人 ATB 加速
+  enemyAtb = Math.min(100, enemyAtb + ENEMY_ATB_BOOST_ON_WRONG);
+  updateBattleUI();
+
+  matchFeedback.textContent = `❌ 配對錯誤！ 敵人 ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`;
+  matchFeedback.style.color = "#ff5555";
+
+  battleLog(`⚡ 配對錯誤！${enemyName} ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`, "#c77dff");
+
+  updateUI();
+
+  setTimeout(() => {
+    cardEl.classList.remove("wrong-flash");
+    slotEl.classList.remove("wrong-flash");
+    roundLocked = false;
+  }, 450);
+}
+
+function checkRoundComplete() {
+  const allMatched = roundSlots.every(s => s.matched);
+  if (!allMatched) {
+    if (autoPlayEnabled) scheduleAutoMatch();
+    return;
+  }
+
+  // 全部配對完成！
+  matchFeedback.textContent = "🎉 全部配對成功！下一回合...";
+  matchFeedback.style.color = "#ffcc02";
+
+  setTimeout(() => {
+    generateRound();
+    if (autoPlayEnabled) scheduleAutoMatch();
+  }, 800);
+}
+
+// ══════════════════════════════════════
 //  ATB 戰鬥邏輯
 // ══════════════════════════════════════
 
@@ -541,7 +777,6 @@ function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) 
 function getEnemyTemplate(w) {
   const idx = Math.min(w - 1, ENEMY_WAVES.length - 1);
   const tmpl = ENEMY_WAVES[idx];
-  // 超過模板上限後，HP 與 ATK 持續成長
   const overflow = Math.max(0, w - ENEMY_WAVES.length);
   return {
     name: tmpl.name,
@@ -566,25 +801,22 @@ function spawnEnemy() {
   battleLog(`${enemyName} 出現了！`, "#ff8844");
 }
 
-/** 玩家攻擊敵人 */
 function playerAttack() {
   if (playerDead) return;
   battlePaused = true;
 
   const dmg = randInt(PLAYER_ATK[0], PLAYER_ATK[1]);
-  // 連擊加成：每 3 連答多 20% 傷害
   const bonus = Math.floor(streak / 3) * 0.2;
   const finalDmg = Math.round(dmg * (1 + bonus));
 
   enemyHp = Math.max(0, enemyHp - finalDmg);
   playerAtb = 0;
 
-  // 視覺
   floatDmg(enemySide, `-${finalDmg}`, "enemy-hit");
   enemySide.classList.add("shake");
   setTimeout(() => enemySide.classList.remove("shake"), 350);
 
-  const bonusText = bonus > 0 ? ` (${streak}連擊 +${Math.round(bonus*100)}%)` : "";
+  const bonusText = bonus > 0 ? ` (${streak}連擊 +${Math.round(bonus * 100)}%)` : "";
   battleLog(`⚔️ 勇者攻擊 → ${enemyName} 受到 ${finalDmg} 傷害${bonusText}`, "#5fd18d");
 
   updateBattleUI();
@@ -596,7 +828,6 @@ function playerAttack() {
   }
 }
 
-/** 敵人攻擊玩家 */
 function enemyAttack() {
   if (playerDead) return;
   battlePaused = true;
@@ -605,7 +836,6 @@ function enemyAttack() {
   playerHp = Math.max(0, playerHp - dmg);
   enemyAtb = 0;
 
-  // 視覺
   const playerSideEl = battleArea.querySelector(".player-side");
   floatDmg(playerSideEl, `-${dmg}`, "player-hit");
   playerSideEl.classList.add("shake");
@@ -622,7 +852,6 @@ function enemyAttack() {
   }
 }
 
-/** 敵人被擊敗 */
 function onEnemyDefeated() {
   killCount++;
   wave++;
@@ -632,10 +861,8 @@ function onEnemyDefeated() {
 
   battleLog(`🏆 ${enemyName} 被擊敗！ 額外獲得 ${BONUS_CHARS_ON_KILL} 字！`, "#ffcc02");
 
-  // 額外揭露小說字數作為獎勵
   revealChars(BONUS_CHARS_ON_KILL);
 
-  // 玩家回復少量 HP
   const healAmt = Math.min(15 + wave * 2, playerMaxHp - playerHp);
   if (healAmt > 0) {
     playerHp = Math.min(playerMaxHp, playerHp + healAmt);
@@ -647,64 +874,53 @@ function onEnemyDefeated() {
   updateBattleUI();
   saveBattleState();
 
-  // 短暫延遲後生成下一波敵人
   setTimeout(() => {
     spawnEnemy();
     battlePaused = false;
   }, 1000);
 }
 
-/** 玩家被擊敗 */
 function onPlayerDefeated() {
   playerDead = true;
   battlePaused = true;
-  quizLocked = true;
-  stopAutoAnswer();
+  roundLocked = true;
+  stopAutoMatch();
 
   const playerSideEl = battleArea.querySelector(".player-side");
   playerSideEl.classList.add("ko-flash");
 
   battleLog("💀 勇者倒下了！3 秒後復活……", "#ff6b6b");
 
-  // 3 秒後復活
   reviveTimer = setTimeout(() => {
     playerHp = Math.round(playerMaxHp * 0.5);
     playerDead = false;
     battlePaused = false;
-    quizLocked = false;
+    roundLocked = false;
     playerSideEl.classList.remove("ko-flash");
 
-    // 敵人 ATB 歸零（給玩家喘息空間）
     enemyAtb = 0;
 
-    const playerSideEl2 = battleArea.querySelector(".player-side");
-    floatDmg(playerSideEl2, "復活！", "heal");
+    floatDmg(playerSideEl, "復活！", "heal");
     battleLog("✨ 勇者復活了！（HP 50%）", "#5bc0de");
     updateBattleUI();
 
-    if (autoPlayEnabled) scheduleAutoAnswer();
-    if (!currentQuiz) nextQuiz();
+    if (autoPlayEnabled) scheduleAutoMatch();
   }, 3000);
 }
 
-/** ATB 主 tick：每 100ms 呼叫一次 */
 function atbTick() {
   if (battlePaused || playerDead) return;
 
-  // 敵人 ATB 自動填充
   const increment = enemyAtbSpeed * (ATB_TICK_MS / 1000);
   enemyAtb = Math.min(100, enemyAtb + increment);
 
-  // 更新 ATB 條視覺
   enemyAtbFill.style.width = enemyAtb.toFixed(1) + "%";
   playerAtbFill.style.width = playerAtb.toFixed(1) + "%";
 
-  // 敵人 ATB 滿 → 攻擊
   if (enemyAtb >= 100) {
     enemyAttack();
   }
 
-  // 玩家 ATB 滿 → 自動攻擊
   if (playerAtb >= 100 && !playerDead) {
     playerAttack();
   }
@@ -723,29 +939,23 @@ function stopAtbTimer() {
 // ══════════════════════════════════════
 
 function updateBattleUI() {
-  // Player HP
   const pHpPct = Math.max(0, (playerHp / playerMaxHp) * 100);
   playerHpFill.style.width = pHpPct.toFixed(1) + "%";
   playerHpText.textContent = `${playerHp}/${playerMaxHp}`;
-  // HP 條變色
   if (pHpPct > 50) playerHpFill.style.background = "linear-gradient(90deg, #2a7a4a, #5fd18d)";
   else if (pHpPct > 25) playerHpFill.style.background = "linear-gradient(90deg, #8a7a2a, #f7b955)";
   else playerHpFill.style.background = "linear-gradient(90deg, #8a2a2a, #ff6b6b)";
 
-  // Enemy HP
   const eHpPct = Math.max(0, (enemyHp / enemyMaxHp) * 100);
   enemyHpFill.style.width = eHpPct.toFixed(1) + "%";
   enemyHpText.textContent = `${enemyHp}/${enemyMaxHp}`;
 
-  // ATB
   playerAtbFill.style.width = playerAtb.toFixed(1) + "%";
   enemyAtbFill.style.width = enemyAtb.toFixed(1) + "%";
 
-  // ATB 滿時加上 pulse
   playerAtbFill.classList.toggle("full", playerAtb >= 100);
   enemyAtbFill.classList.toggle("full", enemyAtb >= 100);
 
-  // Wave info
   waveNumEl.textContent = wave;
   killCountEl.textContent = killCount;
 }
@@ -755,12 +965,10 @@ function battleLog(msg, color) {
   battleLogEl.style.color = color || "#aab";
 }
 
-/** 飄字傷害效果 */
 function floatDmg(parentEl, text, cssClass) {
   const el = document.createElement("div");
   el.className = "dmg-float " + (cssClass || "");
   el.textContent = text;
-  // 隨機水平偏移
   el.style.left = (20 + Math.random() * 60) + "%";
   el.style.top = "10px";
   parentEl.style.position = "relative";
@@ -858,7 +1066,7 @@ function restoreNovel() {
   let pos = 0;
   const blocks = [];
   while (pos < targetPos) {
-    const result = takeVisibleChars(pos, CHARS_PER_ANSWER);
+    const result = takeVisibleChars(pos, CHARS_PER_MATCH);
     if (result.text.length === 0) break;
     blocks.push(result.text);
     pos = result.newPos;
@@ -878,114 +1086,6 @@ function restoreNovel() {
 }
 
 // ══════════════════════════════════════
-//  出題邏輯（整合 ATB）
-// ══════════════════════════════════════
-
-function nextQuiz() {
-  if (allPairs.length < 2) {
-    quizWordEl.textContent = "⚠ 單字不足（" + allPairs.length + " 組）";
-    quizPairEl.textContent = "請到設定頁面新增至少 2 組單字";
-    quizFeedback.textContent = "需要 ≥ 2 組單字才能出題";
-    quizFeedback.style.color = "#f7b955";
-    return;
-  }
-
-  if (novelPos >= NOVEL_TEXT.length) {
-    quizWordEl.textContent = "🎉 恭喜！";
-    quizPairEl.textContent = "小說已全部揭曉！";
-    quizFeedback.textContent = "第1章完結";
-    quizFeedback.style.color = "#ffcc02";
-    quizLocked = true;
-    stopAutoAnswer();
-    stopAtbTimer();
-    battleLog("🏁 小說讀完了！戰鬥結束！", "#ffcc02");
-    return;
-  }
-
-  const idx = Math.floor(Math.random() * allPairs.length);
-  const pair = allPairs[idx];
-  const isCorrect = Math.random() < 0.5;
-
-  let shownAnswer;
-  if (isCorrect) {
-    shownAnswer = pair.answer;
-  } else {
-    let wrongIdx;
-    do { wrongIdx = Math.floor(Math.random() * allPairs.length); } while (wrongIdx === idx);
-    shownAnswer = allPairs[wrongIdx].answer;
-  }
-
-  currentQuiz = {
-    hint: pair.hint,
-    correctAnswer: pair.answer,
-    shown: shownAnswer,
-    isCorrect,
-    combo: [pair.hint, pair.answer],
-  };
-
-  trackComboAppear([currentQuiz.combo]);
-
-  quizWordEl.textContent = pair.hint;
-  quizPairEl.textContent = shownAnswer;
-  quizFeedback.textContent = " ";
-  quizFeedback.style.color = "";
-  quizLocked = false;
-
-  if (autoPlayEnabled) scheduleAutoAnswer();
-}
-
-function answerQuiz(userSaidCorrect) {
-  if (!currentQuiz || quizLocked || playerDead) return;
-  quizLocked = true;
-
-  const isRight = (userSaidCorrect === currentQuiz.isCorrect);
-
-  if (isRight) {
-    correctCount++;
-    streak++;
-    trackComboCleared([currentQuiz.combo]);
-
-    // 自動移除（如果設定中開啟了自動移除模式）
-    autoRemoveRow(currentQuiz.combo.join(","));
-
-    // ATB 填充
-    playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_CORRECT);
-    updateBattleUI();
-
-    quizFeedback.textContent = `✅ 答對！+5字 ATB+${PLAYER_ATB_PER_CORRECT}%`;
-    quizFeedback.style.color = "#5fd18d";
-
-    // 揭露小說
-    revealChars(CHARS_PER_ANSWER);
-
-    // 玩家 ATB 滿 → 立即攻擊
-    if (playerAtb >= 100) {
-      setTimeout(() => playerAttack(), 200);
-    }
-
-    setTimeout(() => nextQuiz(), 600);
-  } else {
-    wrongCount++;
-    streak = 0;
-
-    // 答錯 → 敵人 ATB 加速
-    enemyAtb = Math.min(100, enemyAtb + ENEMY_ATB_BOOST_ON_WRONG);
-    updateBattleUI();
-
-    const correctText = currentQuiz.isCorrect ? "✅ 對" : "❌ 錯";
-    quizFeedback.textContent = `❌ 答錯！正解：${correctText}（${currentQuiz.hint} = ${currentQuiz.correctAnswer}）`;
-    quizFeedback.style.color = "#ff5555";
-
-    battleLog(`⚡ 答錯！${enemyName} ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`, "#c77dff");
-
-    setTimeout(() => nextQuiz(), 1800);
-  }
-
-  updateUI();
-  saveBattleState();
-}
-
-// ══════════════════════════════════════
 //  小說面板開關
 // ══════════════════════════════════════
 
@@ -998,7 +1098,7 @@ function toggleNovelPanel() {
 }
 
 // ══════════════════════════════════════
-//  自動遊玩
+//  自動遊玩（自動配對）
 // ══════════════════════════════════════
 
 function toggleAutoPlay() {
@@ -1007,25 +1107,48 @@ function toggleAutoPlay() {
   autoPlayBtn.style.background = autoPlayEnabled ? "#2a7a4a" : "#1a1f3d";
   autoPlayBtn.style.color = autoPlayEnabled ? "#fff" : "#ccd";
 
-  if (autoPlayEnabled && !quizLocked && currentQuiz) {
-    scheduleAutoAnswer();
+  if (autoPlayEnabled) {
+    scheduleAutoMatch();
   } else {
-    stopAutoAnswer();
+    stopAutoMatch();
   }
 }
 
-function scheduleAutoAnswer() {
-  stopAutoAnswer();
-  if (!autoPlayEnabled || !currentQuiz || playerDead) return;
-  const delay = 600 + Math.random() * 500;
-  autoAnswerTimer = setTimeout(() => {
-    if (!autoPlayEnabled || !currentQuiz || quizLocked || playerDead) return;
-    answerQuiz(currentQuiz.isCorrect);
+function scheduleAutoMatch() {
+  stopAutoMatch();
+  if (!autoPlayEnabled || playerDead || roundLocked) return;
+  const delay = 400 + Math.random() * 400;
+  autoMatchTimer = setTimeout(() => {
+    if (!autoPlayEnabled || playerDead || roundLocked) return;
+    doAutoMatch();
   }, delay);
 }
 
-function stopAutoAnswer() {
-  if (autoAnswerTimer) { clearTimeout(autoAnswerTimer); autoAnswerTimer = null; }
+function stopAutoMatch() {
+  if (autoMatchTimer) { clearTimeout(autoMatchTimer); autoMatchTimer = null; }
+}
+
+function doAutoMatch() {
+  // 找到第一個未配對的卡槽
+  const unmatchedSlotIdx = roundSlots.findIndex(s => !s.matched);
+  if (unmatchedSlotIdx === -1) return;
+
+  // 找到對應的正確卡片
+  const correctCardIdx = roundCards.findIndex(c => c.pairIdx === unmatchedSlotIdx && !c.el.classList.contains("matched"));
+  if (correctCardIdx === -1) return;
+
+  const cardEl = roundCards[correctCardIdx].el;
+
+  // 模擬選取卡片
+  if (selectedCardEl) selectedCardEl.classList.remove("selected");
+  cardEl.classList.add("selected");
+  selectedCardEl = cardEl;
+
+  // 延遲後模擬點擊卡槽
+  setTimeout(() => {
+    if (!autoPlayEnabled || playerDead) return;
+    onSlotClick(unmatchedSlotIdx);
+  }, 200 + Math.random() * 200);
 }
 
 // ══════════════════════════════════════
@@ -1033,7 +1156,7 @@ function stopAutoAnswer() {
 // ══════════════════════════════════════
 
 function updateUI() {
-  quizStatsEl.textContent = `答對 ${correctCount} / 答錯 ${wrongCount}`;
+  matchStatsEl.textContent = `配對 ${correctCount} / 錯誤 ${wrongCount}`;
   correctEl.textContent = correctCount;
   streakEl.textContent = streak;
 }
@@ -1044,7 +1167,7 @@ function updateUI() {
 
 function restartGame() {
   syncStatsToSheets();
-  stopAutoAnswer();
+  stopAutoMatch();
   stopAtbTimer();
   if (reviveTimer) { clearTimeout(reviveTimer); reviveTimer = null; }
 
@@ -1056,7 +1179,6 @@ function restartGame() {
   wrongCount = 0;
   streak = 0;
 
-  // 重設戰鬥
   playerHp = PLAYER_BASE_HP;
   playerMaxHp = PLAYER_BASE_HP;
   playerAtb = 0;
@@ -1070,16 +1192,16 @@ function restartGame() {
   updateUI();
   saveBattleState();
 
+  generateRound();
   startAtbTimer();
-  nextQuiz();
+
+  if (autoPlayEnabled) scheduleAutoMatch();
 }
 
 function init() {
   try {
     preventZoom();
 
-    btnCorrect.addEventListener("click", () => answerQuiz(true));
-    btnWrong.addEventListener("click", () => answerQuiz(false));
     restartBtn.addEventListener("click", restartGame);
     autoPlayBtn.addEventListener("click", toggleAutoPlay);
     toggleNovelBtn.addEventListener("click", toggleNovelPanel);
@@ -1089,10 +1211,8 @@ function init() {
     allPairs = buildPairsForQuiz(wordRows);
     console.log("[Novel] loaded", allPairs.length, "pairs");
 
-    // 還原小說進度
     restoreNovel();
 
-    // 還原戰鬥狀態
     const savedBattle = loadBattleState();
     if (savedBattle) {
       wave = savedBattle.wave || 1;
@@ -1108,13 +1228,13 @@ function init() {
     spawnEnemy();
     updateBattleUI();
     updateUI();
+
+    generateRound();
     startAtbTimer();
-    nextQuiz();
 
   } catch (err) {
     console.error("Novel init error:", err);
-    if (quizWordEl) quizWordEl.textContent = "❌ 初始化錯誤";
-    if (quizPairEl) quizPairEl.textContent = err.message;
+    matchSlotsEl.innerHTML = '<div style="color:#ff5555;padding:12px;">❌ 初始化錯誤: ' + err.message + '</div>';
   }
 }
 
