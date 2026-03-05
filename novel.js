@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════
-   德文單字小說 (Word Novel)
-   答對題目 → 顯示 5 個字的小說內容
+   德文單字小說 ＋ ATB 戰鬥系統 (Word Novel + Battle)
+   答對題目 → 填充行動條 + 揭露小說
    與俄羅斯方塊 / 貪食蛇 / RPG 共用 localStorage 學習統計
    ═══════════════════════════════════════════════════════ */
 
@@ -201,9 +201,10 @@ const NOVEL_TEXT = `第1章 這破宗門，誰愛呆誰呆
 
 等等，她不是天靈根嗎？`;
 
-const NOVEL_SAVE_KEY = "word_novel_progress_v1";   // 存讀進度
-const CHARS_PER_ANSWER = 5;   // 每次答對顯示的字數
-const MAX_VISIBLE_LINES = 50; // 可見的最大行數（超過則移除最早的）
+const NOVEL_SAVE_KEY = "word_novel_progress_v1";
+const BATTLE_SAVE_KEY = "word_novel_battle_v1";
+const CHARS_PER_ANSWER = 5;
+const MAX_VISIBLE_LINES = 50;
 
 // ══════════════════════════════════════
 //  共用常數（與其他遊戲共用）
@@ -343,6 +344,30 @@ async function syncStatsToSheets() {
 }
 
 // ══════════════════════════════════════
+//  ATB 戰鬥系統 — 敵人資料
+// ══════════════════════════════════════
+
+const ENEMY_WAVES = [
+  { name: "👹 魔族士兵",    emoji: "👹", baseHp: 40,  atk: [6, 10],  atbSpeed: 2.5  },
+  { name: "🐺 妖狼",       emoji: "🐺", baseHp: 55,  atk: [8, 13],  atbSpeed: 3.0  },
+  { name: "👿 魔族精英",    emoji: "👿", baseHp: 70,  atk: [10, 16], atbSpeed: 3.5  },
+  { name: "🗡️ 魔族刺客",   emoji: "🗡️", baseHp: 60,  atk: [14, 20], atbSpeed: 4.5  },
+  { name: "🛡️ 魔族隊長",   emoji: "🛡️", baseHp: 90,  atk: [10, 18], atbSpeed: 3.0  },
+  { name: "🔥 炎魔",       emoji: "🔥", baseHp: 100, atk: [12, 20], atbSpeed: 3.5  },
+  { name: "❄️ 冰魄將軍",   emoji: "❄️", baseHp: 120, atk: [14, 22], atbSpeed: 4.0  },
+  { name: "💀 亡骨魔將",    emoji: "💀", baseHp: 140, atk: [16, 25], atbSpeed: 4.5  },
+  { name: "🐉 妖龍",       emoji: "🐉", baseHp: 180, atk: [18, 28], atbSpeed: 5.0  },
+  { name: "😈 魔族大君",    emoji: "😈", baseHp: 220, atk: [20, 32], atbSpeed: 5.5  },
+];
+
+const PLAYER_BASE_HP = 100;
+const PLAYER_ATK = [15, 25];           // 玩家每次攻擊傷害範圍
+const PLAYER_ATB_PER_CORRECT = 50;     // 答對一題 ATB +50%
+const ENEMY_ATB_BOOST_ON_WRONG = 25;   // 答錯時敵人 ATB +25%
+const BONUS_CHARS_ON_KILL = 5;         // 擊殺敵人額外揭露字數
+const ATB_TICK_MS = 100;               // ATB tick 間隔 (ms)
+
+// ══════════════════════════════════════
 //  遊戲狀態
 // ══════════════════════════════════════
 
@@ -352,10 +377,27 @@ let quizLocked = false;
 let correctCount = 0;
 let wrongCount = 0;
 let streak = 0;
-let novelPos = 0;             // 小說已顯示到第幾個字（含換行）
-let displayedBlocks = [];     // 目前畫面上的區塊 DOM 元素
+let novelPos = 0;
+let displayedBlocks = [];
 
-// ── 自動遊玩 ──
+// ATB 戰鬥狀態
+let playerHp = PLAYER_BASE_HP;
+let playerMaxHp = PLAYER_BASE_HP;
+let playerAtb = 0;           // 0 ~ 100
+let enemyHp = 0;
+let enemyMaxHp = 0;
+let enemyAtb = 0;            // 0 ~ 100
+let enemyAtbSpeed = 0;       // %/秒
+let enemyAtk = [0, 0];
+let enemyName = "";
+let wave = 1;
+let killCount = 0;
+let battlePaused = false;     // 暫停 ATB（例如攻擊動畫中）
+let atbTimer = null;
+let playerDead = false;
+let reviveTimer = null;
+
+// 自動遊玩
 let autoPlayEnabled = false;
 let autoAnswerTimer = null;
 
@@ -363,41 +405,303 @@ let autoAnswerTimer = null;
 //  DOM
 // ══════════════════════════════════════
 
-const quizWordEl       = document.getElementById("quizWord");
-const quizPairEl       = document.getElementById("quizPair");
-const quizFeedback     = document.getElementById("quizFeedback");
-const quizStatsEl      = document.getElementById("quizStats");
-const btnCorrect       = document.getElementById("btnCorrect");
-const btnWrong         = document.getElementById("btnWrong");
-const restartBtn       = document.getElementById("restartBtn");
-const autoPlayBtn      = document.getElementById("autoPlayBtn");
-const novelScroll      = document.getElementById("novelScroll");
+const quizWordEl        = document.getElementById("quizWord");
+const quizPairEl        = document.getElementById("quizPair");
+const quizFeedback      = document.getElementById("quizFeedback");
+const quizStatsEl       = document.getElementById("quizStats");
+const btnCorrect        = document.getElementById("btnCorrect");
+const btnWrong          = document.getElementById("btnWrong");
+const restartBtn        = document.getElementById("restartBtn");
+const autoPlayBtn       = document.getElementById("autoPlayBtn");
+const novelScroll       = document.getElementById("novelScroll");
 const novelProgressText = document.getElementById("novelProgressText");
 const novelProgressFill = document.getElementById("novelProgressFill");
-const correctEl        = document.getElementById("correctEl");
-const streakEl         = document.getElementById("streakEl");
+const correctEl         = document.getElementById("correctEl");
+const streakEl          = document.getElementById("streakEl");
+
+// ATB DOM
+const battleArea     = document.getElementById("battleArea");
+const playerHpFill   = document.getElementById("playerHpFill");
+const playerHpText   = document.getElementById("playerHpText");
+const playerAtbFill  = document.getElementById("playerAtbFill");
+const enemyHpFill    = document.getElementById("enemyHpFill");
+const enemyHpText    = document.getElementById("enemyHpText");
+const enemyAtbFill   = document.getElementById("enemyAtbFill");
+const enemyNameEl    = document.getElementById("enemyName");
+const enemySide      = document.getElementById("enemySide");
+const waveNumEl      = document.getElementById("waveNum");
+const killCountEl    = document.getElementById("killCount");
+const battleLogEl    = document.getElementById("battleLog");
+
+// ══════════════════════════════════════
+//  ATB 戰鬥邏輯
+// ══════════════════════════════════════
+
+function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+function getEnemyTemplate(w) {
+  const idx = Math.min(w - 1, ENEMY_WAVES.length - 1);
+  const tmpl = ENEMY_WAVES[idx];
+  // 超過模板上限後，HP 與 ATK 持續成長
+  const overflow = Math.max(0, w - ENEMY_WAVES.length);
+  return {
+    name: tmpl.name,
+    hp: tmpl.baseHp + overflow * 30,
+    atk: [tmpl.atk[0] + overflow * 3, tmpl.atk[1] + overflow * 5],
+    atbSpeed: tmpl.atbSpeed + overflow * 0.3,
+  };
+}
+
+function spawnEnemy() {
+  const tmpl = getEnemyTemplate(wave);
+  enemyName = tmpl.name;
+  enemyMaxHp = tmpl.hp;
+  enemyHp = tmpl.hp;
+  enemyAtk = tmpl.atk;
+  enemyAtbSpeed = tmpl.atbSpeed;
+  enemyAtb = 0;
+  battlePaused = false;
+
+  enemyNameEl.textContent = enemyName;
+  updateBattleUI();
+  battleLog(`${enemyName} 出現了！`, "#ff8844");
+}
+
+/** 玩家攻擊敵人 */
+function playerAttack() {
+  if (playerDead) return;
+  battlePaused = true;
+
+  const dmg = randInt(PLAYER_ATK[0], PLAYER_ATK[1]);
+  // 連擊加成：每 3 連答多 20% 傷害
+  const bonus = Math.floor(streak / 3) * 0.2;
+  const finalDmg = Math.round(dmg * (1 + bonus));
+
+  enemyHp = Math.max(0, enemyHp - finalDmg);
+  playerAtb = 0;
+
+  // 視覺
+  floatDmg(enemySide, `-${finalDmg}`, "enemy-hit");
+  enemySide.classList.add("shake");
+  setTimeout(() => enemySide.classList.remove("shake"), 350);
+
+  const bonusText = bonus > 0 ? ` (${streak}連擊 +${Math.round(bonus*100)}%)` : "";
+  battleLog(`⚔️ 勇者攻擊 → ${enemyName} 受到 ${finalDmg} 傷害${bonusText}`, "#5fd18d");
+
+  updateBattleUI();
+
+  if (enemyHp <= 0) {
+    onEnemyDefeated();
+  } else {
+    setTimeout(() => { battlePaused = false; }, 300);
+  }
+}
+
+/** 敵人攻擊玩家 */
+function enemyAttack() {
+  if (playerDead) return;
+  battlePaused = true;
+
+  const dmg = randInt(enemyAtk[0], enemyAtk[1]);
+  playerHp = Math.max(0, playerHp - dmg);
+  enemyAtb = 0;
+
+  // 視覺
+  const playerSideEl = battleArea.querySelector(".player-side");
+  floatDmg(playerSideEl, `-${dmg}`, "player-hit");
+  playerSideEl.classList.add("shake");
+  setTimeout(() => playerSideEl.classList.remove("shake"), 350);
+
+  battleLog(`💥 ${enemyName} 攻擊 → 勇者 受到 ${dmg} 傷害`, "#ff6b6b");
+
+  updateBattleUI();
+
+  if (playerHp <= 0) {
+    onPlayerDefeated();
+  } else {
+    setTimeout(() => { battlePaused = false; }, 300);
+  }
+}
+
+/** 敵人被擊敗 */
+function onEnemyDefeated() {
+  killCount++;
+  wave++;
+
+  enemySide.classList.add("ko-flash");
+  setTimeout(() => enemySide.classList.remove("ko-flash"), 700);
+
+  battleLog(`🏆 ${enemyName} 被擊敗！ 額外獲得 ${BONUS_CHARS_ON_KILL} 字！`, "#ffcc02");
+
+  // 額外揭露小說字數作為獎勵
+  revealChars(BONUS_CHARS_ON_KILL);
+
+  // 玩家回復少量 HP
+  const healAmt = Math.min(15 + wave * 2, playerMaxHp - playerHp);
+  if (healAmt > 0) {
+    playerHp = Math.min(playerMaxHp, playerHp + healAmt);
+    const playerSideEl = battleArea.querySelector(".player-side");
+    floatDmg(playerSideEl, `+${healAmt}`, "heal");
+    battleLog(`💚 回復 ${healAmt} HP`, "#5bc0de");
+  }
+
+  updateBattleUI();
+  saveBattleState();
+
+  // 短暫延遲後生成下一波敵人
+  setTimeout(() => {
+    spawnEnemy();
+    battlePaused = false;
+  }, 1000);
+}
+
+/** 玩家被擊敗 */
+function onPlayerDefeated() {
+  playerDead = true;
+  battlePaused = true;
+  quizLocked = true;
+  stopAutoAnswer();
+
+  const playerSideEl = battleArea.querySelector(".player-side");
+  playerSideEl.classList.add("ko-flash");
+
+  battleLog("💀 勇者倒下了！3 秒後復活……", "#ff6b6b");
+
+  // 3 秒後復活
+  reviveTimer = setTimeout(() => {
+    playerHp = Math.round(playerMaxHp * 0.5);
+    playerDead = false;
+    battlePaused = false;
+    quizLocked = false;
+    playerSideEl.classList.remove("ko-flash");
+
+    // 敵人 ATB 歸零（給玩家喘息空間）
+    enemyAtb = 0;
+
+    const playerSideEl2 = battleArea.querySelector(".player-side");
+    floatDmg(playerSideEl2, "復活！", "heal");
+    battleLog("✨ 勇者復活了！（HP 50%）", "#5bc0de");
+    updateBattleUI();
+
+    if (autoPlayEnabled) scheduleAutoAnswer();
+    if (!currentQuiz) nextQuiz();
+  }, 3000);
+}
+
+/** ATB 主 tick：每 100ms 呼叫一次 */
+function atbTick() {
+  if (battlePaused || playerDead) return;
+
+  // 敵人 ATB 自動填充
+  const increment = enemyAtbSpeed * (ATB_TICK_MS / 1000);
+  enemyAtb = Math.min(100, enemyAtb + increment);
+
+  // 更新 ATB 條視覺
+  enemyAtbFill.style.width = enemyAtb.toFixed(1) + "%";
+  playerAtbFill.style.width = playerAtb.toFixed(1) + "%";
+
+  // 敵人 ATB 滿 → 攻擊
+  if (enemyAtb >= 100) {
+    enemyAttack();
+  }
+
+  // 玩家 ATB 滿 → 自動攻擊
+  if (playerAtb >= 100 && !playerDead) {
+    playerAttack();
+  }
+}
+
+function startAtbTimer() {
+  if (atbTimer) clearInterval(atbTimer);
+  atbTimer = setInterval(atbTick, ATB_TICK_MS);
+}
+function stopAtbTimer() {
+  if (atbTimer) { clearInterval(atbTimer); atbTimer = null; }
+}
+
+// ══════════════════════════════════════
+//  戰鬥 UI 更新
+// ══════════════════════════════════════
+
+function updateBattleUI() {
+  // Player HP
+  const pHpPct = Math.max(0, (playerHp / playerMaxHp) * 100);
+  playerHpFill.style.width = pHpPct.toFixed(1) + "%";
+  playerHpText.textContent = `${playerHp}/${playerMaxHp}`;
+  // HP 條變色
+  if (pHpPct > 50) playerHpFill.style.background = "linear-gradient(90deg, #2a7a4a, #5fd18d)";
+  else if (pHpPct > 25) playerHpFill.style.background = "linear-gradient(90deg, #8a7a2a, #f7b955)";
+  else playerHpFill.style.background = "linear-gradient(90deg, #8a2a2a, #ff6b6b)";
+
+  // Enemy HP
+  const eHpPct = Math.max(0, (enemyHp / enemyMaxHp) * 100);
+  enemyHpFill.style.width = eHpPct.toFixed(1) + "%";
+  enemyHpText.textContent = `${enemyHp}/${enemyMaxHp}`;
+
+  // ATB
+  playerAtbFill.style.width = playerAtb.toFixed(1) + "%";
+  enemyAtbFill.style.width = enemyAtb.toFixed(1) + "%";
+
+  // ATB 滿時加上 pulse
+  playerAtbFill.classList.toggle("full", playerAtb >= 100);
+  enemyAtbFill.classList.toggle("full", enemyAtb >= 100);
+
+  // Wave info
+  waveNumEl.textContent = wave;
+  killCountEl.textContent = killCount;
+}
+
+function battleLog(msg, color) {
+  battleLogEl.textContent = msg;
+  battleLogEl.style.color = color || "#aab";
+}
+
+/** 飄字傷害效果 */
+function floatDmg(parentEl, text, cssClass) {
+  const el = document.createElement("div");
+  el.className = "dmg-float " + (cssClass || "");
+  el.textContent = text;
+  // 隨機水平偏移
+  el.style.left = (20 + Math.random() * 60) + "%";
+  el.style.top = "10px";
+  parentEl.style.position = "relative";
+  parentEl.appendChild(el);
+  setTimeout(() => el.remove(), 1100);
+}
+
+// ══════════════════════════════════════
+//  戰鬥狀態存讀
+// ══════════════════════════════════════
+
+function saveBattleState() {
+  const state = { wave, killCount, playerHp, playerMaxHp };
+  localStorage.setItem(BATTLE_SAVE_KEY, JSON.stringify(state));
+}
+
+function loadBattleState() {
+  try {
+    const raw = localStorage.getItem(BATTLE_SAVE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch { return null; }
+}
 
 // ══════════════════════════════════════
 //  小說顯示邏輯
 // ══════════════════════════════════════
 
-/**
- * 從 novelPos 位置取出下 n 個「可見字」（跳過換行符）。
- * 回傳 { text: 取出的可見字, newPos: 新的 novelPos }
- */
 function takeVisibleChars(startPos, n) {
   let collected = "";
   let pos = startPos;
   while (collected.length < n && pos < NOVEL_TEXT.length) {
     const ch = NOVEL_TEXT[pos];
     pos++;
-    if (ch === "\n") continue;   // 跳過換行，不計入 5 字
+    if (ch === "\n") continue;
     collected += ch;
   }
   return { text: collected, newPos: pos };
 }
 
-/** 答對一次 → 取 5 個可見字，建立一個新區塊 */
 function revealChars(n) {
   if (novelPos >= NOVEL_TEXT.length) return;
 
@@ -405,25 +709,19 @@ function revealChars(n) {
   if (result.text.length === 0) return;
   novelPos = result.newPos;
 
-  // 存進度
   localStorage.setItem(NOVEL_SAVE_KEY, String(novelPos));
 
-  // 建立新區塊
   const blockEl = appendBlock(result.text, true);
 
-  // 1 秒後新區塊從金色變回正常色
   setTimeout(() => { if (blockEl) blockEl.classList.remove("new"); }, 1000);
 
-  // 等 DOM 更新後再捲動到最底（確保新區塊已渲染）
   requestAnimationFrame(() => {
     blockEl.scrollIntoView({ block: "end", behavior: "smooth" });
   });
 
-  // 更新進度
   updateProgress();
 }
 
-/** 在小說區底部新增一個區塊，回傳該元素 */
 function appendBlock(text, isNew) {
   const el = document.createElement("span");
   el.className = isNew ? "novel-chunk new" : "novel-chunk";
@@ -431,7 +729,6 @@ function appendBlock(text, isNew) {
   novelScroll.appendChild(el);
   displayedBlocks.push(el);
 
-  // 超過上限 → 移除最早的區塊
   while (displayedBlocks.length > MAX_VISIBLE_LINES) {
     const oldest = displayedBlocks.shift();
     oldest.classList.add("fading");
@@ -446,7 +743,6 @@ function updateProgress() {
   novelProgressFill.style.width = pct + "%";
 }
 
-/** 從存檔還原已顯示的小說 */
 function restoreNovel() {
   novelScroll.innerHTML = "";
   displayedBlocks = [];
@@ -460,7 +756,6 @@ function restoreNovel() {
     return;
   }
 
-  // 快速重建：從頭到 targetPos，每 5 個可見字一塊
   let pos = 0;
   const blocks = [];
   while (pos < targetPos) {
@@ -470,7 +765,6 @@ function restoreNovel() {
     pos = result.newPos;
   }
 
-  // 只顯示最後 MAX_VISIBLE_LINES 個區塊（避免頁面太長）
   const startIdx = Math.max(0, blocks.length - MAX_VISIBLE_LINES);
   for (let i = startIdx; i < blocks.length; i++) {
     appendBlock(blocks[i], false);
@@ -479,14 +773,13 @@ function restoreNovel() {
   novelPos = targetPos;
   updateProgress();
 
-  // 還原後捲到最底
   requestAnimationFrame(() => {
     novelScroll.scrollTop = novelScroll.scrollHeight;
   });
 }
 
 // ══════════════════════════════════════
-//  出題邏輯
+//  出題邏輯（整合 ATB）
 // ══════════════════════════════════════
 
 function nextQuiz() {
@@ -505,6 +798,8 @@ function nextQuiz() {
     quizFeedback.style.color = "#ffcc02";
     quizLocked = true;
     stopAutoAnswer();
+    stopAtbTimer();
+    battleLog("🏁 小說讀完了！戰鬥結束！", "#ffcc02");
     return;
   }
 
@@ -541,7 +836,7 @@ function nextQuiz() {
 }
 
 function answerQuiz(userSaidCorrect) {
-  if (!currentQuiz || quizLocked) return;
+  if (!currentQuiz || quizLocked || playerDead) return;
   quizLocked = true;
 
   const isRight = (userSaidCorrect === currentQuiz.isCorrect);
@@ -551,25 +846,41 @@ function answerQuiz(userSaidCorrect) {
     streak++;
     trackComboCleared([currentQuiz.combo]);
 
-    quizFeedback.textContent = "✅ 答對！+5 字";
+    // ATB 填充
+    playerAtb = Math.min(100, playerAtb + PLAYER_ATB_PER_CORRECT);
+    updateBattleUI();
+
+    quizFeedback.textContent = `✅ 答對！+5字 ATB+${PLAYER_ATB_PER_CORRECT}%`;
     quizFeedback.style.color = "#5fd18d";
 
     // 揭露小說
     revealChars(CHARS_PER_ANSWER);
 
-    // 短暫延遲後出下一題
+    // 玩家 ATB 滿 → 立即攻擊
+    if (playerAtb >= 100) {
+      setTimeout(() => playerAttack(), 200);
+    }
+
     setTimeout(() => nextQuiz(), 600);
   } else {
     wrongCount++;
     streak = 0;
+
+    // 答錯 → 敵人 ATB 加速
+    enemyAtb = Math.min(100, enemyAtb + ENEMY_ATB_BOOST_ON_WRONG);
+    updateBattleUI();
+
     const correctText = currentQuiz.isCorrect ? "✅ 對" : "❌ 錯";
     quizFeedback.textContent = `❌ 答錯！正解：${correctText}（${currentQuiz.hint} = ${currentQuiz.correctAnswer}）`;
     quizFeedback.style.color = "#ff5555";
+
+    battleLog(`⚡ 答錯！${enemyName} ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`, "#c77dff");
 
     setTimeout(() => nextQuiz(), 1800);
   }
 
   updateUI();
+  saveBattleState();
 }
 
 // ══════════════════════════════════════
@@ -591,10 +902,10 @@ function toggleAutoPlay() {
 
 function scheduleAutoAnswer() {
   stopAutoAnswer();
-  if (!autoPlayEnabled || !currentQuiz) return;
+  if (!autoPlayEnabled || !currentQuiz || playerDead) return;
   const delay = 600 + Math.random() * 500;
   autoAnswerTimer = setTimeout(() => {
-    if (!autoPlayEnabled || !currentQuiz || quizLocked) return;
+    if (!autoPlayEnabled || !currentQuiz || quizLocked || playerDead) return;
     answerQuiz(currentQuiz.isCorrect);
   }, delay);
 }
@@ -614,12 +925,14 @@ function updateUI() {
 }
 
 // ══════════════════════════════════════
-//  初始化
+//  初始化 & 重啟
 // ══════════════════════════════════════
 
 function restartGame() {
   syncStatsToSheets();
   stopAutoAnswer();
+  stopAtbTimer();
+  if (reviveTimer) { clearTimeout(reviveTimer); reviveTimer = null; }
 
   groupData = loadGroupData();
   const wordRows = loadWordRows();
@@ -629,18 +942,22 @@ function restartGame() {
   wrongCount = 0;
   streak = 0;
 
-  // 注意：不重設小說進度（保留閱讀進度）
-  // 如果要重設小說，使用者可以自行清 localStorage
-  updateUI();
-  nextQuiz();
-}
+  // 重設戰鬥
+  playerHp = PLAYER_BASE_HP;
+  playerMaxHp = PLAYER_BASE_HP;
+  playerAtb = 0;
+  playerDead = false;
+  wave = 1;
+  killCount = 0;
+  battlePaused = false;
 
-function resetNovelProgress() {
-  localStorage.removeItem(NOVEL_SAVE_KEY);
-  novelPos = 0;
-  novelScroll.innerHTML = "";
-  displayedBlocks = [];
-  updateProgress();
+  spawnEnemy();
+  updateBattleUI();
+  updateUI();
+  saveBattleState();
+
+  startAtbTimer();
+  nextQuiz();
 }
 
 function init() {
@@ -660,7 +977,23 @@ function init() {
     // 還原小說進度
     restoreNovel();
 
+    // 還原戰鬥狀態
+    const savedBattle = loadBattleState();
+    if (savedBattle) {
+      wave = savedBattle.wave || 1;
+      killCount = savedBattle.killCount || 0;
+      playerHp = savedBattle.playerHp || PLAYER_BASE_HP;
+      playerMaxHp = savedBattle.playerMaxHp || PLAYER_BASE_HP;
+    }
+    playerAtb = 0;
+    enemyAtb = 0;
+    playerDead = false;
+    battlePaused = false;
+
+    spawnEnemy();
+    updateBattleUI();
     updateUI();
+    startAtbTimer();
     nextQuiz();
 
   } catch (err) {
@@ -671,4 +1004,3 @@ function init() {
 }
 
 init();
-

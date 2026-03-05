@@ -85,7 +85,145 @@
         margin-top: 6px;
       }
 
-      /* ── 小說顯示區 ── */
+      /* ═══ ATB 戰鬥區 ═══ */
+      .battle-area {
+        background: #12162e;
+        border: 1px solid #3f4b89;
+        border-radius: 12px;
+        padding: 12px 10px;
+        margin-bottom: 10px;
+        display: flex;
+        align-items: flex-start;
+        gap: 6px;
+        position: relative;
+        overflow: hidden;
+      }
+      .combatant {
+        flex: 1;
+        min-width: 0;
+      }
+      .combatant-name {
+        font-size: 0.85rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .player-side .combatant-name { color: #5fd18d; }
+      .enemy-side .combatant-name  { color: #ff6b6b; }
+
+      /* HP 條 */
+      .hp-row, .atb-row {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: 3px;
+      }
+      .hp-label, .atb-label {
+        font-size: 0.65rem;
+        font-weight: 700;
+        width: 26px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+      .hp-label { color: #ff6b6b; }
+      .atb-label { color: #5bc0de; }
+      .hp-bar, .atb-bar {
+        flex: 1;
+        height: 10px;
+        background: #1a1f3d;
+        border-radius: 5px;
+        overflow: hidden;
+        position: relative;
+      }
+      .hp-fill, .atb-fill {
+        height: 100%;
+        border-radius: 5px;
+        transition: width 0.3s ease;
+      }
+      .player-hp { background: linear-gradient(90deg, #2a7a4a, #5fd18d); }
+      .enemy-hp  { background: linear-gradient(90deg, #8a2a2a, #ff6b6b); }
+      .player-atb { background: linear-gradient(90deg, #1a6090, #5bc0de); }
+      .enemy-atb  { background: linear-gradient(90deg, #6a3a80, #c77dff); }
+      .atb-fill.full { animation: atbPulse 0.4s ease-in-out 2; }
+      @keyframes atbPulse {
+        50% { filter: brightness(1.5); }
+      }
+      .hp-text {
+        font-size: 0.65rem;
+        color: #889;
+        width: 48px;
+        text-align: right;
+        flex-shrink: 0;
+      }
+
+      /* VS */
+      .battle-vs {
+        font-size: 0.9rem;
+        font-weight: 900;
+        color: #ff8844;
+        align-self: center;
+        flex-shrink: 0;
+        text-shadow: 0 0 8px rgba(255,136,68,0.5);
+      }
+
+      /* 波次 / 戰鬥資訊 */
+      .wave-info {
+        text-align: center;
+        font-size: 0.75rem;
+        color: #667;
+        margin-top: 4px;
+      }
+      .wave-info b { color: #ffcc02; }
+
+      /* 戰鬥日誌 */
+      .battle-log {
+        text-align: center;
+        min-height: 1.4rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+        margin-bottom: 6px;
+        color: #aab;
+        transition: color 0.3s;
+      }
+
+      /* 飄字傷害 */
+      .dmg-float {
+        position: absolute;
+        font-weight: 900;
+        font-size: 1.2rem;
+        pointer-events: none;
+        animation: dmgFloat 1s ease-out forwards;
+        z-index: 10;
+        text-shadow: 0 1px 4px rgba(0,0,0,0.7);
+      }
+      .dmg-float.player-hit { color: #ff6b6b; }
+      .dmg-float.enemy-hit  { color: #5fd18d; }
+      .dmg-float.heal        { color: #5bc0de; }
+      @keyframes dmgFloat {
+        0%   { opacity: 1; transform: translateY(0) scale(1); }
+        60%  { opacity: 1; transform: translateY(-30px) scale(1.2); }
+        100% { opacity: 0; transform: translateY(-50px) scale(0.8); }
+      }
+
+      /* 搖晃 */
+      .shake { animation: shakeAnim 0.3s ease; }
+      @keyframes shakeAnim {
+        0%, 100% { transform: translateX(0); }
+        25%      { transform: translateX(-4px); }
+        75%      { transform: translateX(4px); }
+      }
+
+      /* KO 閃爍 */
+      .ko-flash { animation: koFlash 0.6s ease; }
+      @keyframes koFlash {
+        0%, 100% { opacity: 1; }
+        25%, 75% { opacity: 0.2; }
+        50% { opacity: 0.8; }
+      }
+
+      /* ═══ 小說顯示區 ═══ */
       .novel-container {
         background: #12162e;
         border: 1px solid #3f4b89;
@@ -102,10 +240,10 @@
         margin-bottom: 8px;
       }
       .novel-scroll {
-        height: 260px;
+        height: 220px;
         overflow-y: auto;
         padding-right: 4px;
-        padding-bottom: 2em;  /* 確保最後的文字不會被裁切 */
+        padding-bottom: 2em;
       }
       /* 自訂 scrollbar */
       .novel-scroll::-webkit-scrollbar { width: 4px; }
@@ -117,12 +255,12 @@
         font-size: 1.05rem;
         line-height: 2;
         color: #dde;
-        opacity: 1;                     /* 明確設為 1，避免動畫結束後閃爍 */
-        transition: color 0.8s;         /* 只對顏色做過渡，不包含 opacity */
+        opacity: 1;
+        transition: color 0.8s;
       }
       .novel-chunk.new {
         color: #ffcc02;
-        animation: novelFadeIn 0.5s ease-out forwards;  /* forwards 保持最終值 */
+        animation: novelFadeIn 0.5s ease-out forwards;
       }
       @keyframes novelFadeIn {
         from { opacity: 0; transform: translateY(4px); }
@@ -189,6 +327,41 @@
         <div class="quiz-feedback" id="quizFeedback">&nbsp;</div>
         <div class="quiz-stats" id="quizStats">答對 0 / 答錯 0</div>
       </section>
+
+      <!-- ATB 戰鬥區 -->
+      <section class="battle-area" id="battleArea">
+        <div class="combatant player-side">
+          <div class="combatant-name">⚔️ 勇者</div>
+          <div class="hp-row">
+            <span class="hp-label">HP</span>
+            <div class="hp-bar"><div class="hp-fill player-hp" id="playerHpFill" style="width:100%"></div></div>
+            <span class="hp-text" id="playerHpText">100/100</span>
+          </div>
+          <div class="atb-row">
+            <span class="atb-label">ATB</span>
+            <div class="atb-bar"><div class="atb-fill player-atb" id="playerAtbFill" style="width:0%"></div></div>
+          </div>
+        </div>
+
+        <div class="battle-vs">⚡</div>
+
+        <div class="combatant enemy-side" id="enemySide">
+          <div class="combatant-name" id="enemyName">👹 魔族士兵</div>
+          <div class="hp-row">
+            <span class="hp-label">HP</span>
+            <div class="hp-bar"><div class="hp-fill enemy-hp" id="enemyHpFill" style="width:100%"></div></div>
+            <span class="hp-text" id="enemyHpText">50/50</span>
+          </div>
+          <div class="atb-row">
+            <span class="atb-label">ATB</span>
+            <div class="atb-bar"><div class="atb-fill enemy-atb" id="enemyAtbFill" style="width:0%"></div></div>
+          </div>
+        </div>
+      </section>
+      <div class="wave-info">
+        第 <b id="waveNum">1</b> 波 ｜ 擊殺 <b id="killCount">0</b>
+      </div>
+      <div class="battle-log" id="battleLog">&nbsp;</div>
 
       <!-- 小說區 -->
       <section class="novel-container">
