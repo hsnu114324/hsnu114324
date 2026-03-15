@@ -647,7 +647,7 @@ function renderRound() {
     el.textContent = card.text;
     el.dataset.idx = idx;
     el.addEventListener("click", () => onCardClick(idx, el));
-    el.addEventListener("touchstart", (e) => onCardTouchStart(idx, el, e), { passive: true });
+    el.addEventListener("touchstart", (e) => onCardTouchStart(idx, el, e), { passive: false });
     card.el = el;
     matchCardsEl.appendChild(el);
   });
@@ -669,6 +669,8 @@ let dragState = null; // { cardIdx, cardEl, ghostEl }
 function onCardTouchStart(cardIdx, cardEl, e) {
   if (roundLocked || playerDead) return;
   if (cardEl.classList.contains("matched")) return;
+
+  e.preventDefault(); // 立即阻止瀏覽器捲動，避免拖曳卡牌時畫面跟著移動
 
   const touch = e.touches[0];
   dragState = {
