@@ -11,7 +11,7 @@ const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
 const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
 const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
 const WORD_LETTERS_KEY = "word_tetris_word_letters_v1"; // 單字模式字母篩選
-const GROUP4_CATS_KEY = "word_tetris_group4_cats_v1";  // 群組4分類篩選
+// 群組分類篩選 key 已移至 GROUP_CATEGORIES_CONFIG.storageKey
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -3694,29 +3694,99 @@ function buildLetterMap() {
 const _letterMap = buildLetterMap();
 const _lettersSorted = Object.keys(_letterMap).sort();
 
-// ── 群組 4 分類工具 ──
+// ── 通用群組分類系統 ──
 
-/** 群組 4 的分類定義（按第一欄的前綴判斷） */
-const GROUP4_CATEGORIES = [
-  { id: "masculine", label: "陽性", prefix: "陽性" },
-  { id: "neuter",    label: "中性", prefix: "中性" },
-  { id: "feminine",  label: "陰性", prefix: "陰性" },
-  { id: "plural",    label: "複數", prefix: "複數" },
-];
+/** 各群組的分類設定（key = 群組 index，0-based） */
+const GROUP_CATEGORIES_CONFIG = {
+  1: { // 群組 2：動詞（可分/不可分/基本）
+    label: "群組 2 動詞分類",
+    storageKey: "word_tetris_group2_cats_v1",
+    cats: [
+      { id: "separable",   label: "可分動詞" },
+      { id: "inseparable", label: "不可分前綴" },
+      { id: "simple",      label: "基本動詞" },
+    ],
+    getCategory(row) {
+      const fields = row.split(",").map(s => s.trim());
+      if (fields.length < 3) return null;
+      // 第三人稱現在式有空格 → 可分（如 "fährt ab"）
+      if (fields[2].includes(" ")) return "separable";
+      const inf = fields[1].toLowerCase();
+      // geben / gehen 是基本動詞，不是 ge- 前綴
+      if (["geben", "gehen"].includes(inf)) return "simple";
+      const insep = ["be","emp","ent","er","ge","ver","zer","miss","über","unter"];
+      for (const p of insep) { if (inf.startsWith(p)) return "inseparable"; }
+      return "simple";
+    },
+  },
+  2: { // 群組 3：所有格（按性別分）
+    label: "群組 3 所有格分類",
+    storageKey: "word_tetris_group3_cats_v1",
+    cats: [
+      { id: "der", label: "陽性 (der)" },
+      { id: "das", label: "中性 (das)" },
+      { id: "die", label: "陰性 (die)" },
+      { id: "pl",  label: "複數 (pl.)" },
+    ],
+    getCategory(row) {
+      const first = row.split(",")[0].trim();
+      if (first.startsWith("der ")) return "der";
+      if (first.startsWith("das ")) return "das";
+      if (first.startsWith("die ")) return "die";
+      if (first.startsWith("pl.")) return "pl";
+      return null;
+    },
+  },
+  3: { // 群組 4：冠詞（按性別分）
+    label: "群組 4 冠詞分類",
+    storageKey: "word_tetris_group4_cats_v1", // 保持原 key 向下相容
+    cats: [
+      { id: "masculine", label: "陽性" },
+      { id: "neuter",    label: "中性" },
+      { id: "feminine",  label: "陰性" },
+      { id: "plural",    label: "複數" },
+    ],
+    getCategory(row) {
+      const first = row.split(",")[0].trim();
+      if (first.startsWith("陽性")) return "masculine";
+      if (first.startsWith("中性")) return "neuter";
+      if (first.startsWith("陰性")) return "feminine";
+      if (first.startsWith("複數")) return "plural";
+      return null;
+    },
+  },
+  4: { // 群組 5：形容詞詞尾（按性別分）
+    label: "群組 5 形容詞分類",
+    storageKey: "word_tetris_group5_cats_v1",
+    cats: [
+      { id: "masculine", label: "陽性" },
+      { id: "neuter",    label: "中性" },
+      { id: "feminine",  label: "陰性" },
+      { id: "plural",    label: "複數" },
+    ],
+    getCategory(row) {
+      const first = row.split(",")[0].trim();
+      if (first.startsWith("陽性")) return "masculine";
+      if (first.startsWith("中性")) return "neuter";
+      if (first.startsWith("陰性")) return "feminine";
+      if (first.startsWith("複數")) return "plural";
+      return null;
+    },
+  },
+};
 
-/** 從群組 4 的 word row 取得分類 id */
-function getGroup4Category(row) {
-  const firstField = row.split(",")[0].trim();
-  for (const cat of GROUP4_CATEGORIES) {
-    if (firstField.startsWith(cat.prefix)) return cat.id;
-  }
-  return null;
+/** 取得群組分類 id（通用） */
+function getGroupCategory(groupIdx, row) {
+  const config = GROUP_CATEGORIES_CONFIG[groupIdx];
+  return config ? config.getCategory(row) : null;
 }
 
-/** 載入群組 4 已選的分類集合；null = 全選 */
-function loadGroup4Cats() {
+/** 載入某群組已選的分類集合；null = 全選 */
+function loadGroupCats(groupIdx) {
+  const config = GROUP_CATEGORIES_CONFIG[groupIdx];
+  if (!config) return null;
   try {
-    const raw = localStorage.getItem(GROUP4_CATS_KEY);
+    const raw = localStorage.getItem(config.storageKey);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
@@ -3758,7 +3828,7 @@ const lenSection = document.getElementById("lenSection");
 const sourceSection = document.getElementById("sourceSection");
 const singleWordModeHint = document.getElementById("singleWordModeHint");
 const letterSubgroupBar = document.getElementById("letterSubgroupBar");
-const group4CatBar = document.getElementById("group4CatBar");
+const groupCatBarsContainer = document.getElementById("groupCatBars");
 const splitModeBar = document.getElementById("splitModeBar");
 const splitModeBtns = splitModeBar ? splitModeBar.querySelectorAll(".split-mode-btn") : [];
 
@@ -3772,7 +3842,11 @@ let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
 let splitMode = loadSplitMode();         // "syllable" | "random" | "mixed"
 let activeLetters = loadActiveLetters();  // Set<string> | null (null = 全選)
-let activeGroup4Cats = loadGroup4Cats();  // Set<string> | null (null = 全選)
+// 各群組的分類篩選狀態 { [groupIdx]: Set<string> | null }
+let activeGroupCats = {};
+for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+  activeGroupCats[parseInt(_gi)] = loadGroupCats(parseInt(_gi));
+}
 
 // （單字模式關閉後保持 2格+自定義，不需要記憶先前設定）
 
@@ -3943,10 +4017,11 @@ function buildDisplayRows() {
     for (const w of GROUP_ALL[gi]) {
       const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
       if (removedSet.has(norm)) continue;
-      // 群組 4 分類篩選
-      if (gi === 3 && activeGroup4Cats !== null) {
-        const cat = getGroup4Category(w);
-        if (cat && !activeGroup4Cats.has(cat)) continue;
+      // 通用群組分類篩選
+      const _catConfig = GROUP_CATEGORIES_CONFIG[gi];
+      if (_catConfig && activeGroupCats[gi] !== null && activeGroupCats[gi] !== undefined) {
+        const cat = _catConfig.getCategory(w);
+        if (cat && !activeGroupCats[gi].has(cat)) continue;
       }
       displayRows.push({ text: w, source: "group-" + gi });
     }
@@ -4077,19 +4152,20 @@ function toggleGroup(idx) {
     activeGroups.delete(idx);
     displayRows = displayRows.filter(r => r.source !== key);
   } else {
-    // 開啟：載入該群組的 word（群組 4 套用分類篩選）
+    // 開啟：載入該群組的 word（套用分類篩選）
     activeGroups.add(idx);
+    const catConfig = GROUP_CATEGORIES_CONFIG[idx];
+    const cats = activeGroupCats[idx];
     for (const w of GROUP_ALL[idx]) {
-      // 群組 4 分類篩選
-      if (idx === 3 && activeGroup4Cats !== null) {
-        const cat = getGroup4Category(w);
-        if (cat && !activeGroup4Cats.has(cat)) continue;
+      if (catConfig && cats !== null && cats !== undefined) {
+        const cat = catConfig.getCategory(w);
+        if (cat && !cats.has(cat)) continue;
       }
       displayRows.push({ text: w, source: key });
     }
   }
-  // 群組 4 開啟/關閉時更新分類按鈕
-  updateGroup4CatBarVisibility();
+  // 更新分類按鈕列
+  updateGroupCatBarsVisibility();
   updateSourceUI();
   renderRows();
 }
@@ -4137,103 +4213,120 @@ function toggleCustom() {
   renderRows();
 }
 
-// ── 群組 4 分類 UI ──
+// ── 通用群組分類 UI ──
 
-/** 渲染群組 4 分類按鈕 */
-function renderGroup4CatBar() {
-  if (!group4CatBar) return;
-  // 保留第一個 span（標題），移除其餘按鈕
-  const title = group4CatBar.querySelector("span");
-  group4CatBar.innerHTML = "";
-  if (title) group4CatBar.appendChild(title);
+/** 渲染指定群組的分類按鈕列 */
+function renderGroupCatBar(groupIdx) {
+  const config = GROUP_CATEGORIES_CONFIG[groupIdx];
+  if (!config || !groupCatBarsContainer) return;
+
+  // 找到或建立該群組的 bar
+  let bar = groupCatBarsContainer.querySelector(`[data-group-cat="${groupIdx}"]`);
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.dataset.groupCat = groupIdx;
+    bar.style.cssText = "display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;justify-content:center;";
+    // 標題
+    const title = document.createElement("span");
+    title.style.cssText = "font-size:0.78rem;color:#999;width:100%;text-align:center;margin-bottom:2px;";
+    title.textContent = config.label;
+    bar.appendChild(title);
+    groupCatBarsContainer.appendChild(bar);
+  }
+
+  // 清除現有按鈕（保留標題 span）
+  const title = bar.querySelector("span");
+  bar.innerHTML = "";
+  if (title) bar.appendChild(title);
 
   // 「全部」按鈕
   const allBtn = document.createElement("button");
   allBtn.type = "button";
   allBtn.textContent = "全部";
-  allBtn.className = "g4cat-btn";
+  allBtn.className = "gcat-btn";
   allBtn.dataset.cat = "ALL";
+  allBtn.dataset.groupIdx = groupIdx;
   allBtn.style.cssText = "padding:8px 14px;font-size:0.85rem;font-weight:700;" +
     "border:2px solid #666;border-radius:8px;background:#2a2a2a;color:#ccc;" +
     "cursor:pointer;transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s;";
-  group4CatBar.appendChild(allBtn);
+  bar.appendChild(allBtn);
 
-  for (const cat of GROUP4_CATEGORIES) {
-    // 計算該分類有幾個項目
-    const count = GROUP_WORDS4.filter(w => getGroup4Category(w) === cat.id).length;
+  for (const cat of config.cats) {
+    const count = GROUP_ALL[groupIdx].filter(w => config.getCategory(w) === cat.id).length;
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = `${cat.label} (${count})`;
-    btn.className = "g4cat-btn";
+    btn.className = "gcat-btn";
     btn.dataset.cat = cat.id;
+    btn.dataset.groupIdx = groupIdx;
     btn.style.cssText = "padding:8px 14px;font-size:0.85rem;font-weight:600;" +
       "border:2px solid #666;border-radius:8px;background:#2a2a2a;color:#ccc;" +
       "cursor:pointer;transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s;";
-    group4CatBar.appendChild(btn);
+    bar.appendChild(btn);
   }
 
   // 綁定事件
-  group4CatBar.querySelectorAll(".g4cat-btn").forEach(btn => {
-    tapBind(btn, () => toggleGroup4Cat(btn.dataset.cat));
+  bar.querySelectorAll(".gcat-btn").forEach(btn => {
+    tapBind(btn, () => toggleGroupCat(parseInt(btn.dataset.groupIdx), btn.dataset.cat));
   });
 
-  updateGroup4CatBarUI();
+  updateGroupCatBarUI(groupIdx);
 }
 
-/** 切換群組 4 分類 */
-function toggleGroup4Cat(catId) {
-  const allCatIds = GROUP4_CATEGORIES.map(c => c.id);
+/** 切換指定群組的分類 */
+function toggleGroupCat(groupIdx, catId) {
+  const config = GROUP_CATEGORIES_CONFIG[groupIdx];
+  if (!config) return;
+  const allCatIds = config.cats.map(c => c.id);
+  let cats = activeGroupCats[groupIdx];
 
   if (catId === "ALL") {
-    if (activeGroup4Cats === null) {
-      activeGroup4Cats = new Set();
-    } else {
-      activeGroup4Cats = null;
-    }
+    cats = (cats === null || cats === undefined) ? new Set() : null;
   } else {
-    if (activeGroup4Cats === null) {
-      activeGroup4Cats = new Set(allCatIds);
-      activeGroup4Cats.delete(catId);
-    } else if (activeGroup4Cats.has(catId)) {
-      activeGroup4Cats.delete(catId);
-      if (activeGroup4Cats.size === 0) {
-        activeGroup4Cats = null;
-      }
+    if (cats === null || cats === undefined) {
+      cats = new Set(allCatIds);
+      cats.delete(catId);
+    } else if (cats.has(catId)) {
+      cats.delete(catId);
+      if (cats.size === 0) cats = null;
     } else {
-      activeGroup4Cats.add(catId);
-      if (activeGroup4Cats.size >= allCatIds.length) {
-        activeGroup4Cats = null;
-      }
+      cats.add(catId);
+      if (cats.size >= allCatIds.length) cats = null;
     }
   }
 
-  // 重建群組 4 的 displayRows
-  rebuildGroup4Display();
-  updateGroup4CatBarUI();
+  activeGroupCats[groupIdx] = cats;
+
+  // 重建該群組的 displayRows
+  rebuildGroupDisplay(groupIdx);
+  updateGroupCatBarUI(groupIdx);
   renderRows();
 
-  const count = displayRows.filter(r => r.source === "group-3").length;
-  if (activeGroup4Cats === null) {
-    setMessage(`群組 4：全部分類（共 ${count} 組），按「儲存」生效。`, true);
+  const sourceKey = "group-" + groupIdx;
+  const count = displayRows.filter(r => r.source === sourceKey).length;
+  const groupLabel = "群組 " + (groupIdx + 1);
+  if (cats === null || cats === undefined) {
+    setMessage(`${groupLabel}：全部分類（共 ${count} 組），按「儲存」生效。`, true);
   } else {
-    const catLabels = GROUP4_CATEGORIES
-      .filter(c => activeGroup4Cats.has(c.id))
-      .map(c => c.label)
-      .join("、");
-    setMessage(`群組 4：${catLabels}（共 ${count} 組），按「儲存」生效。`, true);
+    const catLabels = config.cats.filter(c => cats.has(c.id)).map(c => c.label).join("、");
+    setMessage(`${groupLabel}：${catLabels}（共 ${count} 組），按「儲存」生效。`, true);
   }
 }
 
-/** 更新群組 4 分類按鈕的發光狀態 */
-function updateGroup4CatBarUI() {
-  if (!group4CatBar) return;
-  group4CatBar.querySelectorAll(".g4cat-btn").forEach(btn => {
+/** 更新指定群組分類按鈕的發光狀態 */
+function updateGroupCatBarUI(groupIdx) {
+  if (!groupCatBarsContainer) return;
+  const bar = groupCatBarsContainer.querySelector(`[data-group-cat="${groupIdx}"]`);
+  if (!bar) return;
+  const cats = activeGroupCats[groupIdx];
+
+  bar.querySelectorAll(".gcat-btn").forEach(btn => {
     const catId = btn.dataset.cat;
     let isActive;
     if (catId === "ALL") {
-      isActive = activeGroup4Cats === null;
+      isActive = cats === null || cats === undefined;
     } else {
-      isActive = activeGroup4Cats === null || activeGroup4Cats.has(catId);
+      isActive = (cats === null || cats === undefined) || cats.has(catId);
     }
     if (isActive) {
       btn.style.background = "#42a5f5";
@@ -4249,35 +4342,45 @@ function updateGroup4CatBarUI() {
   });
 }
 
-/** 重建群組 4 在 displayRows 中的項目（分類篩選變動時呼叫） */
-function rebuildGroup4Display() {
-  if (!activeGroups.has(3)) return;
-  // 移除舊的群組 4 項目
-  displayRows = displayRows.filter(r => r.source !== "group-3");
+/** 重建指定群組在 displayRows 中的項目（分類篩選變動時呼叫） */
+function rebuildGroupDisplay(groupIdx) {
+  const sourceKey = "group-" + groupIdx;
+  if (!activeGroups.has(groupIdx)) return;
+  // 移除舊的項目
+  displayRows = displayRows.filter(r => r.source !== sourceKey);
   // 重新載入（套用分類篩選）
   const removed = loadGroupRemoved();
   const removedSet = new Set(
-    (removed[3] || []).map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
+    (removed[groupIdx] || []).map(s => s.split(",").map(p => p.trim().toLowerCase()).filter(Boolean).join(","))
   );
-  for (const w of GROUP_ALL[3]) {
+  const config = GROUP_CATEGORIES_CONFIG[groupIdx];
+  const cats = activeGroupCats[groupIdx];
+  for (const w of GROUP_ALL[groupIdx]) {
     const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
     if (removedSet.has(norm)) continue;
-    if (activeGroup4Cats !== null) {
-      const cat = getGroup4Category(w);
-      if (cat && !activeGroup4Cats.has(cat)) continue;
+    if (config && cats !== null && cats !== undefined) {
+      const cat = config.getCategory(w);
+      if (cat && !cats.has(cat)) continue;
     }
-    displayRows.push({ text: w, source: "group-3" });
+    displayRows.push({ text: w, source: sourceKey });
   }
   updateTotalCount();
 }
 
-/** 根據群組 4 是否啟用來顯示/隱藏分類按鈕列 */
-function updateGroup4CatBarVisibility() {
-  if (!group4CatBar) return;
-  const show = activeGroups.has(3);
-  group4CatBar.style.display = show ? "flex" : "none";
-  if (show && group4CatBar.querySelectorAll(".g4cat-btn").length === 0) {
-    renderGroup4CatBar();
+/** 根據各群組是否啟用來顯示/隱藏對應的分類按鈕列 */
+function updateGroupCatBarsVisibility() {
+  if (!groupCatBarsContainer) return;
+  for (const gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+    const groupIdx = parseInt(gi);
+    const show = activeGroups.has(groupIdx) && !singleWordMode;
+    let bar = groupCatBarsContainer.querySelector(`[data-group-cat="${groupIdx}"]`);
+    if (show) {
+      if (!bar) renderGroupCatBar(groupIdx);
+      bar = groupCatBarsContainer.querySelector(`[data-group-cat="${groupIdx}"]`);
+      if (bar) bar.style.display = "flex";
+    } else {
+      if (bar) bar.style.display = "none";
+    }
   }
 }
 
@@ -4483,8 +4586,8 @@ function updateSourceUI() {
     if (singleWordMode) updateLetterBarUI();
   }
 
-  // ── 群組 4 分類篩選列 ──
-  updateGroup4CatBarVisibility();
+  // ── 群組分類篩選列（群組 2/3/4/5） ──
+  updateGroupCatBarsVisibility();
 
   // ── 單字模式 → 反灰「允許的組合長度」和「單字來源」 ──
   if (lenSection) {
@@ -4616,12 +4719,14 @@ function saveRows() {
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
   localStorage.setItem(SPLIT_MODE_KEY, splitMode);
-  // 儲存群組資料（群組 4 套用分類篩選後存入）
+  // 儲存群組資料（套用各群組分類篩選後存入）
   const groupDataToSave = GROUP_ALL.map((group, idx) => {
-    if (idx === 3 && activeGroup4Cats !== null) {
+    const catConfig = GROUP_CATEGORIES_CONFIG[idx];
+    const cats = activeGroupCats[idx];
+    if (catConfig && cats !== null && cats !== undefined) {
       return group.filter(w => {
-        const cat = getGroup4Category(w);
-        return !cat || activeGroup4Cats.has(cat);
+        const cat = catConfig.getCategory(w);
+        return !cat || cats.has(cat);
       });
     }
     return group;
@@ -4633,11 +4738,16 @@ function saveRows() {
   } else {
     localStorage.setItem(WORD_LETTERS_KEY, JSON.stringify([...activeLetters]));
   }
-  // 儲存群組 4 分類篩選
-  if (activeGroup4Cats === null) {
-    localStorage.removeItem(GROUP4_CATS_KEY);
-  } else {
-    localStorage.setItem(GROUP4_CATS_KEY, JSON.stringify([...activeGroup4Cats]));
+  // 儲存各群組分類篩選
+  for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+    const gi = parseInt(_gi);
+    const cfg = GROUP_CATEGORIES_CONFIG[gi];
+    const cats = activeGroupCats[gi];
+    if (cats === null || cats === undefined) {
+      localStorage.removeItem(cfg.storageKey);
+    } else {
+      localStorage.setItem(cfg.storageKey, JSON.stringify([...cats]));
+    }
   }
   // 若有手動移除的群組 word，儲存到 GROUP_REMOVED_KEY；否則清除
   if (Object.keys(manualRemoved).length > 0) {
@@ -4682,7 +4792,10 @@ function resetDefault() {
   singleWordMode = false;
   splitMode = "syllable";
   activeLetters = null;
-  activeGroup4Cats = null;
+  // 重置所有群組分類篩選
+  for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+    activeGroupCats[parseInt(_gi)] = null;
+  }
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
@@ -4714,7 +4827,10 @@ function resetDefault() {
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   localStorage.removeItem(GROUP_REMOVED_KEY);                   // 清除手動移除紀錄
   localStorage.removeItem(WORD_LETTERS_KEY);                    // 清除字母篩選
-  localStorage.removeItem(GROUP4_CATS_KEY);                     // 清除群組4分類篩選
+  // 清除所有群組分類篩選
+  for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+    localStorage.removeItem(GROUP_CATEGORIES_CONFIG[parseInt(_gi)].storageKey);
+  }
 
   setMessage("✅ 已還原預設並自動儲存，回遊戲頁即可套用。", true);
 }
@@ -5311,9 +5427,12 @@ buildDisplayRows();
 if (singleWordMode) {
   renderLetterBar();
 }
-// 若群組 4 已開啟，初始化分類篩選按鈕
-if (activeGroups.has(3)) {
-  renderGroup4CatBar();
+// 初始化所有已開啟群組的分類篩選按鈕
+for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
+  const gi = parseInt(_gi);
+  if (activeGroups.has(gi)) {
+    renderGroupCatBar(gi);
+  }
 }
 updateSourceUI();
 renderRows();
