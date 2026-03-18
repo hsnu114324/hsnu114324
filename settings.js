@@ -11,6 +11,7 @@ const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
 const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
 const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
 const WORD_LETTERS_KEY = "word_tetris_word_letters_v1"; // 單字模式字母篩選
+const BATTLE_MODE_KEY = "word_tetris_battle_mode_v1";  // 勇者戰鬥模式開關
 // 群組分類篩選 key 已移至 GROUP_CATEGORIES_CONFIG.storageKey
 
 // 預設群組
@@ -3815,6 +3816,7 @@ const pickCountInput = document.getElementById("pickCount");
 const totalCountEl = document.getElementById("totalCount");
 const debugToggle = document.getElementById("debugToggle");
 const autoRemoveToggle = document.getElementById("autoRemoveToggle");
+const battleModeToggle = document.getElementById("battleModeToggle");
 const len2Toggle = document.getElementById("len2Toggle");
 const len3Toggle = document.getElementById("len3Toggle");
 const len4Toggle = document.getElementById("len4Toggle");
@@ -4715,6 +4717,7 @@ function saveRows() {
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify(allowedLens));
   localStorage.setItem(AUTO_REMOVE_KEY, autoRemoveToggle.checked ? "1" : "0");
+  localStorage.setItem(BATTLE_MODE_KEY, battleModeToggle.checked ? "1" : "0");
   localStorage.setItem(GROUPS_KEY, JSON.stringify([...activeGroups]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
@@ -4799,6 +4802,7 @@ function resetDefault() {
   pickCount = 0;
   pickCountInput.value = 0;
   autoRemoveToggle.checked = false;
+  battleModeToggle.checked = false;
   len2Toggle.checked = true;
   len3Toggle.checked = true;
   len4Toggle.checked = true;
@@ -4820,6 +4824,7 @@ function resetDefault() {
   localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
   localStorage.setItem(LENS_KEY, JSON.stringify([2, 3, 4, 5]));
   localStorage.setItem(AUTO_REMOVE_KEY, "0");
+  localStorage.setItem(BATTLE_MODE_KEY, "0");
   localStorage.setItem(GROUPS_KEY, JSON.stringify([]));
   localStorage.setItem(CUSTOM_ACTIVE_KEY, "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, "0");
@@ -5414,6 +5419,7 @@ preventZoom();
 pickCountInput.value = pickCount;
 debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
 autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
+battleModeToggle.checked = localStorage.getItem(BATTLE_MODE_KEY) === "1";
 
 const _savedLens = loadAllowedLens();
 len2Toggle.checked = _savedLens.includes(2);

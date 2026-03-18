@@ -24,6 +24,7 @@ const CUSTOM_FULL_KEY   = "word_tetris_custom_full_v1";
 const STATS_KEY         = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY   = "word_tetris_google_user_v1";
 const PICK_KEY          = "word_tetris_pick_count_v1";
+const BATTLE_MODE_KEY   = "word_tetris_battle_mode_v1";
 const APPS_SCRIPT_URL   = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";
 const DEFAULT_WORD_ROWS = ["蘋果,Apfel", "麵包,Brot", "水,Wasser", "牛奶,Milch", "書,Buch"];
 
@@ -439,6 +440,9 @@ let roundCards = [];        // [{text, comboIdx, blockIdx, el}]  comboIdx=-1 為
 let selectedCardEl = null;  // 目前選中的卡片 DOM
 let roundLocked = false;    // 動畫中鎖定
 
+// 勇者戰鬥模式開關（從 settings 讀取，預設關閉）
+const battleEnabled = localStorage.getItem(BATTLE_MODE_KEY) === "1";
+
 // ATB 戰鬥狀態
 let playerHp = PLAYER_BASE_HP;
 let playerMaxHp = PLAYER_BASE_HP;
@@ -851,11 +855,13 @@ function handleCorrectMatch(comboIdx, blockIdx, cardIdx) {
   correctCount++;
   streak++;
 
-  // ATB 按比例填充
-  const totalToMatch = combo.blocks.length - (combo.prefilled >= 0 ? 1 : 0);
-  const atbGain = Math.round(PLAYER_ATB_PER_MATCH / Math.max(1, totalToMatch));
-  playerAtb = Math.min(100, playerAtb + atbGain);
-  updateBattleUI();
+  // ATB 按比例填充（僅在戰鬥模式啟用時）
+  if (battleEnabled) {
+    const totalToMatch = combo.blocks.length - (combo.prefilled >= 0 ? 1 : 0);
+    const atbGain = Math.round(PLAYER_ATB_PER_MATCH / Math.max(1, totalToMatch));
+    playerAtb = Math.min(100, playerAtb + atbGain);
+    updateBattleUI();
+  }
 
   // 檢查此 combo 是否全部 block 都已配對
   const comboComplete = combo.matched.every(Boolean);
@@ -873,13 +879,13 @@ function handleCorrectMatch(comboIdx, blockIdx, cardIdx) {
   }
   matchFeedback.style.color = "#5fd18d";
 
-  if (playerAtb >= 100) {
+  if (battleEnabled && playerAtb >= 100) {
     setTimeout(() => playerAttack(), 200);
   }
 
   updateUI();
   updateQueueUI();
-  saveBattleState();
+  if (battleEnabled) saveBattleState();
 
   setTimeout(() => {
     roundLocked = false;
@@ -904,13 +910,15 @@ function handleWrongMatch(comboIdx, blockIdx, cardIdx) {
   wrongCount++;
   streak = 0;
 
-  enemyAtb = Math.min(100, enemyAtb + ENEMY_ATB_BOOST_ON_WRONG);
-  updateBattleUI();
-
-  matchFeedback.textContent = `❌ 配對錯誤！ 敵人 ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`;
+  if (battleEnabled) {
+    enemyAtb = Math.min(100, enemyAtb + ENEMY_ATB_BOOST_ON_WRONG);
+    updateBattleUI();
+    matchFeedback.textContent = `❌ 配對錯誤！ 敵人 ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`;
+    battleLog(`⚡ 配對錯誤！${enemyName} ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`, "#c77dff");
+  } else {
+    matchFeedback.textContent = `❌ 配對錯誤！`;
+  }
   matchFeedback.style.color = "#ff5555";
-
-  battleLog(`⚡ 配對錯誤！${enemyName} ATB +${ENEMY_ATB_BOOST_ON_WRONG}%`, "#c77dff");
 
   updateUI();
 
@@ -1257,22 +1265,25 @@ function restartGame() {
   wrongCount = 0;
   streak = 0;
 
-  playerHp = PLAYER_BASE_HP;
-  playerMaxHp = PLAYER_BASE_HP;
-  playerAtb = 0;
-  playerDead = false;
-  wave = 1;
-  killCount = 0;
-  battlePaused = false;
+  if (battleEnabled) {
+    playerHp = PLAYER_BASE_HP;
+    playerMaxHp = PLAYER_BASE_HP;
+    playerAtb = 0;
+    playerDead = false;
+    wave = 1;
+    killCount = 0;
+    battlePaused = false;
 
-  spawnEnemy();
-  updateBattleUI();
+    spawnEnemy();
+    updateBattleUI();
+    saveBattleState();
+  }
+
   updateUI();
   updateQueueUI();
-  saveBattleState();
 
   generateRound();
-  startAtbTimer();
+  if (battleEnabled) startAtbTimer();
 
   if (autoPlayEnabled) scheduleAutoMatch();
 }
@@ -1287,25 +1298,36 @@ function init() {
     // 初始化發牌Q
     initComboQueue();
 
-    const savedBattle = loadBattleState();
-    if (savedBattle) {
-      wave = savedBattle.wave || 1;
-      killCount = savedBattle.killCount || 0;
-      playerHp = savedBattle.playerHp || PLAYER_BASE_HP;
-      playerMaxHp = savedBattle.playerMaxHp || PLAYER_BASE_HP;
+    // 若戰鬥模式關閉，隱藏戰鬥相關 UI
+    if (!battleEnabled) {
+      if (battleArea) battleArea.style.display = "none";
+      const waveInfoEl = document.querySelector(".wave-info");
+      if (waveInfoEl) waveInfoEl.style.display = "none";
+      if (battleLogEl) battleLogEl.style.display = "none";
     }
-    playerAtb = 0;
-    enemyAtb = 0;
-    playerDead = false;
-    battlePaused = false;
 
-    spawnEnemy();
-    updateBattleUI();
+    if (battleEnabled) {
+      const savedBattle = loadBattleState();
+      if (savedBattle) {
+        wave = savedBattle.wave || 1;
+        killCount = savedBattle.killCount || 0;
+        playerHp = savedBattle.playerHp || PLAYER_BASE_HP;
+        playerMaxHp = savedBattle.playerMaxHp || PLAYER_BASE_HP;
+      }
+      playerAtb = 0;
+      enemyAtb = 0;
+      playerDead = false;
+      battlePaused = false;
+
+      spawnEnemy();
+      updateBattleUI();
+    }
+
     updateUI();
     updateQueueUI();
 
     generateRound();
-    startAtbTimer();
+    if (battleEnabled) startAtbTimer();
 
   } catch (err) {
     console.error("Novel init error:", err);
