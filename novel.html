@@ -10,7 +10,25 @@
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-8506212526511190" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="./styles.css" />
     <style>
+      /* 禁止整個頁面的觸控滾動與彈跳效果 */
+      html {
+        overflow: hidden;
+        height: 100%;
+      }
+      body {
+        overflow: hidden;
+        height: 100%;
+        position: fixed;
+        width: 100%;
+        overscroll-behavior: none;
+      }
       .novel-page {
+        height: 100vh;
+        height: 100dvh;          /* 動態 viewport 高度，避免手機瀏覽器工具列影響 */
+        overflow-y: auto;         /* 如果內容超出螢幕仍可內部捲動 */
+        touch-action: pan-y;      /* 只允許在遊戲容器內垂直滑動捲動 */
+        overscroll-behavior: contain;  /* 防止內部滾動傳遞到外部 */
+        -webkit-overflow-scrolling: touch;
         width: min(96vw, 460px);
         margin: 0 auto;
         padding: 8px 0 20px;

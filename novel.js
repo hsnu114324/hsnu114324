@@ -32,7 +32,25 @@ const DEFAULT_WORD_ROWS = ["蘋果,Apfel", "麵包,Brot", "水,Wasser", "牛奶,
 // ══════════════════════════════════════
 
 function preventZoom() {
-  document.addEventListener("touchmove", (e) => { if (e.touches.length > 1) e.preventDefault(); }, { passive: false });
+  const novelPage = document.querySelector('.novel-page');
+
+  // 攔截所有 touchmove：
+  //  - 若在 .novel-page 內部且容器有可捲動內容 → 放行（CSS overscroll-behavior:contain 負責防止外溢）
+  //  - 其餘（多指、空白區、不可捲動時）一律阻止 → 頁面完全不會移動
+  document.addEventListener("touchmove", (e) => {
+    // 多指一律阻止（防縮放、防雙指滾動）
+    if (e.touches.length > 1) { e.preventDefault(); return; }
+
+    // 單指：若觸控在 .novel-page 內且該容器可捲動 → 允許
+    if (novelPage && novelPage.contains(e.target) && novelPage.scrollHeight > novelPage.clientHeight) {
+      return; // 放行，讓 .novel-page 的 overflow-y:auto 運作
+    }
+
+    // 其餘情況一律阻止（防止頁面被拖動）
+    e.preventDefault();
+  }, { passive: false });
+
+  // 攔截 Safari gesture 縮放
   document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
   document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
   document.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
