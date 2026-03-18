@@ -3699,25 +3699,30 @@ const _lettersSorted = Object.keys(_letterMap).sort();
 
 /** 各群組的分類設定（key = 群組 index，0-based） */
 const GROUP_CATEGORIES_CONFIG = {
-  1: { // 群組 2：動詞（可分/不可分/基本）
-    label: "群組 2 動詞分類",
-    storageKey: "word_tetris_group2_cats_v1",
-    cats: [
-      { id: "separable",   label: "可分動詞" },
-      { id: "inseparable", label: "不可分前綴" },
-      { id: "simple",      label: "基本動詞" },
-    ],
+  1: { // 群組 2：動詞（按德文首字母分）
+    label: "群組 2 字母分類",
+    storageKey: "word_tetris_group2_letter_cats_v1",
+    cats: (() => {
+      const letters = new Set();
+      for (const row of GROUP_WORDS2) {
+        const parts = row.split(",");
+        if (parts.length < 2) continue;
+        let ch = parts[1].trim().charAt(0).toUpperCase();
+        if (ch === "Ä") ch = "A";
+        if (ch === "Ö") ch = "O";
+        if (ch === "Ü") ch = "U";
+        if (/[A-Z]/.test(ch)) letters.add(ch);
+      }
+      return [...letters].sort().map(l => ({ id: l, label: l }));
+    })(),
     getCategory(row) {
-      const fields = row.split(",").map(s => s.trim());
-      if (fields.length < 3) return null;
-      // 第三人稱現在式有空格 → 可分（如 "fährt ab"）
-      if (fields[2].includes(" ")) return "separable";
-      const inf = fields[1].toLowerCase();
-      // geben / gehen 是基本動詞，不是 ge- 前綴
-      if (["geben", "gehen"].includes(inf)) return "simple";
-      const insep = ["be","emp","ent","er","ge","ver","zer","miss","über","unter"];
-      for (const p of insep) { if (inf.startsWith(p)) return "inseparable"; }
-      return "simple";
+      const parts = row.split(",");
+      if (parts.length < 2) return null;
+      let ch = parts[1].trim().charAt(0).toUpperCase();
+      if (ch === "Ä") ch = "A";
+      if (ch === "Ö") ch = "O";
+      if (ch === "Ü") ch = "U";
+      return /[A-Z]/.test(ch) ? ch : null;
     },
   },
   2: { // 群組 3：所有格（按性別分）
