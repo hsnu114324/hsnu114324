@@ -5348,8 +5348,13 @@ function updateSourceUI() {
 
   // ── 句子分類篩選列 ──
   if (sentenceCatBar) {
-    sentenceCatBar.style.display = sentenceMode ? "flex" : "none";
-    if (sentenceMode) updateSentenceCatBarUI();
+    if (sentenceMode) {
+      if (sentenceCatBar.children.length === 0) renderSentenceCatBar();
+      sentenceCatBar.style.display = "flex";
+      updateSentenceCatBarUI();
+    } else {
+      sentenceCatBar.style.display = "none";
+    }
   }
 
   // ── 單字模式按鈕外觀 ──
