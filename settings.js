@@ -14,6 +14,7 @@ const WORD_LETTERS_KEY = "word_tetris_word_letters_v1"; // 單字模式字母篩
 const BATTLE_MODE_KEY = "word_tetris_battle_mode_v1";  // 勇者戰鬥模式開關
 const SENTENCE_MODE_KEY = "word_tetris_sentence_mode_v1";
 const SENTENCE_DATA_KEY = "word_tetris_sentence_data_v1";
+const SENTENCE_CATS_KEY = "word_tetris_sentence_cats_v1";
 // 群組分類篩選 key 已移至 GROUP_CATEGORIES_CONFIG.storageKey
 
 // 預設群組
@@ -949,6 +950,40 @@ const SENTENCE_ROWS = [
   "為什麼你要應徵不同領域的工作？,Was ist der Grund, weshalb Sie sich beruflich neu orientieren wollen?",
   "你有什麼想問的問題嗎？,Haben Sie noch (weitere) Fragen?",
 ];
+
+const SENTENCE_CATEGORIES = [
+  { id: "social",    label: "社交邀請",     start: 0,   end: 46  },
+  { id: "school_go", label: "通學",         start: 47,  end: 67  },
+  { id: "enroll",    label: "入學畢業",     start: 68,  end: 109 },
+  { id: "class",     label: "上課科目",     start: 110, end: 151 },
+  { id: "homework",  label: "作業",         start: 152, end: 177 },
+  { id: "exam",      label: "考試成績",     start: 178, end: 232 },
+  { id: "vacation",  label: "假期郊遊",     start: 233, end: 265 },
+  { id: "campus",    label: "校園生活",     start: 266, end: 292 },
+  { id: "work_go",   label: "上下班",       start: 293, end: 340 },
+  { id: "job",       label: "工作職務",     start: 341, end: 397 },
+  { id: "salary",    label: "薪資獎金",     start: 398, end: 418 },
+  { id: "colleague", label: "出差同事升遷", start: 419, end: 448 },
+  { id: "meeting",   label: "會議",         start: 449, end: 469 },
+  { id: "leave",     label: "休假請假",     start: 470, end: 491 },
+  { id: "business",  label: "商務客戶",     start: 492, end: 548 },
+  { id: "career",    label: "離職求職面試", start: 549, end: 597 },
+];
+
+function getSentenceCategoryId(index) {
+  for (const cat of SENTENCE_CATEGORIES) {
+    if (index >= cat.start && index <= cat.end) return cat.id;
+  }
+  return null;
+}
+
+function getFilteredSentenceRows(activeCats) {
+  if (!activeCats) return SENTENCE_ROWS;
+  return SENTENCE_ROWS.filter((_, i) => {
+    const catId = getSentenceCategoryId(i);
+    return catId && activeCats.has(catId);
+  });
+}
 
 const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
 //const DEFAULT_WORD_ROWS = ["ice,cream", "1,2,3,4,5"];
@@ -4415,6 +4450,17 @@ function loadActiveLetters() {
   } catch { return null; }
 }
 
+/** 載入句子分類篩選；null = 全選 */
+function loadSentenceCats() {
+  try {
+    const raw = localStorage.getItem(SENTENCE_CATS_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
+    return null;
+  } catch { return null; }
+}
+
 const rowListEl = document.getElementById("rowList");
 const messageEl = document.getElementById("message");
 const newRowInput = document.getElementById("newRowInput");
@@ -4439,6 +4485,7 @@ const lenSection = document.getElementById("lenSection");
 const sourceSection = document.getElementById("sourceSection");
 const singleWordModeHint = document.getElementById("singleWordModeHint");
 const letterSubgroupBar = document.getElementById("letterSubgroupBar");
+const sentenceCatBar = document.getElementById("sentenceCatBar");
 const groupCatBarsContainer = document.getElementById("groupCatBars");
 const splitModeBar = document.getElementById("splitModeBar");
 const splitModeBtns = splitModeBar ? splitModeBar.querySelectorAll(".split-mode-btn") : [];
@@ -4452,6 +4499,7 @@ let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
 let sentenceMode = localStorage.getItem(SENTENCE_MODE_KEY) === "1";
+let activeSentenceCats = loadSentenceCats(); // Set<string> | null (null = 全選)
 let splitMode = loadSplitMode();         // "syllable" | "random" | "mixed"
 let activeLetters = loadActiveLetters();  // Set<string> | null (null = 全選)
 // 各群組的分類篩選狀態 { [groupIdx]: Set<string> | null }
@@ -4662,7 +4710,9 @@ function sourceLabel(source) {
 }
 
 function updateTotalCount() {
-  const total = sentenceMode ? SENTENCE_ROWS.length : displayRows.length;
+  const total = sentenceMode
+    ? getFilteredSentenceRows(activeSentenceCats).length
+    : displayRows.length;
   totalCountEl.textContent = String(total);
   pickCountInput.max = total;
   if (pickCount > total) {
@@ -5167,15 +5217,103 @@ function toggleSingleWordMode() {
   }
 }
 
+function renderSentenceCatBar() {
+  if (!sentenceCatBar) return;
+  sentenceCatBar.innerHTML = "";
+  // 「全選」按鈕
+  const allBtn = document.createElement("button");
+  allBtn.type = "button";
+  allBtn.textContent = "全部";
+  allBtn.className = "sent-cat-btn";
+  allBtn.dataset.cat = "ALL";
+  Object.assign(allBtn.style, {
+    padding: "6px 10px", fontSize: "0.78rem", fontWeight: "600",
+    border: "2px solid #444", borderRadius: "8px",
+    background: "#2a2a2a", color: "#ccc", cursor: "pointer",
+    transition: "background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s"
+  });
+  allBtn.addEventListener("click", () => toggleSentenceCat("ALL"));
+  sentenceCatBar.appendChild(allBtn);
+
+  for (const cat of SENTENCE_CATEGORIES) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.textContent = cat.label;
+    btn.className = "sent-cat-btn";
+    btn.dataset.cat = cat.id;
+    const count = cat.end - cat.start + 1;
+    btn.title = `${cat.label}（${count} 句）`;
+    Object.assign(btn.style, {
+      padding: "6px 10px", fontSize: "0.78rem", fontWeight: "600",
+      border: "2px solid #444", borderRadius: "8px",
+      background: "#2a2a2a", color: "#ccc", cursor: "pointer",
+      transition: "background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s"
+    });
+    btn.addEventListener("click", () => toggleSentenceCat(cat.id));
+    sentenceCatBar.appendChild(btn);
+  }
+  updateSentenceCatBarUI();
+}
+
+function toggleSentenceCat(catId) {
+  if (catId === "ALL") {
+    activeSentenceCats = null;
+  } else {
+    if (activeSentenceCats === null) {
+      activeSentenceCats = new Set([catId]);
+    } else if (activeSentenceCats.has(catId)) {
+      activeSentenceCats.delete(catId);
+      if (activeSentenceCats.size === 0) activeSentenceCats = null;
+    } else {
+      activeSentenceCats.add(catId);
+      if (activeSentenceCats.size === SENTENCE_CATEGORIES.length) activeSentenceCats = null;
+    }
+  }
+  updateSentenceCatBarUI();
+  updateTotalCount();
+  const filtered = getFilteredSentenceRows(activeSentenceCats);
+  const label = activeSentenceCats === null ? "全部分類" : [...activeSentenceCats].map(id => {
+    const c = SENTENCE_CATEGORIES.find(x => x.id === id);
+    return c ? c.label : id;
+  }).join("、");
+  setMessage(`📝 句子篩選：${label}（${filtered.length} 句）`, true);
+}
+
+function updateSentenceCatBarUI() {
+  if (!sentenceCatBar) return;
+  sentenceCatBar.querySelectorAll(".sent-cat-btn").forEach(btn => {
+    const catId = btn.dataset.cat;
+    let isActive;
+    if (catId === "ALL") {
+      isActive = activeSentenceCats === null;
+    } else {
+      isActive = activeSentenceCats === null || activeSentenceCats.has(catId);
+    }
+    if (isActive) {
+      btn.style.background = "#e91e63";
+      btn.style.color = "#fff";
+      btn.style.borderColor = "#c2185b";
+      btn.style.boxShadow = "0 0 8px 2px rgba(233,30,99,0.4)";
+    } else {
+      btn.style.background = "#2a2a2a";
+      btn.style.color = "#666";
+      btn.style.borderColor = "#444";
+      btn.style.boxShadow = "none";
+    }
+  });
+}
+
 function toggleSentenceMode() {
   sentenceMode = !sentenceMode;
   if (sentenceMode) {
     singleWordMode = false;
+    renderSentenceCatBar();
   }
   updateSourceUI();
   updateTotalCount();
   if (sentenceMode) {
-    setMessage(`✅ 句子模式已開啟：共 ${SENTENCE_ROWS.length} 個句子。按「儲存」生效。`, true);
+    const filtered = getFilteredSentenceRows(activeSentenceCats);
+    setMessage(`✅ 句子模式已開啟：共 ${filtered.length} 個句子。按「儲存」生效。`, true);
   } else {
     setMessage(`📝 句子模式已關閉。`, true);
   }
@@ -5206,6 +5344,12 @@ function updateSourceUI() {
       sentenceModeBtn.style.boxShadow = "none";
       sentenceModeBtn.textContent = "📝 句子模式";
     }
+  }
+
+  // ── 句子分類篩選列 ──
+  if (sentenceCatBar) {
+    sentenceCatBar.style.display = sentenceMode ? "flex" : "none";
+    if (sentenceMode) updateSentenceCatBarUI();
   }
 
   // ── 單字模式按鈕外觀 ──
@@ -5307,7 +5451,8 @@ function saveRows() {
   pickCount = parseInt(pickCountInput.value, 10) || 0;
   if (pickCount < 0) pickCount = 0;
   if (sentenceMode) {
-    if (pickCount > SENTENCE_ROWS.length) pickCount = SENTENCE_ROWS.length;
+    const filteredSentenceCount = getFilteredSentenceRows(activeSentenceCats).length;
+    if (pickCount > filteredSentenceCount) pickCount = filteredSentenceCount;
   } else {
     if (pickCount > displayRows.length) pickCount = displayRows.length;
   }
@@ -5370,7 +5515,13 @@ function saveRows() {
   localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
   localStorage.setItem(SENTENCE_MODE_KEY, sentenceMode ? "1" : "0");
   if (sentenceMode) {
-    localStorage.setItem(SENTENCE_DATA_KEY, JSON.stringify(SENTENCE_ROWS));
+    const filteredSentences = getFilteredSentenceRows(activeSentenceCats);
+    localStorage.setItem(SENTENCE_DATA_KEY, JSON.stringify(filteredSentences));
+  }
+  if (activeSentenceCats === null) {
+    localStorage.removeItem(SENTENCE_CATS_KEY);
+  } else {
+    localStorage.setItem(SENTENCE_CATS_KEY, JSON.stringify([...activeSentenceCats]));
   }
   localStorage.setItem(SPLIT_MODE_KEY, splitMode);
   // 儲存群組資料（套用各群組分類篩選後存入）
@@ -5418,7 +5569,12 @@ function saveRows() {
     parts.push(`${names}（${totalWords} 組）`);
   }
   if (sentenceMode) {
-    parts.push(`句子模式（${SENTENCE_ROWS.length} 句）`);
+    const savedSentenceCount = getFilteredSentenceRows(activeSentenceCats).length;
+    const catLabel = activeSentenceCats === null ? "全部分類" : [...activeSentenceCats].map(id => {
+      const c = SENTENCE_CATEGORIES.find(x => x.id === id);
+      return c ? c.label : id;
+    }).join("、");
+    parts.push(`句子模式（${catLabel}，${savedSentenceCount} 句）`);
   }
   if (customActive) {
     const customCount = displayRows.filter(r => r.source === "custom").length;
@@ -5448,6 +5604,7 @@ function resetDefault() {
   customActive = false;
   singleWordMode = false;
   sentenceMode = false;
+  activeSentenceCats = null;
   splitMode = "syllable";
   activeLetters = null;
   // 重置所有群組分類篩選
@@ -5485,6 +5642,7 @@ function resetDefault() {
   localStorage.setItem(SINGLE_WORD_MODE_KEY, "0");
   localStorage.setItem(SENTENCE_MODE_KEY, "0");
   localStorage.removeItem(SENTENCE_DATA_KEY);
+  localStorage.removeItem(SENTENCE_CATS_KEY);
   localStorage.setItem(SPLIT_MODE_KEY, "syllable");
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   localStorage.removeItem(GROUP_REMOVED_KEY);                   // 清除手動移除紀錄
@@ -6091,6 +6249,10 @@ buildDisplayRows();
 // 若單字模式已開啟，初始化字母篩選按鈕
 if (singleWordMode) {
   renderLetterBar();
+}
+// 若句子模式已開啟，初始化分類篩選按鈕
+if (sentenceMode) {
+  renderSentenceCatBar();
 }
 // 初始化所有已開啟群組的分類篩選按鈕
 for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
