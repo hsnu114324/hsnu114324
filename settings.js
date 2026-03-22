@@ -5175,6 +5175,9 @@ function toggleSingleWordMode() {
   syncCustomFullFromDisplay();
 
   singleWordMode = !singleWordMode;
+  if (singleWordMode) {
+    sentenceMode = false;
+  }
 
   // 不管開啟或關閉，組合長度固定 2格、來源固定自定義
   len2Toggle.checked = true;
@@ -5256,27 +5259,45 @@ function renderSentenceCatBar() {
 }
 
 function toggleSentenceCat(catId) {
+  const allIds = SENTENCE_CATEGORIES.map(c => c.id);
+
   if (catId === "ALL") {
-    activeSentenceCats = null;
+    if (activeSentenceCats === null) {
+      activeSentenceCats = new Set();
+    } else {
+      activeSentenceCats = null;
+    }
   } else {
     if (activeSentenceCats === null) {
-      activeSentenceCats = new Set([catId]);
+      activeSentenceCats = new Set(allIds);
+      activeSentenceCats.delete(catId);
     } else if (activeSentenceCats.has(catId)) {
       activeSentenceCats.delete(catId);
-      if (activeSentenceCats.size === 0) activeSentenceCats = null;
+      if (activeSentenceCats.size === 0) {
+        activeSentenceCats = null;
+      }
     } else {
       activeSentenceCats.add(catId);
-      if (activeSentenceCats.size === SENTENCE_CATEGORIES.length) activeSentenceCats = null;
+      if (activeSentenceCats.size >= allIds.length) {
+        activeSentenceCats = null;
+      }
     }
   }
+
   updateSentenceCatBarUI();
   updateTotalCount();
   const filtered = getFilteredSentenceRows(activeSentenceCats);
-  const label = activeSentenceCats === null ? "全部分類" : [...activeSentenceCats].map(id => {
-    const c = SENTENCE_CATEGORIES.find(x => x.id === id);
-    return c ? c.label : id;
-  }).join("、");
-  setMessage(`📝 句子篩選：${label}（${filtered.length} 句）`, true);
+  if (activeSentenceCats === null) {
+    setMessage(`📝 已選取全部分類（共 ${filtered.length} 句），按「儲存」生效。`, true);
+  } else if (activeSentenceCats.size === 0) {
+    setMessage(`📝 未選取任何分類（0 句）`, true);
+  } else {
+    const label = [...activeSentenceCats].map(id => {
+      const c = SENTENCE_CATEGORIES.find(x => x.id === id);
+      return c ? c.label : id;
+    }).join("、");
+    setMessage(`📝 已篩選 ${label}（共 ${filtered.length} 句），按「儲存」生效。`, true);
+  }
 }
 
 function updateSentenceCatBarUI() {
