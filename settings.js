@@ -12,6 +12,8 @@ const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
 const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
 const WORD_LETTERS_KEY = "word_tetris_word_letters_v1"; // 單字模式字母篩選
 const BATTLE_MODE_KEY = "word_tetris_battle_mode_v1";  // 勇者戰鬥模式開關
+const SENTENCE_ACTIVE_KEY = "word_tetris_sentence_active_v1"; // 句子模式開關
+const SENTENCE_DATA_KEY = "word_tetris_sentence_data_v1";     // 句子模式資料
 // 群組分類篩選 key 已移至 GROUP_CATEGORIES_CONFIG.storageKey
 
 // 預設群組
@@ -344,6 +346,32 @@ const GROUP_WORDS5 = [
   "複數 -,-e,-er,-en n,-e",
   "複數 keine,keine -en,keiner -en,keinen -en n,keine -en"
 
+];
+
+// ══════════════════════════════════════
+//  句子模式資料（每句不限欄數，第一欄中文，後面每個德文單字各一欄）
+// ══════════════════════════════════════
+const SENTENCE_ROWS = [
+  "我每天早上七點起床,Ich,stehe,jeden,Morgen,um,sieben,Uhr,auf",
+  "你可以幫我翻譯這句話嗎,Können,Sie,mir,diesen,Satz,übersetzen",
+  "我想在柏林待三天,Ich,möchte,drei,Tage,in,Berlin,bleiben",
+  "這家餐廳的食物非常好吃,Das,Essen,in,diesem,Restaurant,ist,sehr,lecker",
+  "你知道最近的地鐵站在哪裡嗎,Wissen,Sie,wo,die,nächste,U-Bahn-Station,ist",
+  "我已經學德文三個月了,Ich,lerne,seit,drei,Monaten,Deutsch",
+  "請問這班火車幾點出發,Wann,fährt,dieser,Zug,ab",
+  "我的德文還不太好請說慢一點,Mein,Deutsch,ist,noch,nicht,so,gut,bitte,sprechen,Sie,langsamer",
+  "今天天氣很好我們去公園散步吧,Das,Wetter,ist,heute,schön,lass,uns,im,Park,spazieren,gehen",
+  "你週末有什麼計畫,Was,hast,du,am,Wochenende,vor",
+  "我需要在超市買一些水果和蔬菜,Ich,muss,im,Supermarkt,Obst,und,Gemüse,kaufen",
+  "這本書是我朋友推薦給我的,Dieses,Buch,hat,mir,mein,Freund,empfohlen",
+  "你能告訴我去火車站怎麼走嗎,Können,Sie,mir,sagen,wie,ich,zum,Bahnhof,komme",
+  "我昨天晚上看了一部很有趣的電影,Ich,habe,gestern,Abend,einen,sehr,interessanten,Film,gesehen",
+  "她每天下午都去圖書館學習,Sie,geht,jeden,Nachmittag,in,die,Bibliothek,zum,Lernen",
+  "我們應該在出發前預訂旅館,Wir,sollten,vor,der,Abreise,ein,Hotel,buchen",
+  "請問您能推薦一道當地特色菜嗎,Können,Sie,mir,ein,lokales,Gericht,empfehlen",
+  "我明天要去機場接一個朋友,Ich,muss,morgen,einen,Freund,vom,Flughafen,abholen",
+  "這條路直走然後在第二個路口右轉,Gehen,Sie,geradeaus,und,biegen,Sie,an,der,zweiten,Kreuzung,rechts,ab",
+  "我覺得學語言最重要的是每天練習,Ich,denke,das,Wichtigste,beim,Sprachenlernen,ist,tägliches,Üben",
 ];
 
 const GROUP_ALL = [GROUP_WORDS1, GROUP_WORDS2, GROUP_WORDS3, GROUP_WORDS4, GROUP_WORDS5];
@@ -3831,6 +3859,7 @@ const groupBtns = groupBtnBar.querySelectorAll(".group-btn[data-group]");
 const customSourceBtn = document.getElementById("customSourceBtn");
 const customInputArea = document.getElementById("customInputArea");
 const singleWordModeBtn = document.getElementById("singleWordModeBtn");
+const sentenceSourceBtn = document.getElementById("sentenceSourceBtn");
 const lenSection = document.getElementById("lenSection");
 const sourceSection = document.getElementById("sourceSection");
 const singleWordModeHint = document.getElementById("singleWordModeHint");
@@ -3847,6 +3876,7 @@ let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
 let customActive = loadCustomActive();   // boolean
 let singleWordMode = loadSingleWordMode(); // boolean
+let sentenceActive = localStorage.getItem(SENTENCE_ACTIVE_KEY) === "1"; // boolean
 let splitMode = loadSplitMode();         // "syllable" | "random" | "mixed"
 let activeLetters = loadActiveLetters();  // Set<string> | null (null = 全選)
 // 各群組的分類篩選狀態 { [groupIdx]: Set<string> | null }
@@ -4038,6 +4068,11 @@ function buildDisplayRows() {
       displayRows.push({ text: w, source: "custom" });
     }
   }
+  if (sentenceActive) {
+    for (const w of SENTENCE_ROWS) {
+      displayRows.push({ text: w, source: "sentence" });
+    }
+  }
 }
 
 function loadGroupRemoved() {
@@ -4052,6 +4087,7 @@ function loadGroupRemoved() {
 
 function sourceLabel(source) {
   if (source === "custom") return "[自定義]";
+  if (source === "sentence") return "[句子]";
   const idx = parseInt(source.split("-")[1], 10);
   return "[群" + (idx + 1) + "]";
 }
@@ -4199,6 +4235,20 @@ function syncCustomFullFromDisplay() {
   });
   customRows = [...customRowsFull];
   saveCustomRowsFull();
+}
+
+function toggleSentence() {
+  if (sentenceActive) {
+    sentenceActive = false;
+    displayRows = displayRows.filter(r => r.source !== "sentence");
+  } else {
+    sentenceActive = true;
+    for (const w of SENTENCE_ROWS) {
+      displayRows.push({ text: w, source: "sentence" });
+    }
+  }
+  updateSourceUI();
+  renderRows();
 }
 
 function toggleCustom() {
@@ -4569,6 +4619,8 @@ function updateSourceUI() {
   });
   // 自定義按鈕發光狀態
   customSourceBtn.classList.toggle("active", customActive);
+  // 句子模式按鈕發光狀態
+  if (sentenceSourceBtn) sentenceSourceBtn.classList.toggle("active", sentenceActive);
 
   // ── 單字模式按鈕外觀 ──
   if (singleWordMode) {
@@ -4655,7 +4707,7 @@ function saveRows() {
   }
 
   // 至少要有一個來源啟用
-  if (!singleWordMode && activeGroups.size === 0 && !customActive) {
+  if (!singleWordMode && activeGroups.size === 0 && !customActive && !sentenceActive) {
     setMessage("請至少啟用一個單字來源。");
     return;
   }
@@ -4727,6 +4779,14 @@ function saveRows() {
   localStorage.setItem(CUSTOM_ACTIVE_KEY, customActive ? "1" : "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, singleWordMode ? "1" : "0");
   localStorage.setItem(SPLIT_MODE_KEY, splitMode);
+  localStorage.setItem(SENTENCE_ACTIVE_KEY, sentenceActive ? "1" : "0");
+  // 儲存句子資料（目前顯示中的句子）
+  if (sentenceActive) {
+    const sentenceData = displayRows.filter(r => r.source === "sentence").map(r => r.text);
+    localStorage.setItem(SENTENCE_DATA_KEY, JSON.stringify(sentenceData));
+  } else {
+    localStorage.removeItem(SENTENCE_DATA_KEY);
+  }
   // 儲存群組資料（套用各群組分類篩選後存入）
   const groupDataToSave = GROUP_ALL.map((group, idx) => {
     const catConfig = GROUP_CATEGORIES_CONFIG[idx];
@@ -4783,6 +4843,10 @@ function saveRows() {
       parts.push(`自定義（${customCount} 組）`);
     }
   }
+  if (sentenceActive) {
+    const sentenceCount = displayRows.filter(r => r.source === "sentence").length;
+    parts.push(`句子（${sentenceCount} 句）`);
+  }
   const modeText = parts.join("＋");
   const lenText = allowedLens.length === 4
     ? "全部長度"
@@ -4798,6 +4862,7 @@ function resetDefault() {
   activeGroups = new Set();
   customActive = false;
   singleWordMode = false;
+  sentenceActive = false;
   splitMode = "syllable";
   activeLetters = null;
   // 重置所有群組分類篩選
@@ -4834,6 +4899,8 @@ function resetDefault() {
   localStorage.setItem(CUSTOM_ACTIVE_KEY, "0");
   localStorage.setItem(SINGLE_WORD_MODE_KEY, "0");
   localStorage.setItem(SPLIT_MODE_KEY, "syllable");
+  localStorage.setItem(SENTENCE_ACTIVE_KEY, "0");
+  localStorage.removeItem(SENTENCE_DATA_KEY);
   localStorage.setItem(GROUP_DATA_KEY, JSON.stringify(GROUP_ALL));
   localStorage.removeItem(GROUP_REMOVED_KEY);                   // 清除手動移除紀錄
   localStorage.removeItem(WORD_LETTERS_KEY);                    // 清除字母篩選
@@ -5405,6 +5472,8 @@ groupBtns.forEach(btn => {
 });
 // 自定義按鈕綁定
 tapBind(customSourceBtn, toggleCustom);
+// 句子模式按鈕綁定
+if (sentenceSourceBtn) tapBind(sentenceSourceBtn, toggleSentence);
 // 單字模式按鈕綁定
 tapBind(singleWordModeBtn, toggleSingleWordMode);
 // 拆分模式按鈕綁定

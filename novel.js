@@ -25,6 +25,8 @@ const STATS_KEY         = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY   = "word_tetris_google_user_v1";
 const PICK_KEY          = "word_tetris_pick_count_v1";
 const BATTLE_MODE_KEY   = "word_tetris_battle_mode_v1";
+const SENTENCE_ACTIVE_KEY = "word_tetris_sentence_active_v1";
+const SENTENCE_DATA_KEY   = "word_tetris_sentence_data_v1";
 const APPS_SCRIPT_URL   = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";
 const DEFAULT_WORD_ROWS = ["蘋果,Apfel", "麵包,Brot", "水,Wasser", "牛奶,Milch", "書,Buch"];
 
@@ -60,6 +62,7 @@ function preventZoom() {
 
 function isSingleWordMode() { return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1"; }
 function isCustomActive()   { return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1"; }
+function isSentenceActive() { return localStorage.getItem(SENTENCE_ACTIVE_KEY) === "1"; }
 function loadSplitMode() {
   const v = localStorage.getItem(SPLIT_MODE_KEY);
   if (v === "random" || v === "mixed") return v;
@@ -184,9 +187,10 @@ function loadActiveGroups() {
 function loadGroupRemoved() {
   try { const r = localStorage.getItem(GROUP_REMOVED_KEY); if (!r) return {}; const p = JSON.parse(r); return (p && typeof p === "object") ? p : {}; } catch { return {}; }
 }
-function isValidRowString(row) {
+function isValidRowString(row, allowLong) {
   if (typeof row !== "string") return false;
   const parts = row.split(",").map(w => w.trim()).filter(Boolean);
+  if (allowLong) return parts.length >= 2;
   return parts.length >= 2 && parts.length <= 5;
 }
 
@@ -226,6 +230,20 @@ function loadWordRows() {
               if (parts.length !== 2) continue;
             }
             rows.push(r);
+          }
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  // 句子模式：從 SENTENCE_DATA_KEY 載入句子資料（不限欄數）
+  if (isSentenceActive()) {
+    try {
+      const raw = localStorage.getItem(SENTENCE_DATA_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const r of parsed) {
+            if (isValidRowString(r, true)) rows.push(r);
           }
         }
       }
@@ -574,8 +592,10 @@ function generateRound() {
     return;
   }
 
-  // 從佇列取下一批（最多 SLOTS_PER_ROUND 組）
-  const n = Math.min(SLOTS_PER_ROUND, remaining);
+  // 從佇列取下一批（最多 SLOTS_PER_ROUND 組；句子模式每次只發 1 句）
+  const sentenceMode = isSentenceActive();
+  const slotsThisRound = sentenceMode ? 1 : SLOTS_PER_ROUND;
+  const n = Math.min(slotsThisRound, remaining);
   const chosen = comboQueue.slice(queueIdx, queueIdx + n);
   queueIdx += n;
 
