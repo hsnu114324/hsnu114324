@@ -34,6 +34,13 @@
                    transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s,transform 0.1s;">
             🔤 單字模式
           </button>
+          <button type="button" id="sentenceModeBtn"
+            style="width:100%;padding:14px 0;font-size:1.05rem;font-weight:700;margin-top:8px;
+                   border:2px solid #666;border-radius:10px;
+                   background:#2a2a2a;color:#ccc;cursor:pointer;
+                   transition:background 0.15s,box-shadow 0.2s,color 0.15s,border-color 0.15s,transform 0.1s;">
+            📝 句子模式
+          </button>
           <p id="singleWordModeHint" style="margin:6px 0 0;font-size:0.78rem;color:#999;display:none;">
             一次只發一組單字，拼對消去後才發下一組。自定義來源自動啟用，組合長度由拆字決定。
           </p>
@@ -80,7 +87,6 @@
             <button type="button" class="group-btn" data-group="3">群組 4</button>
             <button type="button" class="group-btn" data-group="4">群組 5</button>
             <button type="button" class="group-btn" id="customSourceBtn">自定義</button>
-            <button type="button" class="group-btn" id="sentenceSourceBtn">📝 句子</button>
           </div>
           <div id="groupCatBars"></div>
         </div>

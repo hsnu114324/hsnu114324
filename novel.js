@@ -7,6 +7,8 @@
 const BATTLE_SAVE_KEY = "word_novel_battle_v1";
 const SLOTS_PER_ROUND = 3;    // 每回合卡槽數
 const DISTRACTORS = 2;         // 干擾卡數量
+const SENTENCE_MODE_KEY = "word_tetris_sentence_mode_v1";
+const SENTENCE_DATA_KEY = "word_tetris_sentence_data_v1";
 
 // ══════════════════════════════════════
 //  共用常數（與其他遊戲共用）
@@ -25,8 +27,6 @@ const STATS_KEY         = "word_tetris_combo_stats_v1";
 const GOOGLE_USER_KEY   = "word_tetris_google_user_v1";
 const PICK_KEY          = "word_tetris_pick_count_v1";
 const BATTLE_MODE_KEY   = "word_tetris_battle_mode_v1";
-const SENTENCE_ACTIVE_KEY = "word_tetris_sentence_active_v1";
-const SENTENCE_DATA_KEY   = "word_tetris_sentence_data_v1";
 const APPS_SCRIPT_URL   = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";
 const DEFAULT_WORD_ROWS = ["蘋果,Apfel", "麵包,Brot", "水,Wasser", "牛奶,Milch", "書,Buch"];
 
@@ -61,8 +61,16 @@ function preventZoom() {
 }
 
 function isSingleWordMode() { return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1"; }
+function isSentenceMode() { return localStorage.getItem(SENTENCE_MODE_KEY) === "1"; }
+function loadSentenceRows() {
+  try {
+    const raw = localStorage.getItem(SENTENCE_DATA_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch { return []; }
+}
 function isCustomActive()   { return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1"; }
-function isSentenceActive() { return localStorage.getItem(SENTENCE_ACTIVE_KEY) === "1"; }
 function loadSplitMode() {
   const v = localStorage.getItem(SPLIT_MODE_KEY);
   if (v === "random" || v === "mixed") return v;
@@ -187,39 +195,10 @@ function loadActiveGroups() {
 function loadGroupRemoved() {
   try { const r = localStorage.getItem(GROUP_REMOVED_KEY); if (!r) return {}; const p = JSON.parse(r); return (p && typeof p === "object") ? p : {}; } catch { return {}; }
 }
-function isValidRowString(row, allowLong) {
+function isValidRowString(row) {
   if (typeof row !== "string") return false;
   const parts = row.split(",").map(w => w.trim()).filter(Boolean);
-  if (allowLong) return parts.length >= 2;
   return parts.length >= 2 && parts.length <= 5;
-}
-
-function normalizeRowKey(row) {
-  return row
-    .split(",")
-    .map((part) => part.trim().toLowerCase())
-    .filter(Boolean)
-    .join(",");
-}
-
-function loadSentenceRowKeySet() {
-  try {
-    const raw = localStorage.getItem(SENTENCE_DATA_KEY);
-    if (!raw) return new Set();
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(
-      parsed
-        .filter((row) => isValidRowString(row, true))
-        .map((row) => normalizeRowKey(String(row)))
-    );
-  } catch {
-    return new Set();
-  }
-}
-
-function buildSentenceBlocks(parts) {
-  return parts.flatMap((part) => part.split(/\s+/).map((word) => word.trim()).filter(Boolean));
 }
 
 function loadPickCount() {
@@ -230,6 +209,10 @@ function loadPickCount() {
 }
 
 function loadWordRows() {
+  if (isSentenceMode()) {
+    const sentRows = loadSentenceRows();
+    if (sentRows.length > 0) return sentRows;
+  }
   const ag = loadActiveGroups();
   const ca = isCustomActive();
   const swMode = isSingleWordMode();
@@ -263,20 +246,6 @@ function loadWordRows() {
       }
     } catch { /* ignore */ }
   }
-  // 句子模式：從 SENTENCE_DATA_KEY 載入句子資料（不限欄數）
-  if (isSentenceActive()) {
-    try {
-      const raw = localStorage.getItem(SENTENCE_DATA_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          for (const r of parsed) {
-            if (isValidRowString(r, true)) rows.push(r);
-          }
-        }
-      }
-    } catch { /* ignore */ }
-  }
   if (rows.length > 0) return rows;
   if (ag.length > 0) { const a = []; for (const gi of ag) a.push(...(groupData[gi] || [])); if (a.length > 0) return a; }
   return [...DEFAULT_WORD_ROWS];
@@ -284,36 +253,44 @@ function loadWordRows() {
 
 function buildPairsForQuiz(rows) {
   const swMode = isSingleWordMode();
-  const sentenceRowKeys = loadSentenceRowKeySet();
+  const sentMode = isSentenceMode();
   const pairs = [];
   for (const row of rows) {
     const parts = row.split(",").map(w => w.trim()).filter(Boolean);
     if (parts.length < 2) continue;
 
     const hint = parts[0];
-    const isSentence = sentenceRowKeys.has(normalizeRowKey(row));
 
-    // 單字模式 + 2 欄：德文拆字（與方塊遊戲 buildComboList 相同邏輯）
-    if (!isSentence && swMode && parts.length === 2) {
-      const germanBlocks = splitGermanToBlocks(parts[1], 4);
-      if (germanBlocks.length >= 1) {
-        // raw 保持原始未拆字的格式（_origRow 等效），確保統計 key 一致
-        pairs.push({ hint, blocks: germanBlocks, raw: row, isSentence: false });
+    if (sentMode) {
+      const germanSentence = parts.slice(1).join(", ").trim();
+      const rawWords = germanSentence.split(/\s+/).filter(Boolean);
+      const words = [];
+      for (const w of rawWords) {
+        if (/^[,.:;!?()\/]+$/.test(w) && words.length > 0) {
+          words[words.length - 1] += w;
+        } else {
+          words.push(w);
+        }
+      }
+      if (words.length >= 1) {
+        pairs.push({ hint, blocks: words, raw: row });
         continue;
       }
     }
 
-    if (isSentence) {
-      const blocks = buildSentenceBlocks(parts.slice(1));
-      if (blocks.length > 0) {
-        pairs.push({ hint, blocks, raw: row, isSentence: true });
+    // 單字模式 + 2 欄：德文拆字（與方塊遊戲 buildComboList 相同邏輯）
+    if (swMode && parts.length === 2) {
+      const germanBlocks = splitGermanToBlocks(parts[1], 4);
+      if (germanBlocks.length >= 1) {
+        // raw 保持原始未拆字的格式（_origRow 等效），確保統計 key 一致
+        pairs.push({ hint, blocks: germanBlocks, raw: row });
+        continue;
       }
-      continue;
     }
 
     // 一般模式或多欄：直接使用 CSV 欄位
     const blocks = parts.slice(1);
-    pairs.push({ hint, blocks, raw: row, isSentence: false });
+    pairs.push({ hint, blocks, raw: row });
   }
   return pairs;
 }
@@ -624,15 +601,16 @@ function generateRound() {
     return;
   }
 
-  if (allPairs.length < 1) {
-    matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 1 組</div>';
+  if (allPairs.length < 2) {
+    matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 2 組</div>';
     matchCardsEl.innerHTML = "";
     return;
   }
 
-  // 句子題一次只出 1 句；一般題維持一次最多 3 組
-  const nextPair = comboQueue[queueIdx];
-  const slotsThisRound = nextPair && nextPair.isSentence ? 1 : SLOTS_PER_ROUND;
+  // 句子模式一次只顯示 1 句
+  const sentMode = isSentenceMode();
+  const slotsThisRound = sentMode ? 1 : SLOTS_PER_ROUND;
+  // 從佇列取下一批
   const n = Math.min(slotsThisRound, remaining);
   const chosen = comboQueue.slice(queueIdx, queueIdx + n);
   queueIdx += n;
@@ -640,13 +618,16 @@ function generateRound() {
   // 延遲記錄 appear
   trackComboAppearByRaw(chosen.map(p => p.raw));
 
-  // 建立 combo 資料：句子題固定把中文放在第 1 格，其餘模式維持隨機提示
+  // 建立 combo 資料：hint 也做成小卡槽，每個 combo 隨機預填一格作為提示
+  const sentModeActive = isSentenceMode();
   roundCombos = chosen.map(p => {
+    // 把中文提示也合併進 blocks（第 0 格 = 中文，後面 = 德文）
     const allBlocks = [p.hint, ...p.blocks];
-    const prefilled = p.isSentence ? 0 : Math.floor(Math.random() * allBlocks.length);
+    // 句子模式：固定預填中文提示（index 0）；一般模式：隨機
+    const prefilled = sentModeActive ? 0 : Math.floor(Math.random() * allBlocks.length);
     const matched = new Array(allBlocks.length).fill(false);
     matched[prefilled] = true;
-    return { blocks: allBlocks, raw: p.raw, prefilled, matched, isSentence: p.isSentence };
+    return { blocks: allBlocks, raw: p.raw, prefilled, matched };
   });
 
   // 建立答案卡片：每個非預填 block 一張小卡
@@ -676,7 +657,7 @@ function generateRound() {
     }
   }
   shuffle(distractorBlocks);
-  const distractorCount = Math.min(DISTRACTORS, distractorBlocks.length);
+  const distractorCount = sentModeActive ? 0 : Math.min(DISTRACTORS, distractorBlocks.length);
   for (let i = 0; i < distractorCount; i++) {
     cards.push({ text: distractorBlocks[i], comboIdx: -1, blockIdx: -1 });
   }
