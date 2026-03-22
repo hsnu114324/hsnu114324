@@ -4662,10 +4662,11 @@ function sourceLabel(source) {
 }
 
 function updateTotalCount() {
-  totalCountEl.textContent = String(displayRows.length);
-  pickCountInput.max = displayRows.length;
-  if (pickCount > displayRows.length) {
-    pickCount = displayRows.length;
+  const total = sentenceMode ? SENTENCE_ROWS.length : displayRows.length;
+  totalCountEl.textContent = String(total);
+  pickCountInput.max = total;
+  if (pickCount > total) {
+    pickCount = total;
     pickCountInput.value = pickCount;
   }
 }
@@ -5172,6 +5173,7 @@ function toggleSentenceMode() {
     singleWordMode = false;
   }
   updateSourceUI();
+  updateTotalCount();
   if (sentenceMode) {
     setMessage(`✅ 句子模式已開啟：共 ${SENTENCE_ROWS.length} 個句子。按「儲存」生效。`, true);
   } else {
@@ -5295,8 +5297,8 @@ function saveRows() {
     setMessage("請至少啟用一個單字來源。");
     return;
   }
-  // 如果有啟用但列表為空
-  if (displayRows.length === 0) {
+  // 如果有啟用但列表為空（句子模式不依賴 displayRows，跳過此檢查）
+  if (!sentenceMode && displayRows.length === 0) {
     setMessage("單字列表不能為空，請新增至少 1 列。");
     return;
   }
@@ -5304,7 +5306,11 @@ function saveRows() {
   // 讀取並驗證抽取組數
   pickCount = parseInt(pickCountInput.value, 10) || 0;
   if (pickCount < 0) pickCount = 0;
-  if (pickCount > displayRows.length) pickCount = displayRows.length;
+  if (sentenceMode) {
+    if (pickCount > SENTENCE_ROWS.length) pickCount = SENTENCE_ROWS.length;
+  } else {
+    if (pickCount > displayRows.length) pickCount = displayRows.length;
+  }
   pickCountInput.value = pickCount;
 
   // 收集允許的組合長度（單字模式下長度由拆字決定，這裡仍然儲存以便切回時使用）
