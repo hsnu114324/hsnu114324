@@ -3871,6 +3871,7 @@ const splitModeBtns = splitModeBar ? splitModeBar.querySelectorAll(".split-mode-
 // ── 資料 ──
 let customRows = loadCustomRows();       // 自定義來源 (string[])
 let customRowsFull = loadCustomRowsFull(); // 完整快照（持久化，toggle 關→開時從此還原，不受 save 影響）
+let sentenceRows = loadSentenceRows();   // 句子來源（優先讀取已儲存清單）
 let displayRows = [];                    // 顯示列表 [{text, source}, ...]
 let pickCount = loadPickCount();
 let activeGroups = loadActiveGroups();    // Set<number>
@@ -3917,12 +3918,13 @@ function tapBind(el, callback) {
   });
 }
 
-function isValidRowString(row) {
+function isValidRowString(row, allowLong = false) {
   if (typeof row !== "string") return false;
   const words = row
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+  if (allowLong) return words.length >= 2;
   return words.length >= 2 && words.length <= 5;
 }
 
@@ -3993,6 +3995,26 @@ function loadSplitMode() {
   return "syllable"; // 預設
 }
 
+function loadSentenceRows() {
+  try {
+    const raw = localStorage.getItem(SENTENCE_DATA_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        const validRows = parsed
+          .map((row) => normalizeRowString(String(row)))
+          .filter((row) => isValidRowString(row, true));
+        if (validRows.length > 0) return validRows;
+      }
+    }
+  } catch (error) {
+    // ignore malformed sentence storage
+  }
+  return SENTENCE_ROWS
+    .map((row) => normalizeRowString(String(row)))
+    .filter((row) => isValidRowString(row, true));
+}
+
 /** 載入自定義 word 的完整快照（不受 save 截斷影響） */
 function loadCustomRowsFull() {
   try {
@@ -4026,6 +4048,7 @@ function buildDisplayRows() {
   if (singleWordMode) {
     customActive = true;
     activeGroups = new Set();
+    sentenceActive = false;
     len2Toggle.checked = true;
     len3Toggle.checked = false;
     len4Toggle.checked = false;
@@ -4069,7 +4092,7 @@ function buildDisplayRows() {
     }
   }
   if (sentenceActive) {
-    for (const w of SENTENCE_ROWS) {
+    for (const w of sentenceRows) {
       displayRows.push({ text: w, source: "sentence" });
     }
   }
@@ -4179,7 +4202,13 @@ function handleRemoveRow(e) {
   if (!item) return;
   const idx = parseInt(item.dataset.idx, 10);
   if (isNaN(idx) || idx < 0 || idx >= displayRows.length) return;
+  const removed = displayRows[idx];
   displayRows.splice(idx, 1);
+  if (removed && removed.source === "sentence") {
+    sentenceRows = displayRows
+      .filter((row) => row.source === "sentence")
+      .map((row) => row.text);
+  }
   renderRows();
   setMessage("已移除一列，按「儲存」生效。");
 }
@@ -4243,7 +4272,7 @@ function toggleSentence() {
     displayRows = displayRows.filter(r => r.source !== "sentence");
   } else {
     sentenceActive = true;
-    for (const w of SENTENCE_ROWS) {
+    for (const w of sentenceRows) {
       displayRows.push({ text: w, source: "sentence" });
     }
   }
@@ -4577,6 +4606,7 @@ function toggleSingleWordMode() {
   len5Toggle.checked = false;
   activeGroups = new Set();
   customActive = true;
+  if (singleWordMode) sentenceActive = false;
 
   // 重建 displayRows：從已同步的 customRowsFull 載入
   displayRows = [];
@@ -4704,6 +4734,7 @@ function saveRows() {
   // 單字模式：強制自定義啟用，跳過來源/長度檢查
   if (singleWordMode) {
     customActive = true;
+    sentenceActive = false;
   }
 
   // 至少要有一個來源啟用
@@ -4783,6 +4814,7 @@ function saveRows() {
   // 儲存句子資料（目前顯示中的句子）
   if (sentenceActive) {
     const sentenceData = displayRows.filter(r => r.source === "sentence").map(r => r.text);
+    sentenceRows = [...sentenceData];
     localStorage.setItem(SENTENCE_DATA_KEY, JSON.stringify(sentenceData));
   } else {
     localStorage.removeItem(SENTENCE_DATA_KEY);
@@ -4859,6 +4891,7 @@ function resetDefault() {
   // 1) 重置所有記憶體狀態
   customRows = [...DEFAULT_WORD_ROWS];
   customRowsFull = [...DEFAULT_WORD_ROWS];
+  sentenceRows = [...SENTENCE_ROWS];
   activeGroups = new Set();
   customActive = false;
   singleWordMode = false;
@@ -5516,4 +5549,3 @@ for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
 }
 updateSourceUI();
 renderRows();
-

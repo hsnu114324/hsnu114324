@@ -194,6 +194,34 @@ function isValidRowString(row, allowLong) {
   return parts.length >= 2 && parts.length <= 5;
 }
 
+function normalizeRowKey(row) {
+  return row
+    .split(",")
+    .map((part) => part.trim().toLowerCase())
+    .filter(Boolean)
+    .join(",");
+}
+
+function loadSentenceRowKeySet() {
+  try {
+    const raw = localStorage.getItem(SENTENCE_DATA_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed
+        .filter((row) => isValidRowString(row, true))
+        .map((row) => normalizeRowKey(String(row)))
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function buildSentenceBlocks(parts) {
+  return parts.flatMap((part) => part.split(/\s+/).map((word) => word.trim()).filter(Boolean));
+}
+
 function loadPickCount() {
   try {
     const val = parseInt(localStorage.getItem(PICK_KEY), 10);
@@ -256,26 +284,36 @@ function loadWordRows() {
 
 function buildPairsForQuiz(rows) {
   const swMode = isSingleWordMode();
+  const sentenceRowKeys = loadSentenceRowKeySet();
   const pairs = [];
   for (const row of rows) {
     const parts = row.split(",").map(w => w.trim()).filter(Boolean);
     if (parts.length < 2) continue;
 
     const hint = parts[0];
+    const isSentence = sentenceRowKeys.has(normalizeRowKey(row));
 
     // 單字模式 + 2 欄：德文拆字（與方塊遊戲 buildComboList 相同邏輯）
-    if (swMode && parts.length === 2) {
+    if (!isSentence && swMode && parts.length === 2) {
       const germanBlocks = splitGermanToBlocks(parts[1], 4);
       if (germanBlocks.length >= 1) {
         // raw 保持原始未拆字的格式（_origRow 等效），確保統計 key 一致
-        pairs.push({ hint, blocks: germanBlocks, raw: row });
+        pairs.push({ hint, blocks: germanBlocks, raw: row, isSentence: false });
         continue;
       }
     }
 
+    if (isSentence) {
+      const blocks = buildSentenceBlocks(parts.slice(1));
+      if (blocks.length > 0) {
+        pairs.push({ hint, blocks, raw: row, isSentence: true });
+      }
+      continue;
+    }
+
     // 一般模式或多欄：直接使用 CSV 欄位
     const blocks = parts.slice(1);
-    pairs.push({ hint, blocks, raw: row });
+    pairs.push({ hint, blocks, raw: row, isSentence: false });
   }
   return pairs;
 }
@@ -586,15 +624,15 @@ function generateRound() {
     return;
   }
 
-  if (allPairs.length < 2) {
-    matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 2 組</div>';
+  if (allPairs.length < 1) {
+    matchSlotsEl.innerHTML = '<div style="color:#f7b955;padding:12px;">⚠ 單字不足，請到設定頁新增至少 1 組</div>';
     matchCardsEl.innerHTML = "";
     return;
   }
 
-  // 從佇列取下一批（最多 SLOTS_PER_ROUND 組；句子模式每次只發 1 句）
-  const sentenceMode = isSentenceActive();
-  const slotsThisRound = sentenceMode ? 1 : SLOTS_PER_ROUND;
+  // 句子題一次只出 1 句；一般題維持一次最多 3 組
+  const nextPair = comboQueue[queueIdx];
+  const slotsThisRound = nextPair && nextPair.isSentence ? 1 : SLOTS_PER_ROUND;
   const n = Math.min(slotsThisRound, remaining);
   const chosen = comboQueue.slice(queueIdx, queueIdx + n);
   queueIdx += n;
@@ -602,15 +640,13 @@ function generateRound() {
   // 延遲記錄 appear
   trackComboAppearByRaw(chosen.map(p => p.raw));
 
-  // 建立 combo 資料：hint 也做成小卡槽，每個 combo 隨機預填一格作為提示
+  // 建立 combo 資料：句子題固定把中文放在第 1 格，其餘模式維持隨機提示
   roundCombos = chosen.map(p => {
-    // 把中文提示也合併進 blocks（第 0 格 = 中文，後面 = 德文）
     const allBlocks = [p.hint, ...p.blocks];
-    // 隨機選一格預填
-    const prefilled = Math.floor(Math.random() * allBlocks.length);
+    const prefilled = p.isSentence ? 0 : Math.floor(Math.random() * allBlocks.length);
     const matched = new Array(allBlocks.length).fill(false);
     matched[prefilled] = true;
-    return { blocks: allBlocks, raw: p.raw, prefilled, matched };
+    return { blocks: allBlocks, raw: p.raw, prefilled, matched, isSentence: p.isSentence };
   });
 
   // 建立答案卡片：每個非預填 block 一張小卡
