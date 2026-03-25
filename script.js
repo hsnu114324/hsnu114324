@@ -267,20 +267,8 @@ function autoRemoveClearedRows(clearedComboIndices) {
         }
       }
     } catch (e) { /* ignore */ }
-    // CUSTOM_FULL_KEY（customRowsFull 的持久副本，確保設定頁不會復活已移除的 word）
-    try {
-      const rawFull = localStorage.getItem(CUSTOM_FULL_KEY);
-      if (rawFull) {
-        let fullRows = JSON.parse(rawFull);
-        if (Array.isArray(fullRows)) {
-          const before = fullRows.length;
-          fullRows = filterRows(fullRows);
-          if (fullRows.length < before) {
-            localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(fullRows));
-          }
-        }
-      }
-    } catch (e) { /* ignore */ }
+    // CUSTOM_FULL_KEY 保留完整單字庫，不在遊戲中移除，
+    // 讓使用者回到設定頁時仍可切換不同字母重新選取。
   }
 
   // ── 同步遞減「隨機抽取組數」，讓重新開始時組數跟著減少 ──

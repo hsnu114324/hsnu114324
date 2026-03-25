@@ -207,16 +207,8 @@ function autoRemoveRow(raw) {
         }
       }
     } catch (e) { /* ignore */ }
-    try {
-      const rawFull = localStorage.getItem(CUSTOM_FULL_KEY);
-      if (rawFull) {
-        let fullRows = JSON.parse(rawFull);
-        if (Array.isArray(fullRows)) {
-          fullRows = filterRows(fullRows);
-          localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(fullRows));
-        }
-      }
-    } catch (e) { /* ignore */ }
+    // CUSTOM_FULL_KEY 保留完整單字庫，不在遊戲中移除，
+    // 讓使用者回到設定頁時仍可切換不同字母重新選取。
   }
 
   if (totalRemoved > 0) {

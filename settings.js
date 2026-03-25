@@ -515,23 +515,26 @@ function toggleGroup(idx) {
 
 /** 將 displayRows 中目前的 custom 項目同步回 customRowsFull / customRows，
  *  確保手動移除的項目不會在模式切換時「復活」。
- *  ⚠ 防護：如果 displayRows 中根本沒有 custom 來源（例如 customActive 為 false），
- *    則跳過同步，避免誤清空 customRowsFull。 */
+ *  ⚠ 單字模式＋字母篩選時，被篩選隱藏的單字不應被移除，只移除使用者明確刪除的。 */
 function syncCustomFullFromDisplay() {
-  // 防護：如果自定義未啟用且 displayRows 沒有 custom 項目，不做任何事
   const hasCustomInDisplay = displayRows.some(r => r.source === "custom");
   if (!hasCustomInDisplay && !customActive) return;
 
-  const currentCustom = displayRows
-    .filter(r => r.source === "custom")
-    .map(r => r.text);
-  // 只保留 customRowsFull 中仍在 displayRows 裡的項目（保持原本順序）
-  const keepSet = new Set(currentCustom.map(
-    w => w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",")
-  ));
+  const currentCustomNorms = new Set(
+    displayRows
+      .filter(r => r.source === "custom")
+      .map(r => r.text.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(","))
+  );
   customRowsFull = customRowsFull.filter(w => {
     const norm = w.split(",").map(s => s.trim().toLowerCase()).filter(Boolean).join(",");
-    return keepSet.has(norm);
+    if (currentCustomNorms.has(norm)) return true;
+    if (singleWordMode && activeLetters !== null) {
+      const parts = w.split(",").map(s => s.trim()).filter(Boolean);
+      if (parts.length !== 2) return true;
+      const letter = getGermanFirstLetter(w);
+      if (!letter || !activeLetters.has(letter)) return true;
+    }
+    return false;
   });
   customRows = [...customRowsFull];
   saveCustomRowsFull();
