@@ -182,7 +182,20 @@ function splitGermanRandom(word, maxBlocks) {
   return blocks;
 }
 
+function splitGermanLetters(germanStr, maxBlocks) {
+  const chars = [...germanStr];
+  const blocks = chars.map(ch => ch === " " ? "␣" : ch);
+  if (blocks.length <= maxBlocks) return blocks;
+  const result = blocks.slice(0, maxBlocks - 1);
+  result.push(chars.slice(maxBlocks - 1).join(""));
+  return result;
+}
+
 function splitGermanToBlocks(germanStr, maxBlocks = 4) {
+  const mode = loadSplitMode();
+  if (mode === "letter") {
+    return splitGermanLetters(germanStr, maxBlocks);
+  }
   let spaceParts = germanStr.split(/\s+/).filter(Boolean);
   if (spaceParts.length === 0) return [germanStr];
   if (spaceParts.length > maxBlocks) {
@@ -193,7 +206,6 @@ function splitGermanToBlocks(germanStr, maxBlocks = 4) {
   const lastWord = spaceParts[spaceParts.length - 1];
   const availableForLast = maxBlocks - prefix.length;
   if (availableForLast <= 1 || lastWord.length <= 1) return [...prefix, lastWord];
-  const mode = loadSplitMode();
   const useMode = (mode === "mixed") ? (Math.random() < 0.5 ? "syllable" : "random") : mode;
   let lastBlocks;
   if (useMode === "syllable") {

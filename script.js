@@ -1,4 +1,4 @@
-const COLS = 6;
+let COLS = 6;
 const ROWS = 8;
 const FALL_MS = 550;
 
@@ -65,21 +65,22 @@ let blockCount = 0;  // 已落下的方塊數
 
 function buildComboList(rows) {
   const swMode = isSingleWordMode();
+  const isLetterMode = swMode && loadSplitMode() === "letter";
+  const maxBlocks = isLetterMode ? 30 : 4;
+  const maxComboLen = isLetterMode ? 30 : 5;
   return rows.map((row, index) => {
     const words = row
       .split(",")
       .map((word) => word.trim())
       .filter(Boolean);
-    if (words.length < 2 || words.length > 5) {
-      throw new Error(`第 ${index + 1} 組資料需要 2~5 個欄位`);
+    if (words.length < 2 || words.length > maxComboLen) {
+      throw new Error(`第 ${index + 1} 組資料需要 2~${maxComboLen} 個欄位`);
     }
-    // 單字模式：若只有 2 欄（中文提示 + 德文），將德文拆成方塊
     if (swMode && words.length === 2) {
       const hint = words[0];
-      const germanBlocks = splitGermanToBlocks(words[1], 4);
+      const germanBlocks = splitGermanToBlocks(words[1], maxBlocks);
       const expanded = [hint, ...germanBlocks];
-      if (expanded.length >= 2 && expanded.length <= 5) {
-        // 記住原始 row，供自動移除 & 統計還原使用
+      if (expanded.length >= 2 && expanded.length <= maxComboLen) {
         expanded._origRow = row;
         return expanded;
       }
@@ -2004,6 +2005,19 @@ function restartGame() {
   groupData = loadGroupData();
   ALL_WORD_ROWS = loadWordRows();
   allComboList = buildComboList(ALL_WORD_ROWS);
+
+  // 字母模式：根據最長 combo 動態調整 COLS（上限 14）
+  const prevCols = COLS;
+  if (isSingleWordMode() && loadSplitMode() === "letter") {
+    const maxLen = allComboList.reduce((m, c) => Math.max(m, c.length), 0);
+    COLS = Math.max(6, Math.min(maxLen, 14));
+  } else {
+    COLS = 6;
+  }
+  if (COLS !== prevCols) {
+    bfsPool = null;
+    resizeCanvas();
+  }
 
   // 每次重新開始都重新抽取並分配在場/候補
   initComboPool();

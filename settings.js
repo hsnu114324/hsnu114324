@@ -1347,7 +1347,8 @@ function saveRows() {
     const customCount = displayRows.filter(r => r.source === "custom").length;
     if (singleWordMode) {
       const splitLabel = splitMode === "syllable" ? "音節拆分" :
-                         splitMode === "random" ? "隨機拆分" : "混合拆分";
+                         splitMode === "random" ? "隨機拆分" :
+                         splitMode === "letter" ? "逐字母拆分" : "混合拆分";
       const letterLabel = activeLetters === null ? "全部字母" :
                           [...activeLetters].sort().join("");
       parts.push(`單字模式（${letterLabel}，${customCount} 組，${splitLabel}）`);
@@ -1997,7 +1998,8 @@ async function initSettingsPage() {
       updateSourceUI();
       setMessage(`拆分模式已切換為「${
         splitMode === "syllable" ? "音節拆分" :
-        splitMode === "random" ? "隨機拆分" : "混合"
+        splitMode === "random" ? "隨機拆分" :
+        splitMode === "letter" ? "逐字母拆分" : "混合"
       }」，按「儲存」生效。`);
     });
   });
