@@ -261,6 +261,30 @@ let activeGroupCats = {};
 
 // （單字模式關閉後保持 2格+自定義，不需要記憶先前設定）
 
+// ── 偵錯工具 ──
+
+function _isDebug() {
+  return localStorage.getItem(DEBUG_KEY) === "1";
+}
+
+/** 在 debug 模式下攔截 localStorage 寫入，追蹤 CUSTOM_FULL_KEY 異常縮減 */
+function _installStorageMonitor() {
+  if (window._storageMonitorInstalled) return;
+  window._storageMonitorInstalled = true;
+  const orig = localStorage.setItem.bind(localStorage);
+  localStorage.setItem = function(key, value) {
+    if (_isDebug() && key === CUSTOM_FULL_KEY) {
+      try {
+        const arr = JSON.parse(value);
+        const count = Array.isArray(arr) ? arr.length : "?";
+        console.log(`%c[localStorage] ${key} 寫入 ${count} 筆`, "color:#ff9800", new Error().stack.split("\n")[2]);
+      } catch {}
+    }
+    return orig(key, value);
+  };
+}
+_installStorageMonitor();
+
 // ── 工具 ──
 function normalizeRowString(row) {
   return row
@@ -327,6 +351,7 @@ function loadCustomRowsFull() {
 /** 持久化完整快照到 localStorage */
 function saveCustomRowsFull() {
   localStorage.setItem(CUSTOM_FULL_KEY, JSON.stringify(customRowsFull));
+  updateDebugPoolStatus();
 }
 
 // ── 顯示列表管理 ──
@@ -399,6 +424,24 @@ function updateTotalCount() {
     pickCount = total;
     pickCountInput.value = pickCount;
   }
+  updateDebugPoolStatus();
+}
+
+function updateDebugPoolStatus() {
+  const el = document.getElementById("debugPoolStatus");
+  if (!el) return;
+  if (!_isDebug()) { el.style.display = "none"; return; }
+  el.style.display = "block";
+  const fullLen = customRowsFull.length;
+  const vocabLen = DEFAULT_WORD_ROWS.length;
+  const dispLen = displayRows.filter(r => r.source === "custom").length;
+  const pct = vocabLen > 0 ? ((fullLen / vocabLen * 100) | 0) : "?";
+  const color = pct > 80 ? "#4caf50" : pct > 40 ? "#ff9800" : "#f44336";
+  el.innerHTML =
+    `<span style="color:${color}">■</span> 單字池：${fullLen}/${vocabLen}（${pct}%）` +
+    ` ｜ 目前顯示：${dispLen}` +
+    (activeLetters ? ` ｜ 字母篩選：${[...activeLetters].sort().join("")}` : "") +
+    ` ｜ STORAGE_KEY：${(() => { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r).length : 0; } catch { return "?"; } })()}`;
 }
 
 function setMessage(text, ok = false) {
@@ -520,6 +563,8 @@ function syncCustomFullFromDisplay() {
   const hasCustomInDisplay = displayRows.some(r => r.source === "custom");
   if (!hasCustomInDisplay && !customActive) return;
 
+  const before = customRowsFull.length;
+
   const currentCustomNorms = new Set(
     displayRows
       .filter(r => r.source === "custom")
@@ -536,6 +581,19 @@ function syncCustomFullFromDisplay() {
     }
     return false;
   });
+
+  const after = customRowsFull.length;
+  const dropRate = before > 0 ? (before - after) / before : 0;
+  if (dropRate > 0.5 && before > 10) {
+    console.warn(
+      `[syncCustomFull] 單字池異常縮減 ${before} → ${after}（-${((dropRate * 100)|0)}%）`,
+      { singleWordMode, activeLetters: activeLetters ? [...activeLetters] : null }
+    );
+  }
+  if (_isDebug()) {
+    console.log(`[syncCustomFull] ${before} → ${after}（移除 ${before - after}）`);
+  }
+
   customRows = [...customRowsFull];
   saveCustomRowsFull();
 }
@@ -1949,6 +2007,11 @@ async function initSettingsPage() {
   debugToggle.checked = localStorage.getItem(DEBUG_KEY) === "1";
   autoRemoveToggle.checked = localStorage.getItem(AUTO_REMOVE_KEY) === "1";
   battleModeToggle.checked = localStorage.getItem(BATTLE_MODE_KEY) === "1";
+
+  debugToggle.addEventListener("change", () => {
+    localStorage.setItem(DEBUG_KEY, debugToggle.checked ? "1" : "0");
+    updateDebugPoolStatus();
+  });
 
   const _savedLens = loadAllowedLens();
   len2Toggle.checked = _savedLens.includes(2);
