@@ -1,21 +1,5 @@
-const STORAGE_KEY = "word_tetris_rows_v1";
-const PICK_KEY = "word_tetris_pick_count_v1";
-const DEBUG_KEY = "word_tetris_debug_v1";
-const LENS_KEY = "word_tetris_allowed_lens_v1";
-const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
-const GROUPS_KEY = "word_tetris_active_groups_v1";
-const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
-const GROUP_DATA_KEY = "word_tetris_group_data_v1";
-const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
-const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
-const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
-const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
-const WORD_LETTERS_KEY = "word_tetris_word_letters_v1"; // 單字模式字母篩選
-const BATTLE_MODE_KEY = "word_tetris_battle_mode_v1";  // 勇者戰鬥模式開關
-const SENTENCE_MODE_KEY = "word_tetris_sentence_mode_v1";
-const SENTENCE_DATA_KEY = "word_tetris_sentence_data_v1";
-const SENTENCE_CATS_KEY = "word_tetris_sentence_cats_v1";
-// 群組分類篩選 key 已移至 GROUP_CATEGORIES_CONFIG.storageKey
+const loadCustomActive = isCustomActive;
+const loadSingleWordMode = isSingleWordMode;
 
 // 預設群組
 const GROUP_WORDS1 = [
@@ -4511,44 +4495,6 @@ for (const _gi of Object.keys(GROUP_CATEGORIES_CONFIG)) {
 // （單字模式關閉後保持 2格+自定義，不需要記憶先前設定）
 
 // ── 工具 ──
-function preventZoom() {
-  document.addEventListener(
-    "touchmove",
-    (e) => { if (e.touches.length > 1) e.preventDefault(); },
-    { passive: false },
-  );
-  document.addEventListener("gesturestart", (e) => e.preventDefault(), { passive: false });
-  document.addEventListener("gesturechange", (e) => e.preventDefault(), { passive: false });
-  document.addEventListener("gestureend", (e) => e.preventDefault(), { passive: false });
-  document.addEventListener("dblclick", (e) => e.preventDefault(), { passive: false });
-}
-
-function tapBind(el, callback) {
-  let touched = false;
-  el.addEventListener(
-    "touchstart",
-    (e) => {
-      e.preventDefault();
-      touched = true;
-      callback();
-    },
-    { passive: false },
-  );
-  el.addEventListener("click", () => {
-    if (touched) { touched = false; return; }
-    callback();
-  });
-}
-
-function isValidRowString(row) {
-  if (typeof row !== "string") return false;
-  const words = row
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-  return words.length >= 2 && words.length <= 5;
-}
-
 function normalizeRowString(row) {
   return row
     .split(",")
@@ -4573,15 +4519,6 @@ function loadCustomRows() {
   }
 }
 
-function loadPickCount() {
-  try {
-    const val = parseInt(localStorage.getItem(PICK_KEY), 10);
-    return isNaN(val) || val < 0 ? 0 : val;
-  } catch {
-    return 0;
-  }
-}
-
 function loadAllowedLens() {
   try {
     const raw = localStorage.getItem(LENS_KEY);
@@ -4600,20 +4537,6 @@ function loadActiveGroups() {
     if (Array.isArray(parsed)) return new Set(parsed.filter(n => n >= 0 && n < GROUP_ALL.length));
     return new Set();
   } catch { return new Set(); }
-}
-
-function loadCustomActive() {
-  return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
-}
-
-function loadSingleWordMode() {
-  return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1";
-}
-
-function loadSplitMode() {
-  const v = localStorage.getItem(SPLIT_MODE_KEY);
-  if (v === "random" || v === "mixed") return v;
-  return "syllable"; // 預設
 }
 
 /** 載入自定義 word 的完整快照（不受 save 截斷影響） */
@@ -4691,16 +4614,6 @@ function buildDisplayRows() {
       displayRows.push({ text: w, source: "custom" });
     }
   }
-}
-
-function loadGroupRemoved() {
-  try {
-    const raw = localStorage.getItem(GROUP_REMOVED_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") return parsed;
-    return {};
-  } catch { return {}; }
 }
 
 function sourceLabel(source) {
@@ -5683,13 +5596,7 @@ function resetDefault() {
 
 // ── 學習統計（Google Sheets 同步 + Google 登入） ──
 
-const STATS_KEY = "word_tetris_combo_stats_v1";
-const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
-
-// ★★★ 請在這裡填入你的設定 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";      // Google Apps Script 部署網址
 const GOOGLE_CLIENT_ID = "280426045341-s5tias2et5fgfkm6v4pasodaimi9usot.apps.googleusercontent.com";     // Google Cloud Console 的 OAuth Client ID
-// ★★★ 以上兩個值必須填入才能正常運作 ★★★
 
 const viewStatsBtn = document.getElementById("viewStatsBtn");
 const clearStatsBtn = document.getElementById("clearStatsBtn");
@@ -5829,15 +5736,6 @@ initGoogleSignIn();
 
 const loadFailedBtn = document.getElementById("loadFailedBtn");
 const failedWordsArea = document.getElementById("failedWordsArea");
-
-function loadComboStats() {
-  try {
-    const raw = localStorage.getItem(STATS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return (typeof parsed === "object" && parsed !== null) ? parsed : {};
-  } catch { return {}; }
-}
 
 /**
  * 從 Google Sheets 取得統計資料

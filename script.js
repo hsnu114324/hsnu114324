@@ -1,22 +1,6 @@
 const COLS = 6;
 const ROWS = 8;
 const FALL_MS = 550;
-const STORAGE_KEY = "word_tetris_rows_v1";
-const AUTO_REMOVE_KEY = "word_tetris_auto_remove_v1";
-const GROUPS_KEY = "word_tetris_active_groups_v1";
-const GROUP_REMOVED_KEY = "word_tetris_group_removed_v1";
-const GROUP_DATA_KEY = "word_tetris_group_data_v1";
-const CUSTOM_ACTIVE_KEY = "word_tetris_custom_active_v1";
-const SINGLE_WORD_MODE_KEY = "word_tetris_single_word_mode_v1";
-const SPLIT_MODE_KEY = "word_tetris_split_mode_v1"; // "syllable" | "random" | "mixed"
-const CUSTOM_FULL_KEY = "word_tetris_custom_full_v1";
-const STATS_KEY = "word_tetris_combo_stats_v1";
-const GOOGLE_USER_KEY = "word_tetris_google_user_v1";
-
-// ★★★ 與 settings.js 相同的 Apps Script 部署網址 ★★★
-const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyCSMkz1NiiUjB-32e_L4i3VtQbtpzUFYWgOPX4qOwbtjGGrZ_V2qvMYutX0iP-_NWlBQ/exec";
-
-let groupData = []; // 從 localStorage 讀取的群組資料（由 settings.js 寫入）
 
 const DEFAULT_WORD_ROWS = [
   "1,2,3,4,5",
@@ -45,22 +29,6 @@ const leftBtn = document.getElementById("leftBtn");
 const downBtn = document.getElementById("downBtn");
 const rightBtn = document.getElementById("rightBtn");
 
-/** 合法的德文音節開頭子音群（需要在 buildComboList 之前初始化，避免 TDZ 錯誤） */
-const _GERMAN_ONSETS = new Set([
-  "schr","schw","schl","schm","schn",
-  "sch","pfl","pfr",
-  "bl","br","ch","ck","cl","cr","dr","dw",
-  "fl","fr","gl","gn","gr",
-  "kl","kn","kr","kw",
-  "pf","ph","pl","pr",
-  "qu",
-  "th","tr","ts","tw","wr","zw",
-  "b","c","d","f","g","h","j","k","l","m","n",
-  "p","q","r","s","t","v","w","x","z","ß",
-]);
-
-const PICK_KEY = "word_tetris_pick_count_v1";
-const LENS_KEY = "word_tetris_allowed_lens_v1";
 groupData = loadGroupData();  // 載入群組資料（必須在 loadWordRows 之前）
 let ALL_WORD_ROWS = loadWordRows();
 let allComboList = buildComboList(ALL_WORD_ROWS);
@@ -95,243 +63,6 @@ let aiSearchGen = 0;         // 搜索世代（用於取消舊搜索）
 let debugMode = localStorage.getItem("word_tetris_debug_v1") === "1";
 let blockCount = 0;  // 已落下的方塊數
 
-function preventZoom() {
-  // 攔截雙指縮放（pinch zoom）
-  document.addEventListener(
-    "touchmove",
-    (e) => {
-      if (e.touches.length > 1) {
-        e.preventDefault();
-      }
-    },
-    { passive: false },
-  );
-
-  // 攔截 Safari gesture 縮放
-  document.addEventListener("gesturestart", (e) => e.preventDefault(), {
-    passive: false,
-  });
-  document.addEventListener("gesturechange", (e) => e.preventDefault(), {
-    passive: false,
-  });
-  document.addEventListener("gestureend", (e) => e.preventDefault(), {
-    passive: false,
-  });
-
-  // 攔截 dblclick
-  document.addEventListener("dblclick", (e) => e.preventDefault(), {
-    passive: false,
-  });
-}
-
-// 讓按鈕用 touchstart 直接反應，不等 click（避免 300ms 延遲和雙擊問題）
-function tapBind(el, callback) {
-  let touched = false;
-
-  el.addEventListener(
-    "touchstart",
-    (e) => {
-      e.preventDefault();
-      touched = true;
-      callback();
-    },
-    { passive: false },
-  );
-
-  // 桌面版 fallback
-  el.addEventListener("click", (e) => {
-    if (touched) {
-      touched = false;
-      return; // 已由 touchstart 處理
-    }
-    callback();
-  });
-}
-
-function isSingleWordMode() {
-  return localStorage.getItem(SINGLE_WORD_MODE_KEY) === "1";
-}
-
-// ── 拆分模式讀取 ──
-function loadSplitMode() {
-  const v = localStorage.getItem(SPLIT_MODE_KEY);
-  if (v === "random" || v === "mixed") return v;
-  return "syllable"; // 預設
-}
-
-// ══════════════════════════════════════════════════════
-//  德文音節拆分演算法（規則式，約 80~85 % 正確率）
-// ══════════════════════════════════════════════════════
-
-// _GERMAN_ONSETS 已移至檔案前段（buildComboList 執行前），避免 const TDZ 錯誤
-
-function _isVowel(ch) {
-  return "aeiouyäöüAEIOUYÄÖÜ".includes(ch);
-}
-
-/**
- * 將德文單字拆成音節陣列。
- * 範例：
- *   "Bäckerei"       → ["Bä","cke","rei"]
- *   "Entschuldigung"  → ["Ent","schul","di","gung"]
- *   "Kindergarten"    → ["Kin","der","gar","ten"]
- *   "Schwester"       → ["Schwes","ter"]
- */
-function germanSyllables(word) {
-  if (!word || word.length <= 1) return [word];
-
-  // 1) 找出所有母音群的位置 [{start, end}, ...]
-  const nuclei = [];
-  let i = 0;
-  while (i < word.length) {
-    if (_isVowel(word[i])) {
-      let j = i + 1;
-      while (j < word.length && _isVowel(word[j])) j++;
-      nuclei.push({ start: i, end: j });
-      i = j;
-    } else {
-      i++;
-    }
-  }
-  if (nuclei.length <= 1) return [word]; // 單音節
-
-  // 2) 對每對相鄰母音群之間的子音群，決定音節切點
-  const breakPoints = [];
-  for (let n = 0; n < nuclei.length - 1; n++) {
-    const cStart = nuclei[n].end;        // 子音群起始
-    const cEnd   = nuclei[n + 1].start;  // 子音群結束
-
-    if (cStart >= cEnd) {
-      // 兩個母音群相鄰（hiatus）→ 直接切
-      breakPoints.push(cStart);
-      continue;
-    }
-    const cluster = word.slice(cStart, cEnd).toLowerCase();
-
-    if (cluster.length === 1) {
-      // 單個子音 → 歸給下一音節
-      breakPoints.push(cStart);
-      continue;
-    }
-
-    // 多子音：找最長合法 onset（從左往右嘗試）
-    let splitAt = cEnd - 1; // fallback：只有最後一個子音歸給下一音節
-    for (let k = 0; k < cluster.length; k++) {
-      const candidate = cluster.slice(k);
-      if (_GERMAN_ONSETS.has(candidate)) {
-        splitAt = cStart + k;
-        break;
-      }
-    }
-    breakPoints.push(splitAt);
-  }
-
-  // 3) 根據切點組裝音節
-  const syllables = [];
-  let prev = 0;
-  for (const bp of breakPoints) {
-    if (bp > prev) syllables.push(word.slice(prev, bp));
-    prev = bp;
-  }
-  if (prev < word.length) syllables.push(word.slice(prev));
-  return syllables.filter(s => s.length > 0);
-}
-
-/**
- * 將音節陣列合併至 ≤ maxBlocks 塊。
- * 策略：反覆合併最後兩塊，直到不超過 maxBlocks。
- */
-function _mergeSyllables(syllables, maxBlocks) {
-  const result = [...syllables];
-  while (result.length > maxBlocks && result.length >= 2) {
-    const last = result.pop();
-    result[result.length - 1] += last;
-  }
-  return result;
-}
-
-// ══════════════════════════════════════════════════════
-//  隨機拆分
-// ══════════════════════════════════════════════════════
-
-/**
- * 將 word 隨機切成 maxBlocks 塊（每塊至少 1 字元）。
- */
-function splitGermanRandom(word, maxBlocks) {
-  const chars = [...word]; // 正確處理 multi-byte
-  if (chars.length <= 1) return [word];
-  if (chars.length <= maxBlocks) return chars; // 字母數 ≤ 格數 → 每字母一格
-
-  // 從 1..chars.length-1 中隨機選 (maxBlocks-1) 個不重複切點
-  const possible = [];
-  for (let i = 1; i < chars.length; i++) possible.push(i);
-  for (let i = possible.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [possible[i], possible[j]] = [possible[j], possible[i]];
-  }
-  const splits = possible.slice(0, maxBlocks - 1).sort((a, b) => a - b);
-
-  const blocks = [];
-  let prev = 0;
-  for (const s of splits) {
-    blocks.push(chars.slice(prev, s).join(""));
-    prev = s;
-  }
-  blocks.push(chars.slice(prev).join(""));
-  return blocks;
-}
-
-// ══════════════════════════════════════════════════════
-//  統一入口：splitGermanToBlocks（依設定分派）
-// ══════════════════════════════════════════════════════
-
-/**
- * 單字模式拆字：將德文拆成最多 maxBlocks 個方塊。
- * 根據 SPLIT_MODE_KEY 選擇拆分策略：
- *   "syllable" – 音節拆分（預設）
- *   "random"   – 隨機拆分
- *   "mixed"    – 50 % 音節 / 50 % 隨機
- */
-function splitGermanToBlocks(germanStr, maxBlocks = 4) {
-  // 第 1 步：依空白分割
-  let spaceParts = germanStr.split(/\s+/).filter(Boolean);
-  if (spaceParts.length === 0) return [germanStr];
-
-  // 如果空白分割後超過 maxBlocks，將多餘的合併到最後一個 word
-  if (spaceParts.length > maxBlocks) {
-    const merged = spaceParts.slice(maxBlocks - 1).join(" ");
-    spaceParts = [...spaceParts.slice(0, maxBlocks - 1), merged];
-  }
-
-  // 第 2 步：取出前綴與最後一個 word
-  const prefix = spaceParts.slice(0, -1);
-  const lastWord = spaceParts[spaceParts.length - 1];
-  const availableForLast = maxBlocks - prefix.length;
-
-  if (availableForLast <= 1 || lastWord.length <= 1) {
-    return [...prefix, lastWord];
-  }
-
-  // 第 3 步：依拆分模式處理最後一個 word
-  const mode = loadSplitMode();
-  let lastBlocks;
-
-  const useMode = (mode === "mixed")
-    ? (Math.random() < 0.5 ? "syllable" : "random")
-    : mode;
-
-  if (useMode === "syllable") {
-    // 音節拆分
-    const syls = germanSyllables(lastWord);
-    lastBlocks = _mergeSyllables(syls, availableForLast);
-  } else {
-    // 隨機拆分
-    lastBlocks = splitGermanRandom(lastWord, availableForLast);
-  }
-
-  return [...prefix, ...lastBlocks];
-}
-
 function buildComboList(rows) {
   const swMode = isSingleWordMode();
   return rows.map((row, index) => {
@@ -355,53 +86,6 @@ function buildComboList(rows) {
     }
     return words;
   });
-}
-
-function isValidRowString(row) {
-  if (typeof row !== "string") return false;
-  const parts = row
-    .split(",")
-    .map((word) => word.trim())
-    .filter(Boolean);
-  return parts.length >= 2 && parts.length <= 5;
-}
-
-function loadGroupData() {
-  try {
-    const raw = localStorage.getItem(GROUP_DATA_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed;
-    return [];
-  } catch { return []; }
-}
-
-function loadActiveGroups() {
-  try {
-    const raw = localStorage.getItem(GROUPS_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed.filter(n => n >= 0 && n < groupData.length);
-    return [];
-  } catch { return []; }
-}
-
-function loadGroupRemoved() {
-  try {
-    const raw = localStorage.getItem(GROUP_REMOVED_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    if (parsed && typeof parsed === "object") return parsed;
-    return {};
-  } catch { return {}; }
-}
-
-function saveGroupRemoved(removed) {
-  localStorage.setItem(GROUP_REMOVED_KEY, JSON.stringify(removed));
-}
-
-function isCustomActive() {
-  return localStorage.getItem(CUSTOM_ACTIVE_KEY) === "1";
 }
 
 function loadWordRows() {
@@ -459,37 +143,9 @@ function loadWordRows() {
   return [...DEFAULT_WORD_ROWS];
 }
 
-function loadPickCount() {
-  try {
-    const val = parseInt(localStorage.getItem(PICK_KEY), 10);
-    return isNaN(val) || val < 0 ? 0 : val;
-  } catch {
-    return 0;
-  }
-}
-
-function isAutoRemoveMode() {
-  return localStorage.getItem(AUTO_REMOVE_KEY) === "1";
-}
-
 // 將 combo 陣列正規化為可比對的字串（去空白、小寫）
 function normalizeComboKey(combo) {
   return combo.map(w => w.trim().toLowerCase()).join(",");
-}
-
-// ── Combo 統計追蹤（拼錯率統計） ──
-
-function loadComboStats() {
-  try {
-    const raw = localStorage.getItem(STATS_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return (typeof parsed === "object" && parsed !== null) ? parsed : {};
-  } catch { return {}; }
-}
-
-function saveComboStats(stats) {
-  localStorage.setItem(STATS_KEY, JSON.stringify(stats));
 }
 
 /** 記錄 combo 出現（進入在場區） */
@@ -536,35 +192,6 @@ function trackComboCleared(clearedIndices) {
     }
   }
   saveComboStats(stats);
-}
-
-/** 將統計同步到 Google Sheets（帶上登入使用者身份） */
-async function syncStatsToSheets() {
-  if (!APPS_SCRIPT_URL || APPS_SCRIPT_URL.startsWith("YOUR_")) return;
-  // 讀取 Google 登入使用者
-  let user = null;
-  try {
-    const raw = localStorage.getItem(GOOGLE_USER_KEY);
-    if (raw) user = JSON.parse(raw);
-  } catch { /* ignore */ }
-  if (!user || !user.email) return; // 未登入則不同步
-  const stats = loadComboStats();
-  if (Object.keys(stats).length === 0) return;
-  try {
-    await fetch(APPS_SCRIPT_URL, {
-      method: "POST",
-      mode: "no-cors",
-      headers: { "Content-Type": "text/plain" },
-      body: JSON.stringify({
-        action: "sync",
-        stats,
-        userEmail: user.email,
-        userName: user.name || user.email,
-      }),
-    });
-  } catch (e) {
-    console.warn("同步 Google Sheets 失敗:", e);
-  }
 }
 
 // 自動移除已消除的 combo 對應的 row（從 localStorage）
