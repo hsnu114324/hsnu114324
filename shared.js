@@ -76,7 +76,7 @@ function isCustomActive() {
 
 function loadSplitMode() {
   const v = localStorage.getItem(SPLIT_MODE_KEY);
-  if (v === "random" || v === "mixed") return v;
+  if (v === "random" || v === "mixed" || v === "letter") return v;
   return "syllable";
 }
 

@@ -111,7 +111,8 @@ function buildPairsForQuiz(rows) {
 
     // 單字模式 + 2 欄：德文拆字（與方塊遊戲 buildComboList 相同邏輯）
     if (swMode && parts.length === 2) {
-      const germanBlocks = splitGermanToBlocks(parts[1], 4);
+      const letterMode = loadSplitMode() === "letter";
+      const germanBlocks = splitGermanToBlocks(parts[1], letterMode ? 30 : 4);
       if (germanBlocks.length >= 1) {
         // raw 保持原始未拆字的格式（_origRow 等效），確保統計 key 一致
         pairs.push({ hint, blocks: germanBlocks, raw: row });
