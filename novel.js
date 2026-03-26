@@ -408,9 +408,10 @@ function generateRound() {
     return;
   }
 
-  // 句子模式一次只顯示 1 句
+  // 句子模式 / 逐字母單字模式：一次只顯示 1 組（卡片多，避免混亂）
   const sentMode = isSentenceMode();
-  const slotsThisRound = sentMode ? 1 : SLOTS_PER_ROUND;
+  const swLetterMode = isSingleWordMode() && loadSplitMode() === "letter";
+  const slotsThisRound = (sentMode || swLetterMode) ? 1 : SLOTS_PER_ROUND;
   // 從佇列取下一批
   const n = Math.min(slotsThisRound, remaining);
   const chosen = comboQueue.slice(queueIdx, queueIdx + n);
@@ -458,7 +459,7 @@ function generateRound() {
     }
   }
   shuffle(distractorBlocks);
-  const distractorCount = sentModeActive ? 0 : Math.min(DISTRACTORS, distractorBlocks.length);
+  const distractorCount = (sentModeActive || swLetterMode) ? 0 : Math.min(DISTRACTORS, distractorBlocks.length);
   for (let i = 0; i < distractorCount; i++) {
     cards.push({ text: distractorBlocks[i], comboIdx: -1, blockIdx: -1 });
   }
