@@ -33,7 +33,7 @@ groupData = loadGroupData();  // 載入群組資料（必須在 loadWordRows 之
 let ALL_WORD_ROWS = loadWordRows();
 let allComboList = buildComboList(ALL_WORD_ROWS);
 
-const MAX_ACTIVE_COMBOS = 6;   // 同時在場的最大 combo 數量
+const MAX_ACTIVE_COMBOS = 3;   // 同時在場的最大 combo 數量
 
 let comboList = [];        // 目前在場的 combos（會隨消除＋補充而成長）
 let comboReserve = [];     // 尚未上場的 combos（等待補入）
